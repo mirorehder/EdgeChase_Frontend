@@ -1,0 +1,44 @@
+{
+  "name": "edgechase-promo-video-generator",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:deploy": "prisma migrate deploy",
+    "remotion:studio": "remotion studio src/remotion/index.ts",
+    "remotion:render": "remotion render src/remotion/index.ts PromoVideo out/promo.mp4",
+    "remotion:lambda:deploy-site": "tsx scripts/deploy-remotion-site.ts",
+    "remotion:lambda:deploy-function": "tsx scripts/deploy-remotion-function.ts"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.658.1",
+    "@aws-sdk/s3-request-presigner": "^3.658.1",
+    "@google/genai": "^0.15.0",
+    "@prisma/client": "^5.20.0",
+    "@remotion/bundler": "^4.0.190",
+    "@remotion/lambda": "^4.0.190",
+    "@remotion/layout-utils": "^4.0.190",
+    "@remotion/renderer": "^4.0.190",
+    "google-auth-library": "^9.14.1",
+    "googleapis": "^144.0.0",
+    "next": "^14.2.15",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "remotion": "^4.0.190",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.16.10",
+    "@types/react": "^18.3.11",
+    "@types/react-dom": "^18.3.0",
+    "prisma": "^5.20.0",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.3"
+  }
+}

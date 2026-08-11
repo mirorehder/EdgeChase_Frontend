@@ -1,0 +1,73 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Clip {
+  id          String @id @default(cuid())
+  driveFileId String @unique
+  name        String
+
+  durationMs Int?
+
+  /// Was auf dem Clip zu sehen ist - Grundlage für die Auswahl.
+  description String?
+
+  /// Wie gut die Kleidung erkennbar ist (0-1). Clips, auf denen man nichts
+  /// von der Kleidung sieht, taugen für Werbung nicht.
+  apparelScore Float?
+
+  /// Bester Ausschnitt für die Verwendung (Millisekunden im Rohclip).
+  startMs Int?
+  endMs   Int?
+
+  /// Stand der Analyse. Hochzählen, wenn sich Felder oder Prompt ändern -
+  /// dann werten sich alte Clips von selbst neu aus.
+  analysisVersion Int?
+
+  /// Wann dieser Clip zuletzt in einem Video verwendet wurde. Steuert die
+  /// Rotation: lange nicht Verwendetes wird bevorzugt.
+  lastUsedAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([apparelScore])
+  @@index([lastUsedAt])
+}
+
+model PromoVideo {
+  id String @id @default(cuid())
+
+  /// Der erzeugte Hook-Text, wie er im Video steht.
+  hookText String
+
+  /// Verwendete Clips in Reihenfolge: [{ clipId, startMs, endMs, seconds }]
+  scenes Json
+
+  status   String @default("queued") // queued | rendering | done | failed
+  attempts Int    @default(0)
+
+  lastError String?
+
+  claimedAt     DateTime?
+  driveUrl      String?
+  driveFileName String?
+
+  /// Instagram-Media-ID des geposteten Videos, sobald bekannt.
+  ///
+  /// Wird von diesem Tool nicht gefüllt - das Posten läuft anderswo. Das
+  /// Feld existiert nur, damit eine spätere Auswertung ("welche Clips und
+  /// Hook-Texte laufen am besten?") die Kennzahlen einem konkreten Video
+  /// zuordnen kann.
+  postedMediaId String?
+  postedAt      DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([status])
+  @@index([createdAt])
+}
