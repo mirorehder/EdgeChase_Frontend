@@ -36,15 +36,28 @@ Projekt auf [neon.tech](https://neon.tech) anlegen, Connection-String als
    anlegen, **Google Drive API** aktivieren.
 2. Unter „IAM & Verwaltung" > „Dienstkonten" ein neues Dienstkonto anlegen,
    JSON-Schlüssel erzeugen und herunterladen.
-3. Zwei Ordner in Google Drive anlegen (oder vorhandene nutzen): einen für
-   die Rohclips, einen für die fertigen Videos.
-4. Beide Ordner für die E-Mail-Adresse des Dienstkontos freigeben
-   (`xyz@projekt.iam.gserviceaccount.com`), Rolle „Betrachter" reicht für
-   den Quellordner, „Bearbeiter" für den Zielordner.
-5. Den kompletten Inhalt der heruntergeladenen JSON-Datei einzeilig als
+3. Den EdgeChase-Ordner für die E-Mail-Adresse des Dienstkontos freigeben
+   (`xyz@projekt.iam.gserviceaccount.com`), Rolle **Bearbeiter**. Eine
+   Freigabe auf dem Wurzelordner genügt - sie vererbt sich auf alle
+   Unterordner inklusive des Zielordners.
+4. Den kompletten Inhalt der heruntergeladenen JSON-Datei einzeilig als
    `GOOGLE_SERVICE_ACCOUNT_JSON` hinterlegen (z.B. `cat key.json | jq -c .`).
-6. Die Ordner-IDs (aus der Drive-URL, der Teil nach `/folders/`) als
-   `DRIVE_SOURCE_FOLDER_ID` und `DRIVE_OUTPUT_FOLDER_ID` hinterlegen.
+5. Die Ordner-IDs sind bereits in `.env.example` eingetragen.
+
+### Ordnerstruktur des Rohmaterials
+
+`DRIVE_SOURCE_FOLDER_ID` zeigt auf den **Wurzelordner**, nicht auf einen
+einzelnen Clip-Ordner. Der Baum darunter wird rekursiv eingelesen, und der
+Ordnername jedes Clips wird mitgespeichert. Bei der Zusammenstellung
+bekommt Gemini diesen Namen als Themensignal mit, damit die Clips eines
+Videos thematisch zusammenpassen (Parkour zu Parkour, Rooftop zu Rooftop)
+statt wahllos gemischt zu werden.
+
+Zwei Dinge werden dabei automatisch übersprungen:
+
+- der Zielordner (sonst kämen fertige Videos als Rohmaterial zurück),
+- die Ordner aus `DRIVE_EXCLUDED_FOLDER_NAMES`, standardmäßig
+  „Referenz-Videos" (fremdes Material) und „Logos etc.".
 
 ### 3. Gemini
 

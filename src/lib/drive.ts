@@ -6,6 +6,8 @@ import { env } from "./env";
 // Quellordner könnte auch andere Dateien enthalten (Notizen, Vorschaubilder).
 const VIDEO_MIME_QUERY = "mimeType contains 'video/'";
 
+const FOLDER_MIME = "application/vnd.google-apps.folder";
+
 // macOS legt beim Kopieren auf fremde Dateisysteme zu jeder Datei eine
 // "AppleDouble"-Schattendatei "._name.mov" an. Drive meldet sie mit
 // Video-MIME-Typ, sie enthält aber nur Metadaten (wenige KB) und kein Bild.
@@ -46,17 +48,39 @@ export interface DriveClipFile {
   createdTime: string | null;
   /** Aus Drives videoMediaMetadata - zuverlässiger als eine Gemini-Schätzung. */
   durationMs: number | null;
+  /** Ordner, in dem der Clip liegt. Der Name ist ein inhaltliches Signal
+   *  ("Parkour-Bangers" vs. "Trainings-Clips") und geht in die Auswahl ein. */
+  folderId: string;
+  folderName: string;
 }
 
-/** Listet alle Video-Dateien im Quellordner (mit Pagination). */
-export async function listSourceClips(): Promise<DriveClipFile[]> {
-  const drive = getDriveClient();
-  const files: DriveClipFile[] = [];
+/** Schutz gegen Endlosschleifen durch Verknüpfungen und gegen versehentlich
+ *  riesige Ordnerbäume. */
+const MAX_FOLDER_DEPTH = 6;
+
+function excludedFolderNames(): Set<string> {
+  const raw = process.env.DRIVE_EXCLUDED_FOLDER_NAMES;
+  const names = raw
+    ? raw.split(",").map((n) => n.trim()).filter(Boolean)
+    : // "Referenz-Videos" enthält fremdes Material zur Inspiration - das darf
+      // nie in einem eigenen Werbevideo landen. "Logos etc." enthält kein
+      // Bewegtbild, das Werbewert hätte.
+      ["Referenz-Videos", "Logos etc."];
+  return new Set(names.map((n) => n.toLowerCase()));
+}
+
+/** Listet ein einzelnes Ordner-Level (Videos und Unterordner). */
+async function listFolderEntries(
+  drive: drive_v3.Drive,
+  folderId: string,
+): Promise<{ videos: drive_v3.Schema$File[]; subfolders: drive_v3.Schema$File[] }> {
+  const videos: drive_v3.Schema$File[] = [];
+  const subfolders: drive_v3.Schema$File[] = [];
   let pageToken: string | undefined;
 
   do {
     const res = await drive.files.list({
-      q: `'${env.driveSourceFolderId}' in parents and trashed = false and (${VIDEO_MIME_QUERY})`,
+      q: `'${folderId}' in parents and trashed = false and (${VIDEO_MIME_QUERY} or mimeType = '${FOLDER_MIME}')`,
       fields:
         "nextPageToken, files(id, name, mimeType, size, createdTime, videoMediaMetadata(durationMillis))",
       pageSize: 200,
@@ -65,21 +89,66 @@ export async function listSourceClips(): Promise<DriveClipFile[]> {
 
     for (const f of res.data.files ?? []) {
       if (!f.id || !f.name || !f.mimeType) continue;
-      if (f.name.startsWith(APPLE_DOUBLE_PREFIX)) continue;
+      if (f.mimeType === FOLDER_MIME) subfolders.push(f);
+      else videos.push(f);
+    }
+    pageToken = res.data.nextPageToken ?? undefined;
+  } while (pageToken);
+
+  return { videos, subfolders };
+}
+
+/**
+ * Listet alle Video-Dateien unterhalb des Quellordners - rekursiv über alle
+ * Unterordner, damit das gesamte Material zur Verfügung steht und die Auswahl
+ * anhand des Ordnernamens den passenden Kontext wählen kann.
+ *
+ * Der Zielordner wird dabei übersprungen: er liegt selbst unterhalb des
+ * Quellbaums, und die dort abgelegten fertigen Videos dürfen nicht als
+ * Rohmaterial für das nächste Video wieder eingelesen werden.
+ */
+export async function listSourceClips(): Promise<DriveClipFile[]> {
+  const drive = getDriveClient();
+  const excluded = excludedFolderNames();
+  const outputFolderId = env.driveOutputFolderId;
+
+  const files: DriveClipFile[] = [];
+  const visited = new Set<string>();
+  const queue: Array<{ id: string; name: string; depth: number }> = [
+    { id: env.driveSourceFolderId, name: "(Quellordner)", depth: 0 },
+  ];
+
+  while (queue.length) {
+    const folder = queue.shift()!;
+    if (visited.has(folder.id)) continue;
+    visited.add(folder.id);
+
+    const { videos, subfolders } = await listFolderEntries(drive, folder.id);
+
+    for (const f of videos) {
+      if (f.name!.startsWith(APPLE_DOUBLE_PREFIX)) continue;
       if (f.size && Number(f.size) < MIN_VIDEO_BYTES) continue;
       files.push({
-        id: f.id,
-        name: f.name,
-        mimeType: f.mimeType,
+        id: f.id!,
+        name: f.name!,
+        mimeType: f.mimeType!,
         sizeBytes: f.size ? Number(f.size) : null,
         createdTime: f.createdTime ?? null,
         durationMs: f.videoMediaMetadata?.durationMillis
           ? Number(f.videoMediaMetadata.durationMillis)
           : null,
+        folderId: folder.id,
+        folderName: folder.name,
       });
     }
-    pageToken = res.data.nextPageToken ?? undefined;
-  } while (pageToken);
+
+    if (folder.depth >= MAX_FOLDER_DEPTH) continue;
+    for (const sub of subfolders) {
+      if (sub.id === outputFolderId) continue;
+      if (excluded.has(sub.name!.toLowerCase())) continue;
+      queue.push({ id: sub.id!, name: sub.name!, depth: folder.depth + 1 });
+    }
+  }
 
   return files;
 }

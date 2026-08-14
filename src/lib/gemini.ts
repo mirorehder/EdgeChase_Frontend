@@ -134,6 +134,9 @@ export interface ClipCandidate {
   id: string;
   description: string;
   apparelScore: number;
+  /** Herkunftsordner - grobes Themensignal ("Parkour-Bangers",
+   *  "Trainings-Clips", ...), das die Auswahl mitberücksichtigt. */
+  folderName: string;
 }
 
 export interface SceneSelection {
@@ -163,7 +166,10 @@ export async function selectScenesAndHook(
   const ai = client();
 
   const candidateList = candidates
-    .map((c) => `- id: ${c.id} | apparelScore: ${c.apparelScore.toFixed(2)} | ${c.description}`)
+    .map(
+      (c) =>
+        `- id: ${c.id} | Ordner: ${c.folderName} | apparelScore: ${c.apparelScore.toFixed(2)} | ${c.description}`,
+    )
     .join("\n");
 
   const recentList = recentHookTexts.length
@@ -176,6 +182,8 @@ Kandidaten (bereits nach "Kleidung gut erkennbar" vorgefiltert):
 ${candidateList}
 
 Wähle 3 oder 4 Clip-IDs aus dieser Liste, die zusammen abwechslungsreich wirken: unterschiedliche Orte, unterschiedliche Bewegungen, unterschiedliche Kleidungsstücke. Gib nur IDs aus der Liste zurück.
+
+Die Clips stammen aus verschiedenen Ordnern, deren Namen das jeweilige Thema angeben (z.B. Parkour, Rooftop, Training). Nutze das als Kontext: die Clips eines Videos sollen thematisch zueinander passen und einen erkennbaren roten Faden haben - vermeide es, thematisch unpassende Clips zu mischen. Innerhalb dieses Themas dann für Abwechslung sorgen.
 
 Formuliere außerdem einen kurzen englischen Hook-Text für das Video. Die Kernaussage muss immer dieselbe bleiben: die ersten 30 Personen, die ihren Namen kommentieren, bekommen einen persönlichen Rabattcode. Beispiele für Ton und Länge (nicht wörtlich übernehmen):
 ${HOOK_EXAMPLES.map((e) => `- ${e}`).join("\n")}

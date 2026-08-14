@@ -14,6 +14,12 @@ model Clip {
 
   durationMs Int?
 
+  /// Ordner, aus dem der Clip stammt. Der Name ("Parkour-Bangers",
+  /// "Trainings-Clips", ...) ist ein inhaltliches Signal und geht als
+  /// Kontext in die Clip-Auswahl ein.
+  sourceFolderId   String?
+  sourceFolderName String?
+
   /// Was auf dem Clip zu sehen ist - Grundlage für die Auswahl.
   description String?
 

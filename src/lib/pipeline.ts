@@ -51,6 +51,8 @@ export async function syncClipLibrary(): Promise<SyncResult> {
         driveFileId: file.id,
         name: file.name,
         durationMs: file.durationMs,
+        sourceFolderId: file.folderId,
+        sourceFolderName: file.folderName,
       },
     });
   }
@@ -179,6 +181,7 @@ export async function composeVideo(): Promise<ComposedVideo> {
     id: c.id,
     description: c.description ?? "",
     apparelScore: c.apparelScore ?? 0,
+    folderName: c.sourceFolderName ?? "unbekannt",
   }));
 
   const selection = await selectScenesAndHook(

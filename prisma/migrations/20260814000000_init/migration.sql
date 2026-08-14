@@ -4,6 +4,8 @@ CREATE TABLE "Clip" (
     "driveFileId" TEXT NOT NULL,
     "name" TEXT NOT NULL,
     "durationMs" INTEGER,
+    "sourceFolderId" TEXT,
+    "sourceFolderName" TEXT,
     "description" TEXT,
     "apparelScore" DOUBLE PRECISION,
     "startMs" INTEGER,
