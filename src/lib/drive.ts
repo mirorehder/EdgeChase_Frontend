@@ -6,6 +6,16 @@ import { env } from "./env";
 // Quellordner könnte auch andere Dateien enthalten (Notizen, Vorschaubilder).
 const VIDEO_MIME_QUERY = "mimeType contains 'video/'";
 
+// macOS legt beim Kopieren auf fremde Dateisysteme zu jeder Datei eine
+// "AppleDouble"-Schattendatei "._name.mov" an. Drive meldet sie mit
+// Video-MIME-Typ, sie enthält aber nur Metadaten (wenige KB) und kein Bild.
+// Ungefiltert landet für jede davon ein wertloser Gemini-Analyselauf an.
+const APPLE_DOUBLE_PREFIX = "._";
+
+// Darunter kann keine echte Videodatei liegen; fängt zusätzlich abgebrochene
+// oder noch laufende Uploads ab.
+const MIN_VIDEO_BYTES = 100_000;
+
 let cachedAuth: GoogleAuth | null = null;
 
 function getAuth(): GoogleAuth {
@@ -55,6 +65,8 @@ export async function listSourceClips(): Promise<DriveClipFile[]> {
 
     for (const f of res.data.files ?? []) {
       if (!f.id || !f.name || !f.mimeType) continue;
+      if (f.name.startsWith(APPLE_DOUBLE_PREFIX)) continue;
+      if (f.size && Number(f.size) < MIN_VIDEO_BYTES) continue;
       files.push({
         id: f.id,
         name: f.name,
