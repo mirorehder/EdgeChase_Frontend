@@ -209,6 +209,12 @@ const HOOK_EXAMPLES = [
   "30 custom discount codes. Comment your name to claim one.",
 ];
 
+// Das Overlay bricht auf höchstens drei Zeilen um und darf nur 84 % der
+// Bildbreite einnehmen. Längere Sätze werden entweder unlesbar klein oder
+// laufen aus dem Bild. An echten Durchläufen beobachtet: ohne Vorgabe liefert
+// das Modell bis zu 137 Zeichen, also mehr als das Doppelte der Beispiele.
+const MAX_HOOK_CHARS = 80;
+
 /**
  * Wählt 3-4 abwechslungsreiche Clips aus den besten Kandidaten und
  * formuliert eine neue Variante des Hook-Textes.
@@ -239,29 +245,45 @@ Wähle 3 oder 4 Clip-IDs aus dieser Liste, die zusammen abwechslungsreich wirken
 
 Die Clips stammen aus verschiedenen Ordnern, deren Namen das jeweilige Thema angeben (z.B. Parkour, Rooftop, Training). Nutze das als Kontext: die Clips eines Videos sollen thematisch zueinander passen und einen erkennbaren roten Faden haben - vermeide es, thematisch unpassende Clips zu mischen. Innerhalb dieses Themas dann für Abwechslung sorgen.
 
-Formuliere außerdem einen kurzen englischen Hook-Text für das Video. Die Kernaussage muss immer dieselbe bleiben: die ersten 30 Personen, die ihren Namen kommentieren, bekommen einen persönlichen Rabattcode. Beispiele für Ton und Länge (nicht wörtlich übernehmen):
+Formuliere außerdem einen kurzen englischen Hook-Text für das Video. Die Kernaussage muss immer dieselbe bleiben: die ersten 30 Personen, die ihren Namen kommentieren, bekommen einen persönlichen Rabattcode.
+
+HARTE VORGABE: höchstens ${MAX_HOOK_CHARS} Zeichen. Der Text steht als Overlay im Video und muss in drei kurze Zeilen passen - längere Sätze werden unlesbar klein. Ein einziger knapper Satz, keine Einleitungsfrage davor.
+
+Beispiele für Ton und Länge (nicht wörtlich übernehmen):
 ${HOOK_EXAMPLES.map((e) => `- ${e}`).join("\n")}
 
 Diese Formulierungen wurden zuletzt schon verwendet - der neue Text darf keiner davon wörtlich oder nahezu wörtlich gleichen:
 ${recentList}`;
 
-  const response = await ai.models.generateContent({
-    model: MODEL,
-    contents: [{ role: "user", parts: [{ text: prompt }] }],
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          selectedClipIds: { type: Type.ARRAY, items: { type: Type.STRING } },
-          hookText: { type: Type.STRING },
+  async function ask(extraInstruction: string): Promise<Partial<SceneSelection>> {
+    const response = await ai.models.generateContent({
+      model: MODEL,
+      contents: [{ role: "user", parts: [{ text: prompt + extraInstruction }] }],
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            selectedClipIds: { type: Type.ARRAY, items: { type: Type.STRING } },
+            hookText: { type: Type.STRING },
+          },
+          required: ["selectedClipIds", "hookText"],
         },
-        required: ["selectedClipIds", "hookText"],
       },
-    },
-  });
+    });
+    return JSON.parse(response.text ?? "{}") as Partial<SceneSelection>;
+  }
 
-  const raw = JSON.parse(response.text ?? "{}") as Partial<SceneSelection>;
+  let raw = await ask("");
+
+  // Die Längenvorgabe im Prompt wird nicht zuverlässig befolgt. Ein zweiter
+  // Versuch mit deutlicherer Ansage ist billiger als ein unlesbares Video.
+  if ((raw.hookText?.trim().length ?? 0) > MAX_HOOK_CHARS) {
+    raw = await ask(
+      `\n\nDein vorheriger Vorschlag war zu lang. Formuliere den Hook-Text neu, diesmal zwingend unter ${MAX_HOOK_CHARS} Zeichen.`,
+    );
+  }
+
   return validateSelection(raw, candidates);
 }
 
@@ -278,7 +300,11 @@ function validateSelection(
   const selectedClipIds =
     deduped.length >= 3 ? deduped : candidates.slice(0, 4).map((c) => c.id);
 
-  const hookText = raw.hookText?.trim() || HOOK_EXAMPLES[0];
+  // Letzte Rückfallebene: bleibt der Text auch nach dem zweiten Versuch zu
+  // lang, lieber ein bewährtes Beispiel als ein unlesbares Overlay.
+  const proposed = raw.hookText?.trim();
+  const hookText =
+    proposed && proposed.length <= MAX_HOOK_CHARS ? proposed : HOOK_EXAMPLES[0];
 
   return { selectedClipIds, hookText };
 }
