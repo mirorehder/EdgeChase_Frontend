@@ -171,12 +171,19 @@ geprüft:
   rekursiv gelistet (inkl. Ordnerzuordnung und Laufzeiten, ohne
   macOS-Schattendateien), eine Testdatei landet im selbst angelegten
   Zielordner und wird dort wiedergefunden (`scripts/verify-drive.ts`)
-- 🔄 **Schritt 2** läuft: Analyse liefert brauchbare Beschreibungen und
-  plausible Ausschnitte (`scripts/verify-analysis.ts`), die inhaltliche
-  Gegenprüfung durch den Nutzer steht noch aus
-- ⏳ Rendern über Remotion Lambda, Drive-Upload im Gesamtablauf und der
-  tägliche Cron-Lauf sind implementiert, aber noch nicht an echten Daten
-  nachgewiesen (Auftrag Abschnitt 8, Schritte 4-6)
+- ✅ **Schritt 2** an echten Daten: 25 Clips eines Quellordners analysiert,
+  Beschreibungen benennen die Kleidungsstücke konkret (bis hin zum
+  Schriftzug auf den Shirts), Ausschnitte beginnen nie am Dateianfang
+  (`scripts/verify-analysis.ts`, `scripts/local-pipeline.ts analyze`)
+- ✅ **Schritt 3** an echten Daten: fünf Durchläufe liefern unterschiedliche
+  Clip-Kombinationen und Hook-Texte zwischen 62 und 70 Zeichen
+  (`scripts/local-pipeline.ts compose`)
+- ⏳ Rendern über **Remotion Lambda** steht aus, solange AWS nicht
+  eingerichtet ist. Die Komposition selbst wird über
+  `scripts/local-pipeline.ts render` an echtem Material geprüft - derselbe
+  Code, nur lokal statt in Lambda ausgeführt.
+- ⏳ Der tägliche Cron-Lauf über die vollständige Kette ist noch nicht
+  nachgewiesen (Auftrag Abschnitt 8, Schritte 4 und 6)
 
 ## Bekannte Kostenpunkte
 
