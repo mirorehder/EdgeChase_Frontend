@@ -84,7 +84,13 @@ export async function analyzeClip(
   // Bewusst neutral formuliert (Lehre 3): nicht nach "dem Trick" fragen,
   // sonst erfindet das Modell einen. Ausdrücklich erlauben zu sagen, dass
   // nichts Besonderes passiert.
+  // Antwortsprache festnageln: ohne diese Vorgabe antwortet das Modell mal
+  // auf Deutsch, mal auf Englisch (an echten Clips beobachtet). Die
+  // Beschreibungen fliessen später in die englischsprachige Auswahl ein und
+  // müssen dafür einheitlich sein.
   const prompt = `Du bewertest einen kurzen Rohclip für eine Streetwear-/Sport-Marke (Parkour, Street, Action). ${durationHint}
+
+Antworte ausschliesslich auf Englisch.
 
 Beschreibe wörtlich und neutral, was zu sehen ist - Ort, Bewegung, welche Kleidungsstücke getragen werden. Erfinde nichts. Wenn nichts Besonderes passiert (z.B. nur Gehen oder Vorbereitung), schreibe das genau so.
 
