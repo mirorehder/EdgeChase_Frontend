@@ -209,6 +209,14 @@ let cachedOutputFolderId: string | null = null;
 export async function ensureOutputFolder(): Promise<string> {
   if (cachedOutputFolderId) return cachedOutputFolderId;
 
+  // Feste ID hat Vorrang: die Suche läuft sonst über den Namen, und ein
+  // Umbenennen in Drive würde beim nächsten Lauf einen zweiten Ordner anlegen.
+  const pinned = env.driveOutputFolderId;
+  if (pinned) {
+    cachedOutputFolderId = pinned;
+    return pinned;
+  }
+
   const drive = getWriteClient();
   const name = env.driveOutputFolderName;
   const escaped = name.replace(/'/g, "\\'");

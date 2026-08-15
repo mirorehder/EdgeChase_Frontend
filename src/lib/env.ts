@@ -28,6 +28,12 @@ export const env = {
   get driveOutputFolderName() {
     return process.env.DRIVE_OUTPUT_FOLDER_NAME || "EdgeChase Promo-Videos";
   },
+  /** Optional: feste ID des Zielordners. Nur sinnvoll für einen Ordner, den
+   *  die Anwendung selbst angelegt hat - dann übersteht die Zuordnung auch ein
+   *  Umbenennen in Drive. */
+  get driveOutputFolderId(): string | null {
+    return process.env.DRIVE_OUTPUT_FOLDER_ID || null;
+  },
   get googleOAuthClientId() {
     return required("GOOGLE_OAUTH_CLIENT_ID");
   },
