@@ -26,12 +26,9 @@ function getAuth(): GoogleAuth {
   const credentials = JSON.parse(env.googleServiceAccountJson);
   cachedAuth = new google.auth.GoogleAuth({
     credentials,
-    // drive.readonly reicht für den Quellordner, drive.file für den Upload
-    // ins Zielverzeichnis - kein voller Drive-Zugriff nötig.
-    scopes: [
-      "https://www.googleapis.com/auth/drive.readonly",
-      "https://www.googleapis.com/auth/drive.file",
-    ],
+    // Nur lesend: Schreiben scheitert am fehlenden Speicherkontingent von
+    // Dienstkonten und läuft deshalb über OAuth (siehe unten).
+    scopes: ["https://www.googleapis.com/auth/drive.readonly"],
   });
   return cachedAuth;
 }
@@ -110,7 +107,11 @@ async function listFolderEntries(
 export async function listSourceClips(): Promise<DriveClipFile[]> {
   const drive = getDriveClient();
   const excluded = excludedFolderNames();
-  const outputFolderId = env.driveOutputFolderId;
+  // Der Zielordner liegt zwar ausserhalb des Quellbaums (die Anwendung legt
+  // ihn selbst an), könnte aber von Hand dorthin verschoben werden. Wird er
+  // über den Namen ausgeschlossen, kämen fertige Videos nicht als Rohmaterial
+  // für das nächste Video zurück.
+  const outputFolderName = env.driveOutputFolderName.toLowerCase();
 
   const files: DriveClipFile[] = [];
   const visited = new Set<string>();
@@ -144,7 +145,7 @@ export async function listSourceClips(): Promise<DriveClipFile[]> {
 
     if (folder.depth >= MAX_FOLDER_DEPTH) continue;
     for (const sub of subfolders) {
-      if (sub.id === outputFolderId) continue;
+      if (sub.name!.toLowerCase() === outputFolderName) continue;
       if (excluded.has(sub.name!.toLowerCase())) continue;
       queue.push({ id: sub.id!, name: sub.name!, depth: folder.depth + 1 });
     }
@@ -163,14 +164,94 @@ export async function downloadFile(fileId: string): Promise<Buffer> {
   return Buffer.from(res.data as ArrayBuffer);
 }
 
-/** Prüft, ob im Zielordner bereits eine Datei mit diesem Namen liegt - Grundlage für den Duplikatschutz beim Retry. */
+// ---------------------------------------------------------------------------
+// Schreiben: OAuth im Namen des Nutzers
+//
+// Dienstkonten haben kein Speicherkontingent. Eine Datei, die ein Dienstkonto
+// anlegt, gehört ihm selbst - und ohne Kontingent scheitert das Anlegen, auch
+// in einem Ordner mit Bearbeiter-Freigabe ("Service Accounts do not have
+// storage quota"). Nur Shared Drives umgehen das, die es bei einem privaten
+// Google-Konto nicht gibt. Der Upload läuft deshalb über OAuth im Namen des
+// Nutzers; die fertigen Videos gehören damit ihm.
+//
+// Der Bereich bleibt bewusst auf drive.file beschränkt: er gilt bei Google als
+// nicht sensibel, braucht daher keine Überprüfung, und der Zustimmungsbildschirm
+// lässt sich sofort veröffentlichen - nur dann läuft das Refresh-Token nicht
+// nach sieben Tagen ab.
+// ---------------------------------------------------------------------------
+
+let cachedOAuthDrive: drive_v3.Drive | null = null;
+
+function getWriteClient(): drive_v3.Drive {
+  if (cachedOAuthDrive) return cachedOAuthDrive;
+
+  const client = new google.auth.OAuth2(
+    env.googleOAuthClientId,
+    env.googleOAuthClientSecret,
+  );
+  client.setCredentials({ refresh_token: env.googleOAuthRefreshToken });
+
+  cachedOAuthDrive = google.drive({ version: "v3", auth: client });
+  return cachedOAuthDrive;
+}
+
+let cachedOutputFolderId: string | null = null;
+
+/**
+ * Liefert den Zielordner und legt ihn an, falls er fehlt.
+ *
+ * Mit drive.file sieht die Anwendung ausschliesslich, was sie selbst angelegt
+ * hat - ein von Hand erstellter Ordner wäre für sie unsichtbar und ein Upload
+ * dorthin schlüge mit 404 fehl. Der Ordner muss deshalb von der Anwendung
+ * selbst stammen. Verschieben lässt er sich hinterher trotzdem beliebig, die
+ * Zuordnung läuft über die ID.
+ */
+export async function ensureOutputFolder(): Promise<string> {
+  if (cachedOutputFolderId) return cachedOutputFolderId;
+
+  const drive = getWriteClient();
+  const name = env.driveOutputFolderName;
+  const escaped = name.replace(/'/g, "\\'");
+
+  const existing = await drive.files.list({
+    q: `mimeType = '${FOLDER_MIME}' and trashed = false and name = '${escaped}'`,
+    fields: "files(id)",
+    pageSize: 1,
+  });
+
+  const found = existing.data.files?.[0]?.id;
+  if (found) {
+    cachedOutputFolderId = found;
+    return found;
+  }
+
+  const created = await drive.files.create({
+    requestBody: { name, mimeType: FOLDER_MIME },
+    fields: "id",
+  });
+  if (!created.data.id) {
+    throw new Error("Zielordner konnte nicht angelegt werden.");
+  }
+
+  cachedOutputFolderId = created.data.id;
+  return created.data.id;
+}
+
+/**
+ * Prüft, ob im Zielordner bereits eine Datei mit diesem Namen liegt -
+ * Grundlage für den Duplikatschutz beim Retry. Dass drive.file nur die selbst
+ * angelegten Dateien sichtbar macht, passt hier genau: gesucht wird ohnehin
+ * nur nach eigenen Uploads.
+ */
 export async function findFileInOutputFolder(
   fileName: string,
 ): Promise<{ id: string; webViewLink: string | null } | null> {
-  const drive = getDriveClient();
+  const drive = getWriteClient();
+  const folderId = await ensureOutputFolder();
   const escaped = fileName.replace(/'/g, "\\'");
+
   const res = await drive.files.list({
-    q: `'${env.driveOutputFolderId}' in parents and trashed = false and name = '${escaped}'`,
+    q: `'${folderId}' in parents and trashed = false and name = '${escaped}'`,
     fields: "files(id, webViewLink)",
     pageSize: 1,
   });
@@ -184,11 +265,13 @@ export async function uploadToOutputFolder(
   fileName: string,
   buffer: Buffer,
 ): Promise<{ id: string; webViewLink: string | null }> {
-  const drive = getDriveClient();
+  const drive = getWriteClient();
+  const folderId = await ensureOutputFolder();
+
   const res = await drive.files.create({
     requestBody: {
       name: fileName,
-      parents: [env.driveOutputFolderId],
+      parents: [folderId],
     },
     media: {
       mimeType: "video/mp4",

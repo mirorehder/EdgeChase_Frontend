@@ -23,8 +23,19 @@ export const env = {
   get driveSourceFolderId() {
     return required("DRIVE_SOURCE_FOLDER_ID");
   },
-  get driveOutputFolderId() {
-    return required("DRIVE_OUTPUT_FOLDER_ID");
+  /** Zielordner wird von der Anwendung selbst angelegt (drive.file sieht nur
+   *  Eigenes), deshalb genügt der Name statt einer ID. */
+  get driveOutputFolderName() {
+    return process.env.DRIVE_OUTPUT_FOLDER_NAME || "EdgeChase Promo-Videos";
+  },
+  get googleOAuthClientId() {
+    return required("GOOGLE_OAUTH_CLIENT_ID");
+  },
+  get googleOAuthClientSecret() {
+    return required("GOOGLE_OAUTH_CLIENT_SECRET");
+  },
+  get googleOAuthRefreshToken() {
+    return required("GOOGLE_OAUTH_REFRESH_TOKEN");
   },
   get cronSecret() {
     return required("CRON_SECRET");

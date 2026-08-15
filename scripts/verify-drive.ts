@@ -3,9 +3,12 @@
  * Quellbaum gelistet, und landet eine Datei im Zielordner?
  *
  * Aufruf (Zugangsdaten nicht ins Repo legen):
- *   GOOGLE_SERVICE_ACCOUNT_JSON="$(cat key.json)" \
- *   DRIVE_SOURCE_FOLDER_ID=... DRIVE_OUTPUT_FOLDER_ID=... \
+ *   GOOGLE_SERVICE_ACCOUNT_JSON="$(cat key.json)" DRIVE_SOURCE_FOLDER_ID=... \
+ *   GOOGLE_OAUTH_CLIENT_ID=... GOOGLE_OAUTH_CLIENT_SECRET=... \
+ *   GOOGLE_OAUTH_REFRESH_TOKEN=... \
  *   npx tsx scripts/verify-drive.ts
+ *
+ * Ohne die OAuth-Werte läuft nur der Leseteil; der Upload wird übersprungen.
  */
 import {
   findFileInOutputFolder,
@@ -44,6 +47,11 @@ async function main() {
   const withoutDuration = clips.filter((c) => c.durationMs === null).length;
   console.log(`Gesamt: ${clips.length} Clips in ${byFolder.size} Ordnern`);
   console.log(`Ohne Laufzeit-Metadaten: ${withoutDuration}`);
+
+  if (!process.env.GOOGLE_OAUTH_REFRESH_TOKEN) {
+    console.log("\n(OAuth nicht konfiguriert - Upload-Test übersprungen.)");
+    return;
+  }
 
   console.log("\n== Upload in den Zielordner ==\n");
   const fileName = `zugriffstest-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.mp4`;
