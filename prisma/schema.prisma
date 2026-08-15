@@ -5,6 +5,12 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+
+  // Migrationen müssen an Neons Verbindungspooler vorbei: der läuft im
+  // Transaction-Mode und lehnt die DDL-Anweisungen ab, die "prisma migrate
+  // deploy" beim Build absetzt. Beide Variablen setzt die Neon-Integration
+  // in Vercel automatisch.
+  directUrl = env("DATABASE_URL_UNPOOLED")
 }
 
 model Clip {

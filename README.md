@@ -27,8 +27,18 @@ Vercel Cron (1x/Tag)
 
 ### 1. Neon-Postgres
 
-Projekt auf [neon.tech](https://neon.tech) anlegen, Connection-String als
-`DATABASE_URL` übernehmen.
+Am einfachsten über Vercel selbst: im Projekt auf **Storage → Create
+Database → Neon**. Vercel legt die Datenbank an und hinterlegt
+`DATABASE_URL` (gepoolt) und `DATABASE_URL_UNPOOLED` (direkt) automatisch
+als Umgebungsvariablen - es muss nichts von Hand kopiert werden.
+
+Beide Werte werden gebraucht: die Anwendung nutzt die gepoolte Verbindung,
+`prisma migrate deploy` beim Build zwingend die direkte, weil Neons Pooler
+im Transaction-Mode keine DDL-Anweisungen zulässt.
+
+Alternativ ein Projekt direkt auf [neon.tech](https://neon.tech) anlegen
+und beide Connection-Strings selbst hinterlegen (der direkte ist der ohne
+`-pooler` im Hostnamen).
 
 ### 2. Google-Service-Account
 
