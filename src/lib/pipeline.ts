@@ -2,6 +2,12 @@ import { prisma } from "./db";
 import { listSourceClips, downloadFile, uploadToOutputFolderWithRetry } from "./drive";
 import { analyzeClip, selectScenesAndHook, type ClipCandidate } from "./gemini";
 import { renderPromoVideo } from "./render";
+import {
+  bucketFromServeUrl,
+  isRenderStorageConfigured,
+  mirrorClip,
+} from "./renderStage";
+import { env } from "./env";
 import { hookTextToFileName } from "./filename";
 
 // Hochzählen, wenn sich Analyse-Felder oder der Analyse-Prompt ändern -
@@ -98,6 +104,19 @@ export async function analyzeUnanalyzedClips(
   for (const clip of pending) {
     const buffer = await downloadFile(clip.driveFileId);
     const mimeType = guessMimeType(clip.name);
+
+    // Die Daten liegen hier ohnehin im Speicher - sie gleich in den
+    // Render-Bucket zu spiegeln kostet nichts zusätzlich und erspart dem
+    // späteren Render den Transfer von 100-200 MB pro Clip. Schlägt es fehl
+    // (oder ist AWS noch nicht eingerichtet), holt der Render es nach.
+    if (isRenderStorageConfigured()) {
+      try {
+        await mirrorClip(bucketFromServeUrl(env.remotionServeUrl), clip.driveFileId, buffer);
+      } catch {
+        // Absichtlich verschluckt: die Analyse soll nicht an AWS hängen.
+      }
+    }
+
     const analysis = await analyzeClip(buffer, mimeType, clip.durationMs);
 
     await prisma.clip.update({

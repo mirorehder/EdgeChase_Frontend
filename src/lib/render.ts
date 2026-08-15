@@ -1,6 +1,11 @@
 import { getRenderProgress, renderMediaOnLambda } from "@remotion/lambda/client";
 import { downloadFile } from "./drive";
-import { bucketFromServeUrl, stageClip, unstageClip, type StagedClip } from "./renderStage";
+import {
+  bucketFromServeUrl,
+  isClipMirrored,
+  mirrorClip,
+  signedClipUrl,
+} from "./renderStage";
 import { env } from "./env";
 import type { PromoVideoProps } from "@/remotion/PromoVideo";
 
@@ -12,62 +17,60 @@ export interface RenderScene {
 }
 
 const POLL_INTERVAL_MS = 3000;
-const POLL_TIMEOUT_MS = 8 * 60 * 1000;
+
+// Vercel bricht die Funktion nach 300 s ab. Wird vorher aufgegeben, endet der
+// Job mit einer verwertbaren Fehlermeldung und wird beim nächsten Versuch
+// erneut angestossen - statt mitten im Warten hart abgeschnitten zu werden.
+const POLL_TIMEOUT_MS = 210_000;
 
 /**
- * Lädt die Rohclips aus Drive, lagert sie befristet in S3 zwischen (damit
- * die Lambda-Funktion sie per HTTP laden kann), rendert über Remotion
- * Lambda und liefert das fertige Video als Buffer zurück.
+ * Rendert das Video über Remotion Lambda und liefert es als Buffer zurück.
+ *
+ * Die Rohclips liegen zu diesem Zeitpunkt im Regelfall schon im Render-Bucket
+ * (gespiegelt während der Clip-Analyse). Nur falls einer fehlt, wird er hier
+ * nachgeladen - sonst würde bei jedem Render dreistellige MB-Mengen durch
+ * diese Funktion laufen.
  */
 export async function renderPromoVideo(
   hookText: string,
   scenes: RenderScene[],
 ): Promise<Buffer> {
   const bucket = bucketFromServeUrl(env.remotionServeUrl);
-  const staged: StagedClip[] = [];
 
-  try {
-    const props: PromoVideoProps = {
-      hookText,
-      scenes: [],
-    };
+  const props: PromoVideoProps = { hookText, scenes: [] };
 
-    for (const scene of scenes) {
+  for (const scene of scenes) {
+    if (!(await isClipMirrored(bucket, scene.driveFileId))) {
       const buffer = await downloadFile(scene.driveFileId);
-      const stagedClip = await stageClip(bucket, scene.driveFileId, buffer);
-      staged.push(stagedClip);
-
-      props.scenes.push({
-        src: stagedClip.url,
-        startMs: scene.startMs,
-        // Gedeckelt auf 2,5s pro Clip (Auftrag 5.2); nie länger als der
-        // tatsächlich analysierte Ausschnitt, sonst friert das letzte Bild ein.
-        durationMs: Math.min(2500, scene.endMs - scene.startMs),
-      });
+      await mirrorClip(bucket, scene.driveFileId, buffer);
     }
 
-    const { renderId, bucketName } = await renderMediaOnLambda({
-      region: env.remotionAwsRegion as any,
-      functionName: env.remotionLambdaFunctionName,
-      serveUrl: env.remotionServeUrl,
-      composition: "PromoVideo",
-      inputProps: props,
-      codec: "h264",
-      // CRF bewusst nicht gesetzt - Remotions Standard (18) bleibt erhalten,
-      // der Nutzer legt Wert auf diese Qualität.
+    props.scenes.push({
+      src: await signedClipUrl(bucket, scene.driveFileId),
+      startMs: scene.startMs,
+      // Gedeckelt auf 2,5 s pro Clip (Auftrag 5.2); nie länger als der
+      // tatsächlich analysierte Ausschnitt, sonst friert das letzte Bild ein.
+      durationMs: Math.min(2500, scene.endMs - scene.startMs),
     });
-
-    const outputUrl = await pollUntilDone(renderId, bucketName);
-    const res = await fetch(outputUrl);
-    if (!res.ok) {
-      throw new Error(`Fertiges Video konnte nicht heruntergeladen werden: ${res.status}`);
-    }
-    return Buffer.from(await res.arrayBuffer());
-  } finally {
-    // Quelldateien in Drive bleiben unangetastet (Lehre 7) - nur die
-    // befristete S3-Zwischenablage wird aufgeräumt.
-    await Promise.allSettled(staged.map((s) => unstageClip(bucket, s.key)));
   }
+
+  const { renderId, bucketName } = await renderMediaOnLambda({
+    region: env.remotionAwsRegion as any,
+    functionName: env.remotionLambdaFunctionName,
+    serveUrl: env.remotionServeUrl,
+    composition: "PromoVideo",
+    inputProps: props,
+    codec: "h264",
+    // CRF bewusst nicht gesetzt - Remotions Standard (18) bleibt erhalten,
+    // der Nutzer legt Wert auf diese Qualität.
+  });
+
+  const outputUrl = await pollUntilDone(renderId, bucketName);
+  const res = await fetch(outputUrl);
+  if (!res.ok) {
+    throw new Error(`Fertiges Video konnte nicht heruntergeladen werden: ${res.status}`);
+  }
+  return Buffer.from(await res.arrayBuffer());
 }
 
 async function pollUntilDone(renderId: string, bucketName: string): Promise<string> {
@@ -96,5 +99,7 @@ async function pollUntilDone(renderId: string, bucketName: string): Promise<stri
     await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
   }
 
-  throw new Error("Zeitüberschreitung beim Warten auf den Remotion-Lambda-Render.");
+  throw new Error(
+    "Zeitüberschreitung beim Warten auf den Remotion-Lambda-Render. Der Job wird beim nächsten Lauf erneut versucht.",
+  );
 }

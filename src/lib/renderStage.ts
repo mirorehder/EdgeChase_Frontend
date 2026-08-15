@@ -1,5 +1,5 @@
 import {
-  DeleteObjectCommand,
+  HeadObjectCommand,
   GetObjectCommand,
   PutObjectCommand,
   S3Client,
@@ -12,7 +12,14 @@ import { env } from "./env";
 // reicht dafür nicht. Statt eines zusätzlichen Objektspeichers wird der
 // S3-Bucket wiederverwendet, den Remotion Lambda für die gebündelte Website
 // ohnehin schon anlegt (REMOTION_SERVE_URL zeigt darauf).
-const STAGE_PREFIX = "promo-render-cache";
+//
+// Die Kopien bleiben liegen, statt nach jedem Render gelöscht zu werden:
+// Clips rotieren und werden immer wieder verwendet, und jeder erneute
+// Transfer würde 100-200 MB durch die Vercel-Funktion schleusen. Der
+// Speicherplatz kostet Bruchteile eines Cents pro Monat.
+const CLIP_CACHE_PREFIX = "promo-clips";
+
+const SIGNED_URL_TTL_SECONDS = 3600;
 
 let cachedClient: S3Client | null = null;
 
@@ -26,6 +33,20 @@ function s3Client(): S3Client {
     },
   });
   return cachedClient;
+}
+
+/** Ob die AWS-Zugangsdaten hinterlegt sind. Erlaubt es, die Spiegelung zu
+ *  überspringen, solange AWS noch nicht eingerichtet ist - die Clip-Analyse
+ *  soll davon nicht abhängen. */
+export function isRenderStorageConfigured(): boolean {
+  try {
+    void env.remotionAwsAccessKeyId;
+    void env.remotionAwsSecretAccessKey;
+    void env.remotionServeUrl;
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Liest den Bucket-Namen aus REMOTION_SERVE_URL (virtual-hosted- oder path-style). */
@@ -45,21 +66,36 @@ export function bucketFromServeUrl(serveUrl: string): string {
   );
 }
 
-export interface StagedClip {
-  key: string;
-  url: string;
+/** Stabiler Ablageort pro Drive-Datei - Grundlage dafür, dass ein Clip nur
+ *  einmal übertragen werden muss. */
+function clipCacheKey(driveFileId: string): string {
+  return `${CLIP_CACHE_PREFIX}/${driveFileId}.mp4`;
 }
 
-/** Lädt einen Rohclip temporär in den Render-Bucket und liefert eine zeitlich befristete Download-URL. */
-export async function stageClip(
+async function objectExists(bucket: string, key: string): Promise<boolean> {
+  try {
+    await s3Client().send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Legt einen Clip im Render-Bucket ab, falls er dort noch nicht liegt.
+ *
+ * Wird bereits bei der Clip-Analyse aufgerufen, wo die Daten ohnehin im
+ * Speicher liegen - dann fällt beim späteren Rendern kein Transfer mehr an.
+ */
+export async function mirrorClip(
   bucket: string,
   driveFileId: string,
   buffer: Buffer,
-): Promise<StagedClip> {
-  const key = `${STAGE_PREFIX}/${driveFileId}-${Date.now()}.mp4`;
-  const client = s3Client();
+): Promise<string> {
+  const key = clipCacheKey(driveFileId);
+  if (await objectExists(bucket, key)) return key;
 
-  await client.send(
+  await s3Client().send(
     new PutObjectCommand({
       Bucket: bucket,
       Key: key,
@@ -67,18 +103,19 @@ export async function stageClip(
       ContentType: "video/mp4",
     }),
   );
-
-  const url = await getSignedUrl(
-    client,
-    new GetObjectCommand({ Bucket: bucket, Key: key }),
-    { expiresIn: 3600 },
-  );
-
-  return { key, url };
+  return key;
 }
 
-/** Räumt einen zwischengelagerten Clip nach dem Render wieder weg. */
-export async function unstageClip(bucket: string, key: string): Promise<void> {
-  const client = s3Client();
-  await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
+/** Ob für diesen Clip bereits eine Kopie im Render-Bucket liegt. */
+export async function isClipMirrored(bucket: string, driveFileId: string): Promise<boolean> {
+  return objectExists(bucket, clipCacheKey(driveFileId));
+}
+
+/** Befristete Download-URL, über die Remotion Lambda den Clip lädt. */
+export async function signedClipUrl(bucket: string, driveFileId: string): Promise<string> {
+  return getSignedUrl(
+    s3Client(),
+    new GetObjectCommand({ Bucket: bucket, Key: clipCacheKey(driveFileId) }),
+    { expiresIn: SIGNED_URL_TTL_SECONDS },
+  );
 }
