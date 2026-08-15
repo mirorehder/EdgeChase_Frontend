@@ -47,12 +47,41 @@ und beide Connection-Strings selbst hinterlegen (der direkte ist der ohne
 2. Unter „IAM & Verwaltung" > „Dienstkonten" ein neues Dienstkonto anlegen,
    JSON-Schlüssel erzeugen und herunterladen.
 3. Den EdgeChase-Ordner für die E-Mail-Adresse des Dienstkontos freigeben
-   (`xyz@projekt.iam.gserviceaccount.com`), Rolle **Bearbeiter**. Eine
-   Freigabe auf dem Wurzelordner genügt - sie vererbt sich auf alle
-   Unterordner inklusive des Zielordners.
+   (`xyz@projekt.iam.gserviceaccount.com`), Rolle **Betrachter** genügt.
+   Eine Freigabe auf dem Wurzelordner vererbt sich auf alle Unterordner.
 4. Den kompletten Inhalt der heruntergeladenen JSON-Datei einzeilig als
    `GOOGLE_SERVICE_ACCOUNT_JSON` hinterlegen (z.B. `cat key.json | jq -c .`).
-5. Die Ordner-IDs sind bereits in `.env.example` eingetragen.
+
+Das Dienstkonto wird **ausschliesslich zum Lesen** verwendet.
+
+### 2b. OAuth für den Upload
+
+Dienstkonten haben kein Speicherkontingent und können in Drive nichts
+anlegen - jeder Upload scheitert mit „Service Accounts do not have storage
+quota", auch in einem Ordner mit Bearbeiter-Freigabe. Nur Shared Drives
+umgehen das, die es aber erst mit Google Workspace gibt. Der Upload läuft
+deshalb per OAuth im Namen des Nutzers:
+
+1. In der Cloud Console einen **OAuth-Client vom Typ „Desktop-App"** anlegen,
+   Client-ID und -Schlüssel übernehmen.
+2. Den **Zustimmungsbildschirm veröffentlichen** („In Produktion"). Im
+   Testmodus macht Google das Refresh-Token nach sieben Tagen ungültig.
+   Da nur `drive.file` angefordert wird - ein nicht sensibler Bereich -
+   ist dafür kein Überprüfungsverfahren nötig.
+3. Refresh-Token einmalig holen:
+   ```bash
+   GOOGLE_OAUTH_CLIENT_ID=... GOOGLE_OAUTH_CLIENT_SECRET=... \
+     npx tsx scripts/oauth-url.ts            # Link öffnen, bestätigen
+   GOOGLE_OAUTH_CLIENT_ID=... GOOGLE_OAUTH_CLIENT_SECRET=... \
+     npx tsx scripts/oauth-url.ts <code>     # Code aus der Adresszeile
+   ```
+
+Den Zielordner legt die Anwendung selbst an (Name aus
+`DRIVE_OUTPUT_FOLDER_NAME`, Standard „EdgeChase Promo-Videos"). Das ist
+kein Komfort, sondern Notwendigkeit: mit `drive.file` sieht sie nur, was
+sie selbst erzeugt hat - ein von Hand angelegter Ordner wäre unsichtbar
+und der Upload dorthin schlüge fehl. Verschieben lässt er sich hinterher
+beliebig.
 
 ### Ordnerstruktur des Rohmaterials
 
@@ -135,15 +164,19 @@ lässt sich die Kette nicht Ende-zu-Ende an echten Daten nachweisen. Bisher
 geprüft:
 
 - ✅ Projekt baut fehlerfrei (`npm run build`, `npm run typecheck`)
-- ✅ Prisma-Schema erzeugt den Client wie spezifiziert
 - ✅ Remotion-Komposition rendert korrekt: Text-Overlay (mehrzeiliger
   Umbruch, weiß mit schwarzer Kontur, mittig, respektiert 84%-Breitengrenze)
   wurde als Standbild gegen hellen und dunklen Hintergrund geprüft
-- ⏳ Drive-Zugriff (Listen/Download/Upload mit Service-Account), Gemini-
-  Clip-Analyse, Remotion-Lambda-Render mit echtem Videomaterial und der
-  tägliche Cron-Lauf sind fertig implementiert, aber noch nicht gegen echte
-  Zugangsdaten geprüft - das sollte vor dem produktiven Einsatz einmal
-  vollständig durchlaufen werden (Auftrag Abschnitt 8, Schritte 1-6).
+- ✅ **Schritt 1** an echten Daten: 571 Clips aus 20 Ordnern werden
+  rekursiv gelistet (inkl. Ordnerzuordnung und Laufzeiten, ohne
+  macOS-Schattendateien), eine Testdatei landet im selbst angelegten
+  Zielordner und wird dort wiedergefunden (`scripts/verify-drive.ts`)
+- 🔄 **Schritt 2** läuft: Analyse liefert brauchbare Beschreibungen und
+  plausible Ausschnitte (`scripts/verify-analysis.ts`), die inhaltliche
+  Gegenprüfung durch den Nutzer steht noch aus
+- ⏳ Rendern über Remotion Lambda, Drive-Upload im Gesamtablauf und der
+  tägliche Cron-Lauf sind implementiert, aber noch nicht an echten Daten
+  nachgewiesen (Auftrag Abschnitt 8, Schritte 4-6)
 
 ## Bekannte Kostenpunkte
 
