@@ -21,7 +21,10 @@ export function TriggerButtons() {
         text:
           kind === "trigger"
             ? `Video-Job gestartet (${data.jobId}).`
-            : `Abgleich fertig: ${data.syncResult.newlyAdded} neue Clips, ${data.analyzed.length} analysiert.`,
+            : `Abgleich fertig: ${data.syncResult.newlyAdded} neue Clips, ${data.analyzed.length} analysiert.` +
+              (data.remaining > 0
+                ? ` Noch ${data.remaining} offen - Abgleich erneut auslösen.`
+                : ""),
         error: false,
       });
       router.refresh();

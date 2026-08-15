@@ -8,10 +8,12 @@ import { hookTextToFileName } from "./filename";
 // Clips mit älterer Version werten sich dann automatisch neu aus.
 export const CURRENT_ANALYSIS_VERSION = 1;
 
-// Begrenzt, wie viele Clips ein einzelner Cron-Lauf neu analysiert - sonst
-// könnte ein großer Rückstand die Laufzeit der Funktion sprengen. Ein nicht
-// geschaffter Rest wird beim nächsten Lauf fortgesetzt.
-const ANALYZE_BATCH_LIMIT = 15;
+// Begrenzt, wie viele Clips ein einzelner Lauf neu analysiert. Pro Clip fallen
+// Download aus Drive (100-200 MB), Upload zu Gemini und dessen Verarbeitung an
+// - bei Vercels Laufzeitgrenze von 300 s sind das nur wenige pro Aufruf. Der
+// Rest wird beim nächsten Lauf fortgesetzt; für einen grossen Anfangsbestand
+// den Abgleich im Dashboard mehrfach auslösen.
+const ANALYZE_BATCH_LIMIT = 3;
 
 const APPAREL_SCORE_THRESHOLD = 0.5;
 const CANDIDATE_POOL_SIZE = 12;
@@ -58,6 +60,16 @@ export async function syncClipLibrary(): Promise<SyncResult> {
   }
 
   return { totalInDrive: driveFiles.length, newlyAdded: newFiles.length };
+}
+
+/** Wie viele Clips noch auf ihre Analyse warten - damit die Oberfläche zeigen
+ *  kann, ob ein weiterer Durchlauf nötig ist. */
+export async function countUnanalyzedClips(): Promise<number> {
+  return prisma.clip.count({
+    where: {
+      OR: [{ analysisVersion: null }, { analysisVersion: { not: CURRENT_ANALYSIS_VERSION } }],
+    },
+  });
 }
 
 export interface AnalyzedClipSummary {

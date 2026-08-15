@@ -1,4 +1,4 @@
-import { GoogleGenAI, Type } from "@google/genai";
+import { FileState, GoogleGenAI, Type, type File as GenAIFile } from "@google/genai";
 import { env } from "./env";
 
 const MODEL = "gemini-3.1-flash-lite";
@@ -13,8 +13,47 @@ const ANALYSIS_FPS = 9;
 // gezeigt werden.
 const MAX_EXCERPT_MS = 4000;
 
+// Wartezeit, bis ein hochgeladenes Video serverseitig verarbeitet ist.
+const FILE_PROCESSING_TIMEOUT_MS = 3 * 60 * 1000;
+const FILE_POLL_INTERVAL_MS = 2000;
+
 function client() {
   return new GoogleGenAI({ apiKey: env.geminiApiKey });
+}
+
+/**
+ * Lädt einen Clip über die Files-API hoch statt ihn in die Anfrage
+ * einzubetten.
+ *
+ * Direkt eingebettete Daten sind auf rund 20 MB Gesamtanfrage begrenzt, und
+ * die dafür nötige Base64-Kodierung bläht die Daten nochmals um ein Drittel
+ * auf. Das Rohmaterial hier liegt bei 100-200 MB pro Clip - eingebettet
+ * würde jede Analyse scheitern.
+ */
+async function uploadForAnalysis(
+  ai: GoogleGenAI,
+  buffer: Buffer,
+  mimeType: string,
+): Promise<GenAIFile> {
+  let file = await ai.files.upload({
+    file: new Blob([new Uint8Array(buffer)], { type: mimeType }),
+    config: { mimeType },
+  });
+
+  // Videos sind nach dem Upload zunächst PROCESSING und können erst danach
+  // referenziert werden.
+  const deadline = Date.now() + FILE_PROCESSING_TIMEOUT_MS;
+  while (file.state === FileState.PROCESSING && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, FILE_POLL_INTERVAL_MS));
+    file = await ai.files.get({ name: file.name! });
+  }
+
+  if (file.state !== FileState.ACTIVE) {
+    throw new Error(
+      `Gemini konnte den Clip nicht verarbeiten (Status: ${file.state ?? "unbekannt"}).`,
+    );
+  }
+  return file;
 }
 
 export interface ClipAnalysis {
@@ -53,37 +92,46 @@ Bewerte apparelScore (0-1): wie gut und wie lange ist die getragene Kleidung kla
 
 Wähle den besten zusammenhängenden Ausschnitt von höchstens 4 Sekunden (startMs/endMs, Millisekunden ab Clipbeginn) - die Stelle, an der die Kleidung am besten zu sehen ist und am meisten passiert. Rohmaterial beginnt fast immer mit Vorbereitung: vermeide die ersten Sekunden, außer der Clip ist insgesamt sehr kurz. Bevorzuge eine Stelle aus der Mitte oder zweiten Hälfte.`;
 
-  const response = await ai.models.generateContent({
-    model: MODEL,
-    contents: [
-      {
-        role: "user",
-        parts: [
-          {
-            inlineData: { mimeType, data: buffer.toString("base64") },
-            videoMetadata: { fps: ANALYSIS_FPS },
-          },
-          { text: prompt },
-        ],
-      },
-    ],
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          description: { type: Type.STRING },
-          apparelScore: { type: Type.NUMBER },
-          startMs: { type: Type.INTEGER },
-          endMs: { type: Type.INTEGER },
-        },
-        required: ["description", "apparelScore", "startMs", "endMs"],
-      },
-    },
-  });
+  const uploaded = await uploadForAnalysis(ai, buffer, mimeType);
 
-  const raw = JSON.parse(response.text ?? "{}") as Partial<ClipAnalysis>;
-  return correctAnalysis(raw, durationMs);
+  try {
+    const response = await ai.models.generateContent({
+      model: MODEL,
+      contents: [
+        {
+          role: "user",
+          parts: [
+            {
+              fileData: { fileUri: uploaded.uri!, mimeType: uploaded.mimeType ?? mimeType },
+              videoMetadata: { fps: ANALYSIS_FPS },
+            },
+            { text: prompt },
+          ],
+        },
+      ],
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            description: { type: Type.STRING },
+            apparelScore: { type: Type.NUMBER },
+            startMs: { type: Type.INTEGER },
+            endMs: { type: Type.INTEGER },
+          },
+          required: ["description", "apparelScore", "startMs", "endMs"],
+        },
+      },
+    });
+
+    const raw = JSON.parse(response.text ?? "{}") as Partial<ClipAnalysis>;
+    return correctAnalysis(raw, durationMs);
+  } finally {
+    // Gemini löscht hochgeladene Dateien zwar nach 48 Stunden selbst, aber das
+    // Kontingent gilt pro Projekt - bei einem Rückstand vieler Clips würde es
+    // sonst volllaufen.
+    await ai.files.delete({ name: uploaded.name! }).catch(() => {});
+  }
 }
 
 /**
