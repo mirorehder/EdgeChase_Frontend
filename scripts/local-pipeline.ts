@@ -294,13 +294,65 @@ async function commandRenderLambda() {
   console.log(`LOCAL_OUTPUT=${out}`);
 }
 
+/**
+ * Rendert eine von Hand zusammengestellte Auswahl mit vorgegebenem Text.
+ * Gedacht zum Ausprobieren von Textgestaltungen an echtem Material.
+ *
+ *   HOOK_TEXT="..." TEXT_STYLE=reference \
+ *   npx tsx scripts/local-pipeline.ts custom IMG_8936 IMG_8917 ...
+ */
+async function commandCustom(nameFragments: string[]) {
+  const { renderPromoVideo } = await import("../src/lib/render");
+  const cache = readCache();
+
+  const chosen = nameFragments.map((fragment) => {
+    const clip = cache.find((c) => c.name.includes(fragment));
+    if (!clip) throw new Error(`Kein analysierter Clip passt zu "${fragment}".`);
+    return clip;
+  });
+
+  const hookText = process.env.HOOK_TEXT;
+  if (!hookText) throw new Error("HOOK_TEXT setzen.");
+  const textStyle = (process.env.TEXT_STYLE ?? "banner") as "banner" | "reference";
+
+  const seconds = sceneSeconds(chosen.map((c) => Math.max(0.5, (c.endMs - c.startMs) / 1000)));
+  console.log(`Stil:  ${textStyle}`);
+  console.log(`Clips: ${chosen.map((c, i) => `${c.name} (${seconds[i].toFixed(1)}s)`).join(", ")}`);
+  console.log(`Länge: ${seconds.reduce((a, b) => a + b, 0).toFixed(1)}s\n`);
+
+  const startedAt = Date.now();
+  const buffer = await renderPromoVideo(
+    hookText,
+    chosen.map((c, i) => ({
+      clipId: c.driveFileId,
+      driveFileId: c.driveFileId,
+      startMs: c.startMs,
+      endMs: c.startMs + Math.round(seconds[i] * 1000),
+    })),
+    textStyle,
+  );
+  console.log(
+    `Render fertig: ${(buffer.length / 1_000_000).toFixed(1)} MB in ${((Date.now() - startedAt) / 1000).toFixed(0)}s`,
+  );
+
+  const fileName = hookTextToFileName(hookText);
+  const upload = await uploadToOutputFolderWithRetry(fileName, buffer);
+  console.log(`Hochgeladen als ${fileName}`);
+  console.log(`Link: ${upload.webViewLink}`);
+
+  const out = path.join(os.tmpdir(), fileName);
+  fs.writeFileSync(out, buffer);
+  console.log(`LOCAL_OUTPUT=${out}`);
+}
+
 async function main() {
   const command = process.argv[2];
   if (command === "analyze") return commandAnalyze();
   if (command === "compose") return commandCompose(Number(process.argv[3] ?? 5));
   if (command === "render") return commandRender();
   if (command === "lambda") return commandRenderLambda();
-  throw new Error("Befehl fehlt: analyze | compose | render | lambda");
+  if (command === "custom") return commandCustom(process.argv.slice(3));
+  throw new Error("Befehl fehlt: analyze | compose | render | lambda | custom");
 }
 
 main().catch((err) => {

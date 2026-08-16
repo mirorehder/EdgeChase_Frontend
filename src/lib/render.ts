@@ -45,10 +45,11 @@ const POLL_TIMEOUT_MS = 210_000;
 export async function renderPromoVideo(
   hookText: string,
   scenes: RenderScene[],
+  textStyle?: "banner" | "reference",
 ): Promise<Buffer> {
   const bucket = bucketFromServeUrl(env.remotionServeUrl);
 
-  const props: PromoVideoProps = { hookText, scenes: [] };
+  const props: PromoVideoProps = { hookText, scenes: [], textStyle };
 
   for (const scene of scenes) {
     if (!(await isClipMirrored(bucket, scene.driveFileId))) {
