@@ -74,6 +74,15 @@ model PromoVideo {
   /// Der erzeugte Hook-Text, wie er im Video steht.
   hookText String
 
+  /// Textgestaltung des Overlays: "banner" (kurzer Hook, grosse Schrift) oder
+  /// "reference" (laengerer Fliesstext, abgerundete Schrift, starke Kontur).
+  /// Leer bedeutet die Voreinstellung.
+  textStyle String?
+
+  /// Wortlaut der Anweisung, aus der dieses Video entstanden ist - leer bei
+  /// den automatischen Tageslaeufen.
+  requestedVia String?
+
   /// Verwendete Clips in Reihenfolge: [{ clipId, startMs, endMs, seconds }]
   scenes Json
 

@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db";
 import { CURRENT_ANALYSIS_VERSION, type ComposedScene } from "@/lib/pipeline";
 import { TriggerButtons } from "./TriggerButtons";
 import { LiveActivity } from "./LiveActivity";
+import { VideoChat } from "./VideoChat";
 
 export const dynamic = "force-dynamic";
 
@@ -63,6 +64,8 @@ export default async function DashboardPage() {
 
       <TriggerButtons />
 
+      <VideoChat />
+
       <LiveActivity />
 
       <h2>Erzeugte Videos</h2>
@@ -93,7 +96,12 @@ export default async function DashboardPage() {
                       <div className="clip-list">Versuch {job.attempts}</div>
                     )}
                   </td>
-                  <td className="hook-text">{job.hookText}</td>
+                  <td className="hook-text">
+                    {job.hookText}
+                    {job.requestedVia && (
+                      <div className="clip-list">auf Zuruf: „{job.requestedVia}"</div>
+                    )}
+                  </td>
                   <td>
                     <ul className="clip-list">
                       {scenes.map((s, i) => (

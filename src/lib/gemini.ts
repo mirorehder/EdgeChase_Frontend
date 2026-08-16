@@ -219,10 +219,21 @@ const MAX_HOOK_CHARS = 80;
  * Wählt 3-4 abwechslungsreiche Clips aus den besten Kandidaten und
  * formuliert eine neue Variante des Hook-Textes.
  */
+export interface SelectionOptions {
+  /** Wie viele Clips das Video enthalten soll. */
+  desiredCount?: number;
+  /** Freitext-Wunsch zum Thema, z.B. "Parkour" oder "Shooting". */
+  themeHint?: string;
+  /** Vorgegebener Hook-Text. Ist er gesetzt, formuliert das Modell keinen eigenen. */
+  fixedHookText?: string;
+}
+
 export async function selectScenesAndHook(
   candidates: ClipCandidate[],
   recentHookTexts: string[],
+  options: SelectionOptions = {},
 ): Promise<SceneSelection> {
+  const desiredCount = Math.min(8, Math.max(2, options.desiredCount ?? 0)) || null;
   const ai = client();
 
   const candidateList = candidates
@@ -241,7 +252,7 @@ export async function selectScenesAndHook(
 Kandidaten (bereits nach "Kleidung gut erkennbar" vorgefiltert):
 ${candidateList}
 
-Wähle 3 oder 4 Clip-IDs aus dieser Liste, die zusammen abwechslungsreich wirken: unterschiedliche Orte, unterschiedliche Bewegungen, unterschiedliche Kleidungsstücke. Gib nur IDs aus der Liste zurück.
+Wähle ${desiredCount ? `genau ${desiredCount}` : "3 oder 4"} Clip-IDs aus dieser Liste, die zusammen abwechslungsreich wirken: unterschiedliche Orte, unterschiedliche Bewegungen, unterschiedliche Kleidungsstücke. Gib nur IDs aus der Liste zurück.
 
 Die Clips stammen aus verschiedenen Ordnern, deren Namen das jeweilige Thema angeben (z.B. Parkour, Rooftop, Training). Nutze das als Kontext: die Clips eines Videos sollen thematisch zueinander passen und einen erkennbaren roten Faden haben - vermeide es, thematisch unpassende Clips zu mischen. Innerhalb dieses Themas dann für Abwechslung sorgen.
 
@@ -253,7 +264,15 @@ Beispiele für Ton und Länge (nicht wörtlich übernehmen):
 ${HOOK_EXAMPLES.map((e) => `- ${e}`).join("\n")}
 
 Diese Formulierungen wurden zuletzt schon verwendet - der neue Text darf keiner davon wörtlich oder nahezu wörtlich gleichen:
-${recentList}`;
+${recentList}${
+    options.themeHint
+      ? `\n\nDer Nutzer wünscht thematisch: ${options.themeHint}. Richte die Clipauswahl danach aus.`
+      : ""
+  }${
+    options.fixedHookText
+      ? `\n\nDer Hook-Text ist bereits vorgegeben und darf NICHT verändert werden. Gib ihn unverändert zurück:\n${options.fixedHookText}`
+      : ""
+  }`;
 
   async function ask(extraInstruction: string): Promise<Partial<SceneSelection>> {
     const response = await ai.models.generateContent({
@@ -276,6 +295,15 @@ ${recentList}`;
 
   let raw = await ask("");
 
+  if (options.fixedHookText) {
+    // Vom Nutzer vorgegebener Text: unverändert übernehmen, auch wenn er
+    // länger ist als die selbst erzeugten. Er hat ihn so gewollt.
+    return {
+      ...validateSelection({ ...raw, hookText: options.fixedHookText }, candidates),
+      hookText: options.fixedHookText,
+    };
+  }
+
   // Die Längenvorgabe im Prompt wird nicht zuverlässig befolgt. Ein zweiter
   // Versuch mit deutlicherer Ansage ist billiger als ein unlesbares Video.
   if ((raw.hookText?.trim().length ?? 0) > MAX_HOOK_CHARS) {
@@ -284,21 +312,27 @@ ${recentList}`;
     );
   }
 
-  return validateSelection(raw, candidates);
+  return validateSelection(raw, candidates, desiredCount);
 }
 
 function validateSelection(
   raw: Partial<SceneSelection>,
   candidates: ClipCandidate[],
+  desiredCount: number | null = null,
 ): SceneSelection {
+  const cap = desiredCount ?? 4;
   const candidateIds = new Set(candidates.map((c) => c.id));
   const selected = (raw.selectedClipIds ?? []).filter((id) => candidateIds.has(id));
-  const deduped = Array.from(new Set(selected)).slice(0, 4);
+  const deduped = Array.from(new Set(selected)).slice(0, cap);
 
-  // Fällt die Modellantwort aus (leer, ungültige IDs), auf die ältesten
-  // Kandidaten zurückfallen statt den Job scheitern zu lassen.
-  const selectedClipIds =
-    deduped.length >= 3 ? deduped : candidates.slice(0, 4).map((c) => c.id);
+  // Liefert das Modell zu wenige gültige IDs, mit den ältesten Kandidaten
+  // auffüllen statt den Auftrag scheitern zu lassen.
+  const filled = [...deduped];
+  for (const candidate of candidates) {
+    if (filled.length >= (desiredCount ?? 3)) break;
+    if (!filled.includes(candidate.id)) filled.push(candidate.id);
+  }
+  const selectedClipIds = filled.slice(0, cap);
 
   // Zeilenumbrüche vereinheitlichen: das Modell liefert den Hook gelegentlich
   // als mehrzeiligen Block. Den Umbruch bestimmt aber das Overlay anhand der
@@ -309,4 +343,146 @@ function validateSelection(
     proposed && proposed.length <= MAX_HOOK_CHARS ? proposed : HOOK_EXAMPLES[0];
 
   return { selectedClipIds, hookText };
+}
+
+// ---------------------------------------------------------------------------
+// Dialog: aus einer frei formulierten Anweisung eine Videobeschreibung machen
+// ---------------------------------------------------------------------------
+
+export interface ChatTurn {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export interface VideoSpec {
+  /** Wortlaut des Overlays. Zeilenumbrüche werden übernommen. */
+  hookText: string;
+  textStyle: "banner" | "reference";
+  clipCount: number;
+  maxSecondsPerScene: number;
+  /** Thematischer Wunsch für die Clipauswahl, leer wenn egal. */
+  themeHint: string;
+  /** Namen konkret gewünschter Clips; leer bedeutet automatische Auswahl. */
+  clipNames: string[];
+}
+
+export interface ChatResult {
+  status: "question" | "ready";
+  /** Antwort an den Nutzer, auf Deutsch. */
+  reply: string;
+  spec?: VideoSpec;
+}
+
+export interface ChatClipSummary {
+  name: string;
+  folderName: string;
+  apparelScore: number;
+  description: string;
+}
+
+/**
+ * Wertet den bisherigen Dialog aus: entweder fehlt etwas Wesentliches, dann
+ * kommt genau eine Rückfrage zurück - oder die Vorgaben reichen, dann eine
+ * vollständige Videobeschreibung.
+ *
+ * Bewusst zurückhaltend beim Nachfragen: Für fast alles gibt es sinnvolle
+ * Voreinstellungen, und wer "mach ein Video" schreibt, will nicht durch einen
+ * Fragebogen. Gefragt wird nur, wenn eine Angabe mehrdeutig ist oder der
+ * Nutzer erkennbar selbst bestimmen möchte.
+ */
+export async function interpretChatRequest(
+  turns: ChatTurn[],
+  clips: ChatClipSummary[],
+  recentHookTexts: string[],
+): Promise<ChatResult> {
+  const ai = client();
+
+  const clipList = clips
+    .map(
+      (c) =>
+        `- ${c.name} | Ordner: ${c.folderName} | Kleidung: ${c.apparelScore.toFixed(2)} | ${c.description}`,
+    )
+    .join("\n");
+
+  const dialog = turns
+    .map((t) => `${t.role === "user" ? "NUTZER" : "SYSTEM"}: ${t.content}`)
+    .join("\n");
+
+  const prompt = `Du hilfst dabei, ein Werbevideo für die Streetwear-/Sport-Marke EdgeChase zusammenzustellen. Der Nutzer beschreibt auf Deutsch, was er möchte. Deine Aufgabe ist es, daraus die Einstellungen abzuleiten - oder gezielt nachzufragen.
+
+EINSTELLBAR SIND:
+- hookText: der Text, der im Video steht. IMMER auf Englisch, auch wenn der Nutzer deutsch schreibt. Zeilenumbrüche mit \\n sind erlaubt und werden als gesetzte Umbrüche übernommen.
+- textStyle: "banner" für kurze, grosse Schrift im oberen Bilddrittel (bis ca. 80 Zeichen). "reference" für längeren Fliesstext über mehrere Zeilen in abgerundeter Schrift mit kräftiger Kontur (bis ca. 200 Zeichen).
+- clipCount: 2 bis 8 Clips.
+- maxSecondsPerScene: 1.5 bis 4.0 Sekunden je Clip. Voreinstellung 2.5.
+- themeHint: thematischer Wunsch für die Auswahl, z.B. "Parkour", "Shooting", "Wasser". Leer lassen, wenn egal.
+- clipNames: Namen konkret gewünschter Clips aus der Liste unten. Leer lassen für automatische Auswahl.
+
+VERFÜGBARE CLIPS:
+${clipList}
+
+ZULETZT VERWENDETE HOOK-TEXTE (nicht wiederholen, falls du selbst einen formulierst):
+${recentHookTexts.length ? recentHookTexts.map((t) => `- ${t}`).join("\n") : "(noch keine)"}
+
+BISHERIGER DIALOG:
+${dialog}
+
+REGELN:
+- Frage nur nach, wenn eine Angabe des Nutzers mehrdeutig ist, wenn er etwas verlangt, das die Clips nicht hergeben, oder wenn er erkennbar selbst bestimmen will, es aber noch nicht getan hat. Stelle dann GENAU EINE Frage.
+- Frage nicht nach Dingen, für die es eine sinnvolle Voreinstellung gibt, solange der Nutzer nichts Gegenteiliges andeutet.
+- Wenn der Nutzer gar keinen Text vorgibt, formuliere selbst einen. Kernaussage bleibt immer: die ersten 30 Personen, die ihren Namen kommentieren, bekommen einen persönlichen Rabattcode.
+- Wählt der Nutzer viel Text, nimm textStyle "reference"; bei einem knappen Satz "banner".
+- Beziehe dich in der Antwort konkret auf die Clips, die du gewählt hast.
+- reply ist immer auf Deutsch, kurz und sachlich.
+
+Antworte mit status "question" und einer Frage in reply, ODER mit status "ready", einer kurzen Zusammenfassung in reply und der vollständigen spec.`;
+
+  const response = await ai.models.generateContent({
+    model: MODEL,
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    config: {
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          status: { type: Type.STRING },
+          reply: { type: Type.STRING },
+          spec: {
+            type: Type.OBJECT,
+            properties: {
+              hookText: { type: Type.STRING },
+              textStyle: { type: Type.STRING },
+              clipCount: { type: Type.INTEGER },
+              maxSecondsPerScene: { type: Type.NUMBER },
+              themeHint: { type: Type.STRING },
+              clipNames: { type: Type.ARRAY, items: { type: Type.STRING } },
+            },
+            required: ["hookText", "textStyle", "clipCount", "maxSecondsPerScene", "themeHint", "clipNames"],
+          },
+        },
+        required: ["status", "reply"],
+      },
+    },
+  });
+
+  const raw = JSON.parse(response.text ?? "{}") as Partial<ChatResult>;
+
+  if (raw.status !== "ready" || !raw.spec) {
+    return { status: "question", reply: raw.reply?.trim() || "Was genau soll im Video zu sehen sein?" };
+  }
+
+  const spec = raw.spec;
+  return {
+    status: "ready",
+    reply: raw.reply?.trim() || "Alles klar, ich erzeuge das Video.",
+    spec: {
+      // Eigene Zeilenumbrüche bleiben erhalten, überflüssiger Leerraum nicht.
+      hookText: spec.hookText.replace(/[ \t]+/g, " ").replace(/ ?\n ?/g, "\n").trim(),
+      textStyle: spec.textStyle === "reference" ? "reference" : "banner",
+      clipCount: Math.min(8, Math.max(2, Math.round(spec.clipCount || 4))),
+      maxSecondsPerScene: Math.min(4, Math.max(1.5, spec.maxSecondsPerScene || 2.5)),
+      themeHint: (spec.themeHint ?? "").trim(),
+      clipNames: (spec.clipNames ?? []).filter(Boolean),
+    },
+  };
 }

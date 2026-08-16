@@ -1,6 +1,11 @@
 import { prisma } from "./db";
 import { listSourceClips, downloadFile, uploadToOutputFolderWithRetry } from "./drive";
-import { analyzeClip, selectScenesAndHook, type ClipCandidate } from "./gemini";
+import {
+  analyzeClip,
+  selectScenesAndHook,
+  type ClipCandidate,
+  type VideoSpec,
+} from "./gemini";
 import { renderPromoVideo } from "./render";
 import {
   bucketFromServeUrl,
@@ -176,8 +181,11 @@ export interface ComposedVideo {
  * mindestens 10s, wird der Rest auf die Szenen verteilt, die noch
  * ungenutzten Spielraum im analysierten Fenster haben.
  */
-function computeSceneSeconds(capacitiesSeconds: number[]): number[] {
-  const seconds = capacitiesSeconds.map((cap) => Math.min(MAX_SCENE_DISPLAY_SECONDS, cap));
+function computeSceneSeconds(
+  capacitiesSeconds: number[],
+  maxPerScene: number = MAX_SCENE_DISPLAY_SECONDS,
+): number[] {
+  const seconds = capacitiesSeconds.map((cap) => Math.min(maxPerScene, cap));
   let total = seconds.reduce((a, b) => a + b, 0);
   let remaining = MIN_TOTAL_DURATION_SECONDS - total;
 
@@ -198,15 +206,30 @@ function computeSceneSeconds(capacitiesSeconds: number[]): number[] {
   return seconds;
 }
 
+export interface ComposeOptions {
+  clipCount?: number;
+  maxSecondsPerScene?: number;
+  themeHint?: string;
+  fixedHookText?: string;
+  /** Namen konkret gewünschter Clips. Treffer werden gesetzt, der Rest wird ergänzt. */
+  clipNames?: string[];
+}
+
 /** Wählt Clips aus und formuliert den Hook-Text - siehe Auftrag 5.2. */
-export async function composeVideo(): Promise<ComposedVideo> {
+export async function composeVideo(options: ComposeOptions = {}): Promise<ComposedVideo> {
+  const wantedCount = options.clipCount ?? 0;
+
+  // Bei einer gewünschten Anzahl muss der Kandidatenkreis mitwachsen, sonst
+  // kann die Auswahl sie gar nicht erfüllen.
+  const poolSize = Math.max(CANDIDATE_POOL_SIZE, wantedCount * 3);
+
   const candidates = await prisma.clip.findMany({
     where: {
       apparelScore: { gte: APPAREL_SCORE_THRESHOLD },
       analysisVersion: CURRENT_ANALYSIS_VERSION,
     },
     orderBy: { lastUsedAt: { sort: "asc", nulls: "first" } },
-    take: CANDIDATE_POOL_SIZE,
+    take: poolSize,
   });
 
   if (candidates.length < 3) {
@@ -228,21 +251,47 @@ export async function composeVideo(): Promise<ComposedVideo> {
     folderName: c.sourceFolderName ?? "unbekannt",
   }));
 
+  // Namentlich gewünschte Clips zuerst: sie sollen gesetzt sein, unabhängig
+  // davon, wie das Modell den Rest wählt.
+  const namedClips = options.clipNames?.length
+    ? await prisma.clip.findMany({
+        where: {
+          analysisVersion: CURRENT_ANALYSIS_VERSION,
+          OR: options.clipNames.map((name) => ({ name: { contains: name } })),
+        },
+      })
+    : [];
+
   const selection = await selectScenesAndHook(
     candidatePayload,
     recentVideos.map((v) => v.hookText),
+    {
+      desiredCount: wantedCount || undefined,
+      themeHint: options.themeHint || undefined,
+      fixedHookText: options.fixedHookText || undefined,
+    },
   );
 
-  const selectedClips = selection.selectedClipIds
-    .map((id) => candidates.find((c) => c.id === id))
-    .filter((c): c is (typeof candidates)[number] => !!c);
+  const byId = new Map(candidates.map((c) => [c.id, c]));
+  for (const clip of namedClips) byId.set(clip.id, clip);
 
+  const orderedIds = [
+    ...namedClips.map((c) => c.id),
+    ...selection.selectedClipIds.filter((id) => !namedClips.some((c) => c.id === id)),
+  ];
+
+  const selectedClips = orderedIds
+    .map((id) => byId.get(id))
+    .filter((c): c is (typeof candidates)[number] => !!c)
+    .slice(0, wantedCount || undefined);
+
+  const capPerScene = options.maxSecondsPerScene ?? MAX_SCENE_DISPLAY_SECONDS;
   const capacities = selectedClips.map((c) => {
     const start = c.startMs ?? 0;
-    const end = c.endMs ?? start + MAX_SCENE_DISPLAY_SECONDS * 1000;
+    const end = c.endMs ?? start + capPerScene * 1000;
     return Math.max(0.5, (end - start) / 1000);
   });
-  const seconds = computeSceneSeconds(capacities);
+  const seconds = computeSceneSeconds(capacities, capPerScene);
 
   const scenes: ComposedScene[] = selectedClips.map((c, i) => {
     const startMs = c.startMs ?? 0;
@@ -285,6 +334,7 @@ export async function processJob(jobId: string): Promise<void> {
           startMs: s.startMs,
           endMs: s.endMs,
         })),
+        (job.textStyle as "banner" | "reference" | null) ?? undefined,
       );
 
       await logActivity(
@@ -333,6 +383,37 @@ export async function processJob(jobId: string): Promise<void> {
       if (isLastAttempt) return;
     }
   }
+}
+
+/**
+ * Legt einen Auftrag aus einer im Dialog erarbeiteten Videobeschreibung an.
+ * Gerendert wird er nicht hier - das übernimmt processJob in einem eigenen
+ * Aufruf, damit die Antwort an den Nutzer nicht minutenlang aussteht.
+ */
+export async function createJobFromSpec(
+  spec: VideoSpec,
+  requestedVia: string,
+): Promise<string> {
+  const composed = await composeVideo({
+    clipCount: spec.clipCount,
+    maxSecondsPerScene: spec.maxSecondsPerScene,
+    themeHint: spec.themeHint,
+    fixedHookText: spec.hookText,
+    clipNames: spec.clipNames,
+  });
+
+  const job = await prisma.promoVideo.create({
+    data: {
+      hookText: composed.hookText,
+      scenes: composed.scenes as unknown as object,
+      status: "queued",
+      textStyle: spec.textStyle,
+      requestedVia,
+    },
+  });
+
+  await logActivity(`Auftrag aus Anweisung angelegt: "${requestedVia}"`, { videoId: job.id });
+  return job.id;
 }
 
 /** Kompletter Tageslauf: Bibliothek abgleichen, analysieren, zusammenstellen, rendern, hochladen. */
