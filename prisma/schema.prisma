@@ -114,3 +114,28 @@ model PromoVideo {
   @@index([status])
   @@index([createdAt])
 }
+
+/// Vorgaben für den täglichen Lauf. Genau eine Zeile mit fester ID, damit
+/// sich die Einstellungen im Dashboard ändern lassen, ohne dass dafür eine
+/// neue Fassung ausgerollt werden muss.
+model DailyConfig {
+  id String @id @default("default")
+
+  /// Fester Text für das Overlay. Leer bedeutet: bei jedem Lauf neu
+  /// formulieren lassen.
+  hookText String?
+
+  /// "banner" oder "reference".
+  textStyle String @default("banner")
+
+  clipCount          Int   @default(4)
+  maxSecondsPerScene Float @default(2.5)
+
+  /// Thematischer Wunsch für die Auswahl, z.B. "Parkour". Leer = egal.
+  themeHint String?
+
+  /// Steht das auf false, legt der Zeitplan kein Video an.
+  enabled Boolean @default(true)
+
+  updatedAt DateTime @updatedAt
+}

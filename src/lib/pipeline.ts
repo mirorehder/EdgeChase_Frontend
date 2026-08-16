@@ -15,6 +15,7 @@ import {
 import { env } from "./env";
 import { hookTextToFileName } from "./filename";
 import { logActivity } from "./activity";
+import { getDailySettings } from "./dailyConfig";
 
 // Hochzählen, wenn sich Analyse-Felder oder der Analyse-Prompt ändern -
 // Clips mit älterer Version werten sich dann automatisch neu aus.
@@ -460,19 +461,46 @@ export async function createJobFromSpec(
   return job.id;
 }
 
+// Der Tageslauf muss samt Render in Vercels 300-Sekunden-Fenster passen.
+// Ein Render dauert ein bis zweieinhalb Minuten, eine Clip-Analyse rund 45
+// Sekunden - deshalb wird im Zeitplan nur eine Handvoll neuer Clips
+// mitgenommen. Ein grösserer Rückstand wird über den Abgleich im Dashboard
+// abgearbeitet, wo kein Render hinterherkommt.
+const DAILY_ANALYZE_LIMIT = 2;
+
 /** Kompletter Tageslauf: Bibliothek abgleichen, analysieren, zusammenstellen, rendern, hochladen. */
-export async function runDailyJob(): Promise<string> {
+export async function runDailyJob(): Promise<string | null> {
+  const settings = await getDailySettings();
+
+  if (!settings.enabled) {
+    await logActivity("Tageslauf übersprungen - im Dashboard abgeschaltet.");
+    return null;
+  }
+
   await logActivity("Tageslauf gestartet.");
   await syncClipLibrary();
-  await analyzeUnanalyzedClips();
+  await analyzeUnanalyzedClips(DAILY_ANALYZE_LIMIT);
 
-  const composed = await composeVideo();
+  const offen = await countUnanalyzedClips();
+  if (offen > 0) {
+    await logActivity(
+      `Noch ${offen} Clips ohne Analyse - sie werden an den Folgetagen nachgezogen.`,
+    );
+  }
+
+  const composed = await composeVideo({
+    clipCount: settings.clipCount,
+    maxSecondsPerScene: settings.maxSecondsPerScene,
+    themeHint: settings.themeHint || undefined,
+    fixedHookText: settings.hookText || undefined,
+  });
 
   const job = await prisma.promoVideo.create({
     data: {
       hookText: composed.hookText,
       scenes: composed.scenes as unknown as object,
       status: "queued",
+      textStyle: settings.textStyle,
     },
   });
 

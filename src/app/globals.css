@@ -493,3 +493,41 @@ tr:last-child td {
   margin-bottom: 0;
   align-items: center;
 }
+
+.daily {
+  margin: 24px 0;
+}
+
+.daily-editor {
+  padding: 12px 0 0;
+  border-top: 1px solid var(--border);
+}
+
+.daily-editor label span {
+  display: block;
+  line-height: 1.45;
+}
+
+.clip-editor select {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 9px 11px;
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.checkbox {
+  display: flex !important;
+  align-items: center;
+  gap: 9px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.checkbox input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+}

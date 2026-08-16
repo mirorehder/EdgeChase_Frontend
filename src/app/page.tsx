@@ -4,6 +4,7 @@ import { TriggerButtons } from "./TriggerButtons";
 import { LiveActivity } from "./LiveActivity";
 import { VideoChat } from "./VideoChat";
 import { ClipLibrary } from "./ClipLibrary";
+import { DailySettings } from "./DailySettings";
 
 export const dynamic = "force-dynamic";
 
@@ -64,6 +65,8 @@ export default async function DashboardPage() {
       </div>
 
       <TriggerButtons />
+
+      <DailySettings />
 
       <VideoChat />
 
