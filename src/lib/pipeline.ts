@@ -9,6 +9,7 @@ import {
 } from "./renderStage";
 import { env } from "./env";
 import { hookTextToFileName } from "./filename";
+import { logActivity } from "./activity";
 
 // Hochzählen, wenn sich Analyse-Felder oder der Analyse-Prompt ändern -
 // Clips mit älterer Version werten sich dann automatisch neu aus.
@@ -66,6 +67,9 @@ export async function syncClipLibrary(): Promise<SyncResult> {
     });
   }
 
+  await logActivity(
+    `Ordner abgeglichen: ${driveFiles.length} Clips in Drive, ${newFiles.length} neu aufgenommen.`,
+  );
   return { totalInDrive: driveFiles.length, newlyAdded: newFiles.length };
 }
 
@@ -102,7 +106,9 @@ export async function analyzeUnanalyzedClips(
 
   const results: AnalyzedClipSummary[] = [];
 
-  for (const clip of pending) {
+  const total = pending.length;
+  for (const [index, clip] of pending.entries()) {
+    await logActivity(`Analysiere ${clip.name} (${index + 1} von ${total}) ...`);
     const buffer = await downloadFile(clip.driveFileId);
     const mimeType = guessMimeType(clip.name);
 
@@ -130,6 +136,12 @@ export async function analyzeUnanalyzedClips(
         analysisVersion: CURRENT_ANALYSIS_VERSION,
       },
     });
+
+    await logActivity(
+      `${clip.name}: Kleidung ${analysis.apparelScore.toFixed(2)}, Ausschnitt ` +
+        `${(analysis.startMs / 1000).toFixed(1)}-${(analysis.endMs / 1000).toFixed(1)}s. ` +
+        analysis.description,
+    );
 
     results.push({
       clipId: clip.id,
@@ -243,6 +255,10 @@ export async function composeVideo(): Promise<ComposedVideo> {
     };
   });
 
+  await logActivity(
+    `Zusammengestellt: ${scenes.length} Clips, ` +
+      `${scenes.reduce((sum, s) => sum + s.seconds, 0).toFixed(1)}s. Hook: "${selection.hookText}"`,
+  );
   return { hookText: selection.hookText, scenes };
 }
 
@@ -256,6 +272,11 @@ export async function processJob(jobId: string): Promise<void> {
 
     try {
       const scenes = job.scenes as unknown as ComposedScene[];
+      await logActivity(
+        `Render gestartet (Versuch ${attempt} von ${MAX_RENDER_ATTEMPTS}) ...`,
+        { videoId: jobId },
+      );
+      const renderStartedAt = Date.now();
       const buffer = await renderPromoVideo(
         job.hookText,
         scenes.map((s) => ({
@@ -264,6 +285,12 @@ export async function processJob(jobId: string): Promise<void> {
           startMs: s.startMs,
           endMs: s.endMs,
         })),
+      );
+
+      await logActivity(
+        `Render fertig: ${(buffer.length / 1_000_000).toFixed(1)} MB in ` +
+          `${((Date.now() - renderStartedAt) / 1000).toFixed(0)}s. Lade nach Drive hoch ...`,
+        { videoId: jobId },
       );
 
       const fileName = hookTextToFileName(job.hookText);
@@ -283,10 +310,17 @@ export async function processJob(jobId: string): Promise<void> {
         data: { lastUsedAt: new Date() },
       });
 
+      await logActivity(`Fertig: ${fileName} liegt in Drive.`, { videoId: jobId });
       return;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       const isLastAttempt = attempt === MAX_RENDER_ATTEMPTS;
+      await logActivity(
+        isLastAttempt
+          ? `Endgültig fehlgeschlagen: ${message}`
+          : `Versuch ${attempt} fehlgeschlagen, wird wiederholt: ${message}`,
+        { level: "error", videoId: jobId },
+      );
 
       await prisma.promoVideo.update({
         where: { id: jobId },
@@ -303,6 +337,7 @@ export async function processJob(jobId: string): Promise<void> {
 
 /** Kompletter Tageslauf: Bibliothek abgleichen, analysieren, zusammenstellen, rendern, hochladen. */
 export async function runDailyJob(): Promise<string> {
+  await logActivity("Tageslauf gestartet.");
   await syncClipLibrary();
   await analyzeUnanalyzedClips();
 

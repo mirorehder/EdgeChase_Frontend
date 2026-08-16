@@ -51,6 +51,23 @@ model Clip {
   @@index([lastUsedAt])
 }
 
+/// Laufendes Protokoll dessen, was die Pipeline gerade tut.
+///
+/// Die Läufe dauern Minuten und laufen serverseitig; ohne diese Einträge
+/// sieht die Oberfläche bis zum Schluss gar nichts, und ein nächtlicher
+/// Fehlschlag hinterlässt nur eine Fehlermeldung ohne Vorgeschichte.
+model ActivityLog {
+  id      String   @id @default(cuid())
+  at      DateTime @default(now())
+  /// info | error
+  level   String   @default("info")
+  message String
+  /// Zugehöriger Job, falls der Eintrag aus einem Video-Auftrag stammt.
+  videoId String?
+
+  @@index([at])
+}
+
 model PromoVideo {
   id String @id @default(cuid())
 

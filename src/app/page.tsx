@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { CURRENT_ANALYSIS_VERSION, type ComposedScene } from "@/lib/pipeline";
 import { TriggerButtons } from "./TriggerButtons";
+import { LiveActivity } from "./LiveActivity";
 
 export const dynamic = "force-dynamic";
 
@@ -61,6 +62,8 @@ export default async function DashboardPage() {
       </div>
 
       <TriggerButtons />
+
+      <LiveActivity />
 
       <h2>Erzeugte Videos</h2>
       {jobs.length === 0 ? (
