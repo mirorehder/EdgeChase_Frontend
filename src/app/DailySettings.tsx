@@ -8,6 +8,7 @@ interface Settings {
   clipCount: number;
   maxSecondsPerScene: number;
   themeHint: string;
+  videoVolume: number;
   enabled: boolean;
 }
 
@@ -115,6 +116,17 @@ export function DailySettings() {
                 onChange={(e) =>
                   setSettings({ ...settings, maxSecondsPerScene: Number(e.target.value) })
                 }
+              />
+            </label>
+            <label>
+              Originalton (0 = stumm, 1 = normal, 2 = doppelt)
+              <input
+                type="number"
+                min={0}
+                max={4}
+                step={0.5}
+                value={settings.videoVolume}
+                onChange={(e) => setSettings({ ...settings, videoVolume: Number(e.target.value) })}
               />
             </label>
             <label>

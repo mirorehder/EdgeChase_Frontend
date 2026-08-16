@@ -88,6 +88,10 @@ model PromoVideo {
   /// den automatischen Tageslaeufen.
   requestedVia String?
 
+  /// Lautstaerke des Originaltons der Clips. 0 = stumm, 1 = unveraendert,
+  /// darueber wird verstaerkt.
+  videoVolume Float @default(1)
+
   /// Verwendete Clips in Reihenfolge: [{ clipId, startMs, endMs, seconds }]
   scenes Json
 
@@ -130,6 +134,9 @@ model DailyConfig {
 
   clipCount          Int   @default(4)
   maxSecondsPerScene Float @default(2.5)
+
+  /// Lautstaerke des Originaltons, 0 bis 4.
+  videoVolume Float @default(1)
 
   /// Thematischer Wunsch für die Auswahl, z.B. "Parkour". Leer = egal.
   themeHint String?

@@ -6,6 +6,7 @@ export interface DailySettings {
   clipCount: number;
   maxSecondsPerScene: number;
   themeHint: string;
+  videoVolume: number;
   enabled: boolean;
 }
 
@@ -27,6 +28,7 @@ const DEFAULTS: DailySettings = {
   clipCount: 6,
   maxSecondsPerScene: 2.5,
   themeHint: "",
+  videoVolume: 1,
   enabled: true,
 };
 
@@ -41,6 +43,7 @@ export async function getDailySettings(): Promise<DailySettings> {
     clipCount: row.clipCount,
     maxSecondsPerScene: row.maxSecondsPerScene,
     themeHint: row.themeHint ?? "",
+    videoVolume: row.videoVolume,
     enabled: row.enabled,
   };
 }
@@ -53,6 +56,7 @@ export async function saveDailySettings(patch: Partial<DailySettings>): Promise<
     clipCount: Math.min(8, Math.max(2, Math.round(patch.clipCount ?? current.clipCount))),
     maxSecondsPerScene: Math.min(4, Math.max(1.5, patch.maxSecondsPerScene ?? current.maxSecondsPerScene)),
     themeHint: patch.themeHint ?? current.themeHint,
+    videoVolume: Math.min(4, Math.max(0, patch.videoVolume ?? current.videoVolume)),
     enabled: patch.enabled ?? current.enabled,
   };
 

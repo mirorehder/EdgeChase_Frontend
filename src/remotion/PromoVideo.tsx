@@ -23,6 +23,8 @@ export const promoVideoSchema = z.object({
   hookText: z.string(),
   scenes: z.array(sceneSchema).min(1),
   textStyle: textStyleSchema.optional(),
+  /** Originalton der Clips, 0 (stumm) bis 1. Ohne Angabe voll hörbar. */
+  videoVolume: z.number().min(0).max(4).optional(),
 });
 
 export type PromoVideoProps = z.infer<typeof promoVideoSchema>;
@@ -194,8 +196,14 @@ const HookTextOverlay: React.FC<{ text: string; spec: TextStyleSpec }> = ({ text
   );
 };
 
-export const PromoVideo: React.FC<PromoVideoProps> = ({ hookText, scenes, textStyle }) => {
+export const PromoVideo: React.FC<PromoVideoProps> = ({
+  hookText,
+  scenes,
+  textStyle,
+  videoVolume,
+}) => {
   const { fps } = useVideoConfig();
+  const volume = videoVolume ?? 1;
   const spec = TEXT_STYLES[textStyle ?? "banner"];
   useEmbeddedFont(spec.fontFamily.startsWith("Nunito"));
   let startFrame = 0;
@@ -218,7 +226,14 @@ export const PromoVideo: React.FC<PromoVideoProps> = ({ hookText, scenes, textSt
             <OffthreadVideo
               src={scene.src}
               startFrom={startFromFrame}
-              muted
+              // Originalton der Aufnahme. Der Auftrag schliesst nur das
+              // Hinzufuegen von Musik aus - vorhandener Ton der Clips bleibt.
+              volume={volume}
+              muted={volume === 0}
+              // Ohne das ignoriert Remotion Werte ueber 1. Das Rohmaterial ist
+              // teils sehr leise (an echten Clips gemessen: Spitzen um 3 % der
+              // Vollaussteuerung), da hilft nur Verstaerken.
+              allowAmplificationDuringRender
               style={{
                 width: "100%",
                 height: "100%",

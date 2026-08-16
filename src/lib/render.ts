@@ -46,10 +46,11 @@ export async function renderPromoVideo(
   hookText: string,
   scenes: RenderScene[],
   textStyle?: "banner" | "reference",
+  videoVolume?: number,
 ): Promise<Buffer> {
   const bucket = bucketFromServeUrl(env.remotionServeUrl);
 
-  const props: PromoVideoProps = { hookText, scenes: [], textStyle };
+  const props: PromoVideoProps = { hookText, scenes: [], textStyle, videoVolume };
 
   for (const scene of scenes) {
     if (!(await isClipMirrored(bucket, scene.driveFileId))) {

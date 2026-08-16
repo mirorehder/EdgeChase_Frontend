@@ -380,6 +380,7 @@ export async function processJob(jobId: string): Promise<void> {
           endMs: s.endMs,
         })),
         (job.textStyle as "banner" | "reference" | null) ?? undefined,
+        job.videoVolume,
       );
 
       await logActivity(
@@ -501,6 +502,7 @@ export async function runDailyJob(): Promise<string | null> {
       scenes: composed.scenes as unknown as object,
       status: "queued",
       textStyle: settings.textStyle,
+      videoVolume: settings.videoVolume,
     },
   });
 
