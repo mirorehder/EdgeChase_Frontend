@@ -300,9 +300,11 @@ function validateSelection(
   const selectedClipIds =
     deduped.length >= 3 ? deduped : candidates.slice(0, 4).map((c) => c.id);
 
-  // Letzte Rückfallebene: bleibt der Text auch nach dem zweiten Versuch zu
-  // lang, lieber ein bewährtes Beispiel als ein unlesbares Overlay.
-  const proposed = raw.hookText?.trim();
+  // Zeilenumbrüche vereinheitlichen: das Modell liefert den Hook gelegentlich
+  // als mehrzeiligen Block. Den Umbruch bestimmt aber das Overlay anhand der
+  // tatsächlichen Textbreite - eigene Umbrüche im Text führen dort zu
+  // unsauberen Zeilen.
+  const proposed = raw.hookText?.replace(/\s+/g, " ").trim();
   const hookText =
     proposed && proposed.length <= MAX_HOOK_CHARS ? proposed : HOOK_EXAMPLES[0];
 

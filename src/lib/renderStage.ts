@@ -1,10 +1,8 @@
 import {
   HeadObjectCommand,
-  GetObjectCommand,
   PutObjectCommand,
   S3Client,
 } from "@aws-sdk/client-s3";
-import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { env } from "./env";
 
 // Remotion Lambda rendert in einer AWS-Umgebung und muss die Rohclips per
@@ -18,8 +16,6 @@ import { env } from "./env";
 // Transfer würde 100-200 MB durch die Vercel-Funktion schleusen. Der
 // Speicherplatz kostet Bruchteile eines Cents pro Monat.
 const CLIP_CACHE_PREFIX = "promo-clips";
-
-const SIGNED_URL_TTL_SECONDS = 3600;
 
 let cachedClient: S3Client | null = null;
 
@@ -111,11 +107,18 @@ export async function isClipMirrored(bucket: string, driveFileId: string): Promi
   return objectExists(bucket, clipCacheKey(driveFileId));
 }
 
-/** Befristete Download-URL, über die Remotion Lambda den Clip lädt. */
-export async function signedClipUrl(bucket: string, driveFileId: string): Promise<string> {
-  return getSignedUrl(
-    s3Client(),
-    new GetObjectCommand({ Bucket: bucket, Key: clipCacheKey(driveFileId) }),
-    { expiresIn: SIGNED_URL_TTL_SECONDS },
-  );
+/**
+ * URL, über die Remotion Lambda den Clip lädt.
+ *
+ * Bewusst unsigniert: Remotion reicht die Adresse durch einen internen Proxy,
+ * der die Abfrageparameter neu zusammensetzt - dabei bricht die
+ * SigV4-Signatur, und der Render scheitert mit "Failed to fetch". Der von
+ * Remotion angelegte Bucket ist ohnehin öffentlich lesbar (die gebündelte
+ * Website muss es sein), sodass eine Signatur hier nichts absichern würde.
+ *
+ * Die Adressen enthalten die Drive-Datei-ID und sind damit praktisch nicht
+ * zu erraten, aber wer eine kennt, kann den Rohclip abrufen.
+ */
+export function clipUrl(bucket: string, driveFileId: string): string {
+  return `https://${bucket}.s3.${env.remotionAwsRegion}.amazonaws.com/${clipCacheKey(driveFileId)}`;
 }

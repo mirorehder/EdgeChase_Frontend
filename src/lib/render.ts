@@ -4,7 +4,7 @@ import {
   bucketFromServeUrl,
   isClipMirrored,
   mirrorClip,
-  signedClipUrl,
+  clipUrl,
 } from "./renderStage";
 import { env } from "./env";
 import type { PromoVideoProps } from "@/remotion/PromoVideo";
@@ -17,6 +17,17 @@ export interface RenderScene {
 }
 
 const POLL_INTERVAL_MS = 3000;
+
+// Remotion verteilt einen Render auf mehrere gleichzeitige Lambda-Aufrufe.
+// Frische AWS-Konten haben aber nur ein sehr kleines Kontingent an
+// gleichzeitigen Ausführungen (oft 10 statt 1000), und Remotion braucht
+// zusätzlich einen Aufruf für die Steuerung - ohne Drosselung scheitert der
+// Render mit "Concurrency limit reached".
+//
+// Bei unseren kurzen Videos (300 Bilder) ergeben sich damit vier Teilstücke.
+// Wer sein Kontingent bei AWS erhöhen lässt, kann den Wert senken und so
+// schneller rendern.
+const FRAMES_PER_LAMBDA = Number(process.env.REMOTION_FRAMES_PER_LAMBDA ?? 80);
 
 // Vercel bricht die Funktion nach 300 s ab. Wird vorher aufgegeben, endet der
 // Job mit einer verwertbaren Fehlermeldung und wird beim nächsten Versuch
@@ -46,7 +57,7 @@ export async function renderPromoVideo(
     }
 
     props.scenes.push({
-      src: await signedClipUrl(bucket, scene.driveFileId),
+      src: clipUrl(bucket, scene.driveFileId),
       startMs: scene.startMs,
       // Gedeckelt auf 2,5 s pro Clip (Auftrag 5.2); nie länger als der
       // tatsächlich analysierte Ausschnitt, sonst friert das letzte Bild ein.
@@ -61,6 +72,7 @@ export async function renderPromoVideo(
     composition: "PromoVideo",
     inputProps: props,
     codec: "h264",
+    framesPerLambda: FRAMES_PER_LAMBDA,
     // CRF bewusst nicht gesetzt - Remotions Standard (18) bleibt erhalten,
     // der Nutzer legt Wert auf diese Qualität.
   });

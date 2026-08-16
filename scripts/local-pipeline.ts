@@ -249,12 +249,58 @@ async function commandRender() {
   }
 }
 
+/**
+ * Wie "render", aber über Remotion Lambda - also exakt der Weg, den die
+ * Anwendung später täglich geht. Nutzt bewusst renderPromoVideo aus der
+ * Pipeline statt eigener Logik, damit der Nachweis den Produktionscode trifft.
+ */
+async function commandRenderLambda() {
+  const { renderPromoVideo } = await import("../src/lib/render");
+
+  const cache = readCache();
+  const candidates = candidatesFromCache();
+  const selection = await selectScenesAndHook(candidates, []);
+  const chosen = selection.selectedClipIds
+    .map((id) => cache.find((c) => c.driveFileId === id)!)
+    .filter(Boolean);
+
+  const seconds = sceneSeconds(chosen.map((c) => Math.max(0.5, (c.endMs - c.startMs) / 1000)));
+
+  console.log(`Hook:  "${selection.hookText}" (${selection.hookText.length} Zeichen)`);
+  console.log(`Clips: ${chosen.map((c) => c.name).join(", ")}`);
+  console.log(`Länge: ${seconds.reduce((a, b) => a + b, 0).toFixed(1)}s\n`);
+
+  const startedAt = Date.now();
+  const buffer = await renderPromoVideo(
+    selection.hookText,
+    chosen.map((c, i) => ({
+      clipId: c.driveFileId,
+      driveFileId: c.driveFileId,
+      startMs: c.startMs,
+      endMs: c.startMs + Math.round(seconds[i] * 1000),
+    })),
+  );
+  console.log(
+    `Render fertig: ${(buffer.length / 1_000_000).toFixed(1)} MB in ${((Date.now() - startedAt) / 1000).toFixed(0)}s`,
+  );
+
+  const fileName = hookTextToFileName(selection.hookText);
+  const upload = await uploadToOutputFolderWithRetry(fileName, buffer);
+  console.log(`Hochgeladen als ${fileName}`);
+  console.log(`Link: ${upload.webViewLink}`);
+
+  const out = path.join(os.tmpdir(), fileName);
+  fs.writeFileSync(out, buffer);
+  console.log(`LOCAL_OUTPUT=${out}`);
+}
+
 async function main() {
   const command = process.argv[2];
   if (command === "analyze") return commandAnalyze();
   if (command === "compose") return commandCompose(Number(process.argv[3] ?? 5));
   if (command === "render") return commandRender();
-  throw new Error("Befehl fehlt: analyze | compose | render");
+  if (command === "lambda") return commandRenderLambda();
+  throw new Error("Befehl fehlt: analyze | compose | render | lambda");
 }
 
 main().catch((err) => {

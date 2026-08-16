@@ -9,10 +9,13 @@ async function main() {
 
   const { functionName } = await deployFunction({
     region,
-    timeoutInSeconds: 120,
-    memorySizeInMb: 2048,
+    timeoutInSeconds: 240,
+    memorySizeInMb: 3008,
     createCloudWatchLogGroup: true,
-    diskSizeInMb: 2048,
+    // Die Rohclips sind 40-250 MB gross und werden von Lambda zum Auslesen
+    // einzelner Bilder komplett auf die Festplatte geladen. Mit den 2 GB der
+    // Voreinstellung scheitert der Render an "disk space is low".
+    diskSizeInMb: 10240,
   });
 
   console.log("\nFunktion angelegt. Trage das hier als REMOTION_LAMBDA_FUNCTION_NAME ein:\n");
