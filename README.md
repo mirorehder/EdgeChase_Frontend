@@ -178,12 +178,32 @@ geprüft:
 - ✅ **Schritt 3** an echten Daten: fünf Durchläufe liefern unterschiedliche
   Clip-Kombinationen und Hook-Texte zwischen 62 und 70 Zeichen
   (`scripts/local-pipeline.ts compose`)
-- ⏳ Rendern über **Remotion Lambda** steht aus, solange AWS nicht
-  eingerichtet ist. Die Komposition selbst wird über
-  `scripts/local-pipeline.ts render` an echtem Material geprüft - derselbe
-  Code, nur lokal statt in Lambda ausgeführt.
-- ⏳ Der tägliche Cron-Lauf über die vollständige Kette ist noch nicht
-  nachgewiesen (Auftrag Abschnitt 8, Schritte 4 und 6)
+- ✅ **Schritt 4** an echten Daten: Remotion Lambda ist in `eu-central-1`
+  ausgerollt, ein 10-Sekunden-Video rendert in 72 Sekunden und landet
+  anschliessend in Drive (`scripts/local-pipeline.ts lambda`)
+- ✅ **Schritt 5**: Upload mit Wiederholung und Duplikatschutz, mehrfach
+  ausgeführt
+- ⏳ **Schritt 6** steht aus: Die Kette ist bisher nur über die
+  Zwischendatei von `local-pipeline.ts` gelaufen, nicht über die
+  Datenbank. `composeVideo` und `processJob` sind geschrieben, aber noch
+  nie gegen Neon ausgeführt worden - der Nachweis ist ein Klick auf
+  "Jetzt Video erzeugen" im Dashboard.
+
+### Stolpersteine, die beim Einrichten auftraten
+
+Festgehalten, weil sie sich nicht aus dem Code erschliessen:
+
+- **Dienstkonten können nichts in Drive anlegen** (kein Speicherkontingent).
+  Deshalb der zweigleisige Zugriff: Dienstkonto liest, OAuth schreibt.
+- **Frische AWS-Konten** haben ein sehr kleines Kontingent gleichzeitiger
+  Lambda-Ausführungen und erlauben höchstens 3008 MB Speicher pro Funktion.
+- **Signierte S3-URLs funktionieren in Remotion nicht** - der interne Proxy
+  setzt die Abfrageparameter neu zusammen und bricht damit die Signatur.
+- **Die Lambda-Festplatte muss gross sein** (10 GB), weil jeder Rohclip zum
+  Auslesen einzelner Bilder komplett dorthin geladen wird.
+- **Vercel muss das Projekt als Next.js kennen.** Enthielt das Repository
+  beim Import eine statische Seite, sucht Vercel danach dauerhaft einen
+  `public`-Ordner und bricht nach einem ansonsten erfolgreichen Build ab.
 
 ## Bekannte Kostenpunkte
 
