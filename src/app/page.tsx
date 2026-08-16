@@ -3,6 +3,7 @@ import { CURRENT_ANALYSIS_VERSION, type ComposedScene } from "@/lib/pipeline";
 import { TriggerButtons } from "./TriggerButtons";
 import { LiveActivity } from "./LiveActivity";
 import { VideoChat } from "./VideoChat";
+import { ClipLibrary } from "./ClipLibrary";
 
 export const dynamic = "force-dynamic";
 
@@ -67,6 +68,8 @@ export default async function DashboardPage() {
       <VideoChat />
 
       <LiveActivity />
+
+      <ClipLibrary />
 
       <h2>Erzeugte Videos</h2>
       {jobs.length === 0 ? (

@@ -83,9 +83,50 @@ export async function syncClipLibrary(): Promise<SyncResult> {
 export async function countUnanalyzedClips(): Promise<number> {
   return prisma.clip.count({
     where: {
+      editedAt: null,
       OR: [{ analysisVersion: null }, { analysisVersion: { not: CURRENT_ANALYSIS_VERSION } }],
     },
   });
+}
+
+/**
+ * Wertet einen einzelnen Clip neu aus - auf ausdrückliche Anweisung hin,
+ * auch wenn er zuvor von Hand bearbeitet wurde. Die Handkorrektur gilt
+ * damit als verworfen.
+ */
+export async function reanalyzeClip(clipId: string): Promise<AnalyzedClipSummary> {
+  const clip = await prisma.clip.findUnique({ where: { id: clipId } });
+  if (!clip) throw new Error("Clip nicht gefunden.");
+
+  await logActivity(`Analysiere ${clip.name} erneut ...`);
+
+  const buffer = await downloadFile(clip.driveFileId);
+  const analysis = await analyzeClip(buffer, guessMimeType(clip.name), clip.durationMs);
+
+  await prisma.clip.update({
+    where: { id: clip.id },
+    data: {
+      description: analysis.description,
+      apparelScore: analysis.apparelScore,
+      startMs: analysis.startMs,
+      endMs: analysis.endMs,
+      analysisVersion: CURRENT_ANALYSIS_VERSION,
+      editedAt: null,
+    },
+  });
+
+  await logActivity(
+    `${clip.name} neu bewertet: Kleidung ${analysis.apparelScore.toFixed(2)}. ${analysis.description}`,
+  );
+
+  return {
+    clipId: clip.id,
+    name: clip.name,
+    description: analysis.description,
+    apparelScore: analysis.apparelScore,
+    startMs: analysis.startMs,
+    endMs: analysis.endMs,
+  };
 }
 
 export interface AnalyzedClipSummary {
@@ -103,6 +144,9 @@ export async function analyzeUnanalyzedClips(
 ): Promise<AnalyzedClipSummary[]> {
   const pending = await prisma.clip.findMany({
     where: {
+      // Von Hand korrigierte Clips bleiben unangetastet, auch wenn die
+      // Analyse-Version hochgezählt wird.
+      editedAt: null,
       OR: [{ analysisVersion: null }, { analysisVersion: { not: CURRENT_ANALYSIS_VERSION } }],
     },
     take: limit,

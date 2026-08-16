@@ -15,8 +15,8 @@ export async function GET() {
   ]);
 
   const clips = await prisma.clip.findMany({
-    orderBy: { createdAt: "desc" },
-    take: 100,
+    orderBy: [{ sourceFolderName: "asc" }, { name: "asc" }],
+    take: 500,
   });
 
   return NextResponse.json({ stats: { total, analyzed, usable }, clips });
