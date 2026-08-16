@@ -15,11 +15,12 @@ import { hookTextToFileName } from "./filename";
 export const CURRENT_ANALYSIS_VERSION = 1;
 
 // Begrenzt, wie viele Clips ein einzelner Lauf neu analysiert. Pro Clip fallen
-// Download aus Drive (100-200 MB), Upload zu Gemini und dessen Verarbeitung an
-// - bei Vercels Laufzeitgrenze von 300 s sind das nur wenige pro Aufruf. Der
-// Rest wird beim nächsten Lauf fortgesetzt; für einen grossen Anfangsbestand
-// den Abgleich im Dashboard mehrfach auslösen.
-const ANALYZE_BATCH_LIMIT = 3;
+// Download aus Drive, Upload zu Gemini, dessen Verarbeitung und die Spiegelung
+// nach S3 an - an echten Clips gemessen rund 45 Sekunden. Bei Vercels
+// Laufzeitgrenze von 300 s passen damit fünf pro Aufruf, mit etwas Luft für
+// Ausreisser. Der Rest wird beim nächsten Lauf fortgesetzt; für einen grossen
+// Anfangsbestand den Abgleich im Dashboard mehrfach auslösen.
+const ANALYZE_BATCH_LIMIT = 5;
 
 const APPAREL_SCORE_THRESHOLD = 0.5;
 const CANDIDATE_POOL_SIZE = 12;
