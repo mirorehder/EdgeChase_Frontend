@@ -146,3 +146,39 @@ model DailyConfig {
 
   updatedAt DateTime @updatedAt
 }
+
+/// Ein aus einem fremden Video abgeleitetes Gestaltungskonzept.
+///
+/// Gespeichert werden ausschliesslich die abgeleiteten Merkmale und der
+/// Quelllink - nicht das fremde Video selbst. Es dient der Inspiration, nicht
+/// der Weiterverbreitung.
+model Concept {
+  id    String  @id @default(cuid())
+  title String
+
+  /// Link zum urspruenglichen Beitrag, falls mitgeschickt.
+  sourceUrl String?
+
+  /// Der eingeblendete Text im Wortlaut, mit den Zeilenumbrüchen des Originals.
+  hookText String
+
+  /// Welche unserer beiden Textgestaltungen dem Original am naechsten kommt.
+  textStyle String @default("reference")
+
+  /// Anzahl der Schnitte bzw. Einstellungen.
+  clipCount Int
+
+  totalSeconds    Float
+  secondsPerScene Float
+
+  /// Womit sich das Video inhaltlich befasst, in Stichworten.
+  theme String?
+
+  /// Beobachtungen zur Schrift, zu Farben und zur Platzierung - als
+  /// Gedaechtnisstuetze, nicht maschinell ausgewertet.
+  notes String?
+
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}

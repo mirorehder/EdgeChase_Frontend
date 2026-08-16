@@ -122,3 +122,46 @@ export async function isClipMirrored(bucket: string, driveFileId: string): Promi
 export function clipUrl(bucket: string, driveFileId: string): string {
   return `https://${bucket}.s3.${env.remotionAwsRegion}.amazonaws.com/${clipCacheKey(driveFileId)}`;
 }
+
+// ---------------------------------------------------------------------------
+// Zwischenablage für hochgeladene Referenzvideos
+//
+// Vercel nimmt pro Anfrage nur 4,5 MB entgegen, ein Reel ist schnell groesser.
+// Die Datei wandert deshalb direkt vom Geraet in den Speicher und wird von
+// dort geholt - die Anwendung sieht nur den Schluessel.
+// ---------------------------------------------------------------------------
+
+const UPLOAD_PREFIX = "konzept-upload";
+const UPLOAD_URL_TTL_SECONDS = 900;
+
+/** Erzeugt eine befristete Adresse, unter der ein Video abgelegt werden darf. */
+export async function createUploadUrl(
+  bucket: string,
+  extension = "mp4",
+): Promise<{ key: string; url: string }> {
+  const { PutObjectCommand: Put } = await import("@aws-sdk/client-s3");
+  const { getSignedUrl } = await import("@aws-sdk/s3-request-presigner");
+
+  const key = `${UPLOAD_PREFIX}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${extension}`;
+  const url = await getSignedUrl(
+    s3Client(),
+    new Put({ Bucket: bucket, Key: key, ContentType: "video/mp4" }),
+    { expiresIn: UPLOAD_URL_TTL_SECONDS },
+  );
+  return { key, url };
+}
+
+/** Holt ein hochgeladenes Video zurueck in den Speicher. */
+export async function fetchUpload(bucket: string, key: string): Promise<Buffer> {
+  const { GetObjectCommand: Get } = await import("@aws-sdk/client-s3");
+  const res = await s3Client().send(new Get({ Bucket: bucket, Key: key }));
+  const chunks: Buffer[] = [];
+  for await (const chunk of res.Body as AsyncIterable<Uint8Array>) chunks.push(Buffer.from(chunk));
+  return Buffer.concat(chunks);
+}
+
+/** Entfernt ein hochgeladenes Video wieder - fremdes Material wird nicht vorgehalten. */
+export async function deleteUpload(bucket: string, key: string): Promise<void> {
+  const { DeleteObjectCommand: Del } = await import("@aws-sdk/client-s3");
+  await s3Client().send(new Del({ Bucket: bucket, Key: key }));
+}

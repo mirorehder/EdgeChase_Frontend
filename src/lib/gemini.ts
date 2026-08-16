@@ -486,3 +486,105 @@ Antworte mit status "question" und einer Frage in reply, ODER mit status "ready"
     },
   };
 }
+
+// ---------------------------------------------------------------------------
+// Konzept: Merkmale eines fremden Videos ableiten
+// ---------------------------------------------------------------------------
+
+export interface ConceptAnalysis {
+  title: string;
+  hookText: string;
+  textStyle: "banner" | "reference";
+  clipCount: number;
+  totalSeconds: number;
+  secondsPerScene: number;
+  theme: string;
+  notes: string;
+}
+
+/**
+ * Wertet ein fremdes Video als Gestaltungsvorlage aus: welcher Text steht
+ * darin, wie ist er gesetzt, aus wie vielen Einstellungen besteht es.
+ *
+ * Die erhoehte Abtastrate ist auch hier noetig - bei schnellen Schnittfolgen
+ * werden sonst Einstellungen uebersehen und die Anzahl faellt zu niedrig aus.
+ */
+export async function analyzeConcept(
+  buffer: Buffer,
+  mimeType: string,
+): Promise<ConceptAnalysis> {
+  const ai = client();
+  const uploaded = await uploadForAnalysis(ai, buffer, mimeType);
+
+  try {
+    const response = await ai.models.generateContent({
+      model: MODEL,
+      contents: [
+        {
+          role: "user",
+          parts: [
+            {
+              fileData: { fileUri: uploaded.uri!, mimeType: uploaded.mimeType ?? mimeType },
+              videoMetadata: { fps: ANALYSIS_FPS },
+            },
+            {
+              text: `Du wertest ein fremdes Werbevideo als Gestaltungsvorlage aus. Antworte auf Deutsch, ausser bei hookText - der bleibt wortwoertlich im Original.
+
+title: eine kurze Bezeichnung, an der man das Konzept wiedererkennt (3-6 Woerter).
+
+hookText: der eingeblendete Text wortwoertlich, mit den Zeilenumbruechen des Originals als \\n. Aendere nichts daran, auch keine Tippfehler. Ist kein Text eingeblendet, gib einen leeren Text zurueck.
+
+textStyle: "banner", wenn es ein kurzer Satz in grosser Schrift ist (bis etwa 80 Zeichen, hoechstens drei Zeilen). "reference", wenn es laengerer Fliesstext ueber mehrere Zeilen ist.
+
+clipCount: aus wie vielen verschiedenen Einstellungen besteht das Video? Zaehle die harten Schnitte, nicht Kamerabewegungen innerhalb einer Einstellung.
+
+totalSeconds: Gesamtlaenge in Sekunden.
+
+secondsPerScene: durchschnittliche Laenge einer Einstellung in Sekunden.
+
+theme: worum geht es inhaltlich, in wenigen Stichworten (z.B. "Parkour, Stadt, Sprung").
+
+notes: kurze Beobachtungen zur Gestaltung - Schriftart-Eindruck, Farben, Kontur, Position des Textes, Besonderheiten. Zwei bis drei Saetze.`,
+            },
+          ],
+        },
+      ],
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            title: { type: Type.STRING },
+            hookText: { type: Type.STRING },
+            textStyle: { type: Type.STRING },
+            clipCount: { type: Type.INTEGER },
+            totalSeconds: { type: Type.NUMBER },
+            secondsPerScene: { type: Type.NUMBER },
+            theme: { type: Type.STRING },
+            notes: { type: Type.STRING },
+          },
+          required: ["title", "hookText", "textStyle", "clipCount", "totalSeconds", "secondsPerScene", "theme", "notes"],
+        },
+      },
+    });
+
+    const raw = JSON.parse(response.text ?? "{}") as Partial<ConceptAnalysis>;
+    const clipCount = Math.min(12, Math.max(1, Math.round(raw.clipCount ?? 4)));
+    const totalSeconds = Math.max(1, raw.totalSeconds ?? 10);
+
+    return {
+      title: raw.title?.trim() || "Unbenanntes Konzept",
+      hookText: (raw.hookText ?? "").replace(/[ \t]+/g, " ").replace(/ ?\n ?/g, "\n").trim(),
+      textStyle: raw.textStyle === "banner" ? "banner" : "reference",
+      clipCount,
+      totalSeconds: Math.round(totalSeconds * 10) / 10,
+      // Lieber selbst rechnen als der Modellangabe vertrauen - die beiden
+      // Werte widersprachen sich in Versuchen gelegentlich.
+      secondsPerScene: Math.round((totalSeconds / clipCount) * 10) / 10,
+      theme: raw.theme?.trim() || "",
+      notes: raw.notes?.trim() || "",
+    };
+  } finally {
+    await ai.files.delete({ name: uploaded.name! }).catch(() => {});
+  }
+}
