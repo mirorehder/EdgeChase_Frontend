@@ -1,9 +1,5 @@
 {
-  "$schema": "https://openapi.vercel.sh/vercel.json",
-
-  "//": "Das Repository enthielt urspruenglich eine statische Seite (index.html). Vercel hat daraus beim Import 'statische Seite' abgeleitet und sucht seither nach einem public-Ordner, den eine Next.js-Anwendung nicht hat. Die Zuordnung hier im Repository ueberschreibt diese Erkennung.",
   "framework": "nextjs",
-
   "crons": [
     {
       "path": "/api/cron",
