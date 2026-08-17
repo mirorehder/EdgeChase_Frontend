@@ -17,11 +17,16 @@ interface Concept {
   createdAt: string;
 }
 
+/** Unter Vercels Grenze von 4,5 MB pro Anfrage, mit Sicherheitsabstand. */
+const PART_BYTES = 3_500_000;
+const MAX_PARTS = 80;
+
 export function ConceptLibrary() {
   const router = useRouter();
   const [concepts, setConcepts] = useState<Concept[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  const [fehler, setFehler] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   async function load() {
@@ -36,27 +41,39 @@ export function ConceptLibrary() {
 
   async function upload(file: File) {
     setBusy("upload");
-    setNote("Lade hoch …");
+    setFehler(false);
+    setNote("Upload wird vorbereitet …");
     try {
-      // Zweistufig: erst eine befristete Adresse holen, dann direkt dorthin
-      // hochladen. Der Umweg ist nötig, weil Vercel pro Anfrage nur 4,5 MB
-      // annimmt und ein Reel schnell darüber liegt.
-      const urlRes = await fetch("/api/concepts/upload-url");
-      const urlData = await urlRes.json();
-      if (!urlRes.ok) throw new Error(urlData.error);
+      // Die Datei wandert in Stücken durch die eigene Anwendung, nicht direkt
+      // in den Speicher: Vercel nimmt pro Anfrage nur 4,5 MB an, und der
+      // S3-Bucket hat keine CORS-Freigabe, über die der Browser ihn direkt
+      // ansprechen dürfte. Gleiche Herkunft heisst: keine Freigabe nötig.
+      if (file.size > MAX_PARTS * PART_BYTES) {
+        throw new Error("Das Video ist zu gross (über 250 MB).");
+      }
 
-      const put = await fetch(urlData.url, {
-        method: "PUT",
-        headers: { "Content-Type": "video/mp4" },
-        body: file,
-      });
-      if (!put.ok) throw new Error(`Upload fehlgeschlagen (${put.status})`);
+      const uploadId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+      const parts = Math.ceil(file.size / PART_BYTES);
+
+      for (let i = 0; i < parts; i++) {
+        setNote(`Lade hoch … Teil ${i + 1} von ${parts}`);
+        const chunk = file.slice(i * PART_BYTES, (i + 1) * PART_BYTES);
+        const res = await fetch(`/api/concepts/upload-part?id=${uploadId}&index=${i}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/octet-stream" },
+          body: chunk,
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error ?? `Upload abgebrochen bei Teil ${i + 1} (${res.status}).`);
+        }
+      }
 
       setNote("Wird ausgewertet, das dauert etwa eine Minute …");
       const res = await fetch("/api/concepts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ key: urlData.key }),
+        body: JSON.stringify({ uploadId, parts, mimeType: file.type }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
@@ -64,6 +81,7 @@ export function ConceptLibrary() {
       setNote(`Konzept „${data.title}" gespeichert.`);
       await load();
     } catch (err) {
+      setFehler(true);
       setNote(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(null);
@@ -73,6 +91,7 @@ export function ConceptLibrary() {
 
   async function verwenden(concept: Concept) {
     setBusy(concept.id);
+    setFehler(false);
     setNote(`Erzeuge Video nach „${concept.title}" …`);
     try {
       const res = await fetch(`/api/concepts/${concept.id}/use`, { method: "POST" });
@@ -91,6 +110,7 @@ export function ConceptLibrary() {
       );
       router.refresh();
     } catch (err) {
+      setFehler(true);
       setNote(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(null);
@@ -121,18 +141,21 @@ export function ConceptLibrary() {
         Auswertung wieder gelöscht.
       </p>
 
+      {/* Nicht per display:none versteckt: Safari auf dem iPhone öffnet die
+          Auswahl bei so einem Feld nicht zuverlässig, wenn der Klick aus dem
+          Skript kommt. Aus dem Blickfeld geschoben verhält es sich normal. */}
       <input
         ref={fileRef}
         type="file"
         accept="video/*"
-        style={{ display: "none" }}
+        style={{ position: "absolute", width: 1, height: 1, opacity: 0, pointerEvents: "none" }}
         onChange={(e) => {
           const file = e.target.files?.[0];
           if (file) upload(file);
         }}
       />
 
-      {note && <p className="action-message">{note}</p>}
+      {note && <p className={fehler ? "action-message error" : "action-message"}>{note}</p>}
 
       {concepts.length === 0 ? (
         <p className="empty-state">

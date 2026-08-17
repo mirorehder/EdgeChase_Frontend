@@ -165,3 +165,60 @@ export async function deleteUpload(bucket: string, key: string): Promise<void> {
   const { DeleteObjectCommand: Del } = await import("@aws-sdk/client-s3");
   await s3Client().send(new Del({ Bucket: bucket, Key: key }));
 }
+
+// ---------------------------------------------------------------------------
+// Stueckweiser Upload aus dem Browser
+//
+// Der Weg ueber eine befristete S3-Adresse funktioniert nur ausserhalb des
+// Browsers (etwa aus einem Kurzbefehl): der Bucket hat keine CORS-Freigabe,
+// und die Rechte des Remotion-Benutzers reichen nicht aus, um eine zu setzen.
+// Aus dem Dashboard wandert die Datei deshalb in Stuecken durch die eigene
+// Anwendung - gleiche Herkunft, also kein CORS - und wird dort wieder
+// zusammengesetzt. Die Stueckgroesse liegt unter Vercels Grenze von 4,5 MB
+// pro Anfrage.
+// ---------------------------------------------------------------------------
+
+const PART_PREFIX = "konzept-teil";
+
+function partKey(uploadId: string, index: number): string {
+  return `${PART_PREFIX}/${uploadId}/${String(index).padStart(4, "0")}`;
+}
+
+/** Legt ein einzelnes Stueck ab. */
+export async function putUploadPart(
+  bucket: string,
+  uploadId: string,
+  index: number,
+  body: Buffer,
+): Promise<void> {
+  await s3Client().send(
+    new PutObjectCommand({ Bucket: bucket, Key: partKey(uploadId, index), Body: body }),
+  );
+}
+
+/** Setzt die Stuecke in ihrer urspruenglichen Reihenfolge wieder zusammen. */
+export async function assembleUpload(
+  bucket: string,
+  uploadId: string,
+  parts: number,
+): Promise<Buffer> {
+  const buffers: Buffer[] = [];
+  for (let i = 0; i < parts; i++) {
+    buffers.push(await fetchUpload(bucket, partKey(uploadId, i)));
+  }
+  return Buffer.concat(buffers);
+}
+
+/** Raeumt die Stuecke wieder weg, auch wenn die Auswertung gescheitert ist. */
+export async function deleteUploadParts(
+  bucket: string,
+  uploadId: string,
+  parts: number,
+): Promise<void> {
+  const { DeleteObjectCommand: Del } = await import("@aws-sdk/client-s3");
+  for (let i = 0; i < parts; i++) {
+    await s3Client()
+      .send(new Del({ Bucket: bucket, Key: partKey(uploadId, i) }))
+      .catch(() => {});
+  }
+}

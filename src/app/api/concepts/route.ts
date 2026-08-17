@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { analyzeConcept } from "@/lib/gemini";
-import { bucketFromServeUrl, deleteUpload, fetchUpload } from "@/lib/renderStage";
+import {
+  assembleUpload,
+  bucketFromServeUrl,
+  deleteUpload,
+  deleteUploadParts,
+  fetchUpload,
+} from "@/lib/renderStage";
 import { istBerechtigt } from "@/lib/ingestAuth";
 import { logActivity } from "@/lib/activity";
 import { env } from "@/lib/env";
@@ -22,16 +28,36 @@ export async function POST(request: NextRequest) {
 
   const bucket = bucketFromServeUrl(env.remotionServeUrl);
   let key: string | null = null;
+  let uploadId: string | null = null;
+  let parts = 0;
 
   try {
-    const body = (await request.json()) as { key: string; sourceUrl?: string };
-    key = body.key;
-    if (!key) return NextResponse.json({ error: "Kein Schlüssel angegeben." }, { status: 400 });
+    const body = (await request.json()) as {
+      key?: string;
+      uploadId?: string;
+      parts?: number;
+      mimeType?: string;
+      sourceUrl?: string;
+    };
 
-    await logActivity("Referenzvideo empfangen, wird ausgewertet ...");
+    // Zwei Herkuenfte: aus dem Dashboard kommt die Datei in Stuecken durch die
+    // eigene Anwendung, aus einem Kurzbefehl als ein Stueck ueber eine
+    // befristete S3-Adresse.
+    let buffer: Buffer;
+    if (body.uploadId && body.parts) {
+      uploadId = body.uploadId;
+      parts = body.parts;
+      await logActivity(`Referenzvideo empfangen (${parts} Teile), wird ausgewertet ...`);
+      buffer = await assembleUpload(bucket, uploadId, parts);
+    } else if (body.key) {
+      key = body.key;
+      await logActivity("Referenzvideo empfangen, wird ausgewertet ...");
+      buffer = await fetchUpload(bucket, key);
+    } else {
+      return NextResponse.json({ error: "Kein Video angegeben." }, { status: 400 });
+    }
 
-    const buffer = await fetchUpload(bucket, key);
-    const analysis = await analyzeConcept(buffer, "video/mp4");
+    const analysis = await analyzeConcept(buffer, erlaubterTyp(body.mimeType));
 
     const concept = await prisma.concept.create({
       data: {
@@ -60,5 +86,20 @@ export async function POST(request: NextRequest) {
   } finally {
     // Fremdes Material wird nicht vorgehalten - nur die abgeleiteten Merkmale.
     if (key) await deleteUpload(bucket, key).catch(() => {});
+    if (uploadId) await deleteUploadParts(bucket, uploadId, parts);
   }
+}
+
+/** Gemini nimmt nur bekannte Videoformate an; alles andere gilt als MP4. */
+function erlaubterTyp(mimeType: string | undefined): string {
+  const erlaubt = [
+    "video/mp4",
+    "video/quicktime",
+    "video/webm",
+    "video/mpeg",
+    "video/x-m4v",
+    "video/3gpp",
+  ];
+  const wert = (mimeType ?? "").toLowerCase().split(";")[0].trim();
+  return erlaubt.includes(wert) ? wert : "video/mp4";
 }

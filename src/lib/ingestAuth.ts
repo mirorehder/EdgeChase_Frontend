@@ -22,9 +22,26 @@ export function istBerechtigt(request: NextRequest): boolean {
   if (param && param === secret) return true;
 
   // Gleiche Herkunft: der Aufruf stammt aus dem eigenen Dashboard.
-  const origin = request.headers.get("origin");
   const host = request.headers.get("host");
-  if (origin && host && new URL(origin).host === host) return true;
+  if (!host) return false;
+
+  const origin = request.headers.get("origin");
+  if (origin && sameHost(origin, host)) return true;
+
+  // Bei einem einfachen GET aus der eigenen Seite schickt der Browser gar
+  // keine Origin-Kopfzeile - nur einen Verweis auf die aufrufende Seite. Ohne
+  // diese zweite Prüfung scheitern lesende Aufrufe aus dem Dashboard an der
+  // Berechtigung, obwohl sie genau von dort stammen.
+  const referer = request.headers.get("referer");
+  if (referer && sameHost(referer, host)) return true;
 
   return false;
+}
+
+function sameHost(url: string, host: string): boolean {
+  try {
+    return new URL(url).host === host;
+  } catch {
+    return false;
+  }
 }
