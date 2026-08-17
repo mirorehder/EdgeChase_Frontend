@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import type { Track } from "@/lib/trackClient";
 
 interface Entry {
   id: string;
@@ -35,7 +36,7 @@ function formatTime(iso: string): string {
   }).format(new Date(iso));
 }
 
-export function LiveActivity() {
+export function LiveActivity({ track }: { track: Track }) {
   const router = useRouter();
   const [entries, setEntries] = useState<Entry[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
@@ -48,7 +49,7 @@ export function LiveActivity() {
 
     async function tick() {
       try {
-        const res = await fetch("/api/activity", { cache: "no-store" });
+        const res = await fetch(`/api/activity?track=${track}`, { cache: "no-store" });
         const data = await res.json();
         if (cancelled) return;
 
@@ -79,7 +80,7 @@ export function LiveActivity() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [router]);
+  }, [router, track]);
 
   const progress =
     stats && stats.total > 0 ? Math.round((stats.analyzed / stats.total) * 100) : 0;

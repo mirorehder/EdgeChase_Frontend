@@ -1,5 +1,6 @@
 import { FileState, GoogleGenAI, Type, type File as GenAIFile } from "@google/genai";
 import { env } from "./env";
+import type { Track } from "./drive";
 
 const MODEL = "gemini-3.1-flash-lite";
 
@@ -61,11 +62,20 @@ export interface ClipAnalysis {
   apparelScore: number;
   startMs: number;
   endMs: number;
+  /** Nur Sparte "viral": wie spektakulär der Trick ist (0-1). */
+  stuntScore?: number;
+  /** Nur Sparte "viral": Absprung und Landung in Millisekunden. */
+  highlightStartMs?: number;
+  highlightEndMs?: number;
 }
 
 /**
- * Analysiert einen einzelnen Rohclip: was ist zu sehen, wie gut ist die
- * Kleidung erkennbar, welches ist der beste ~4-Sekunden-Ausschnitt.
+ * Analysiert einen einzelnen Rohclip. Die Frage unterscheidet sich je Sparte:
+ *
+ * - "promo": wie gut ist die Kleidung erkennbar, welches ist der beste
+ *   ~4-Sekunden-Ausschnitt.
+ * - "viral": wo genau findet der Trick statt (Absprung bis Landung) und wie
+ *   spektakulär ist er. Für den Schnitt zählt allein der Höhepunkt.
  *
  * durationMs kommt aus Drives videoMediaMetadata (zuverlässiger als eine
  * Modellschätzung) und wird für die Korrektur in Schritt 2 gebraucht.
@@ -74,7 +84,10 @@ export async function analyzeClip(
   buffer: Buffer,
   mimeType: string,
   durationMs: number | null,
+  track: Track = "promo",
 ): Promise<ClipAnalysis> {
+  if (track === "viral") return analyzeViralClip(buffer, mimeType, durationMs);
+
   const ai = client();
 
   const durationHint = durationMs
@@ -183,6 +196,157 @@ function correctAnalysis(
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
+
+// ---------------------------------------------------------------------------
+// Sparte "viral": der Höhepunkt zählt
+//
+// Ein Parkour-Clip besteht fast immer aus viel Anlauf, Zögern und Wiederholung
+// und aus einer knappen Sekunde, in der der Trick tatsächlich passiert. Wird
+// irgendein Ausschnitt genommen, zeigt der Edit Aufwärmen statt Sprung. Das
+// Modell muss deshalb nicht "den besten Ausschnitt" liefern, sondern zwei
+// konkrete Zeitpunkte: wann die Füsse den Boden verlassen und wann sie wieder
+// aufkommen.
+// ---------------------------------------------------------------------------
+
+/** Kürzer kann ein Trick nicht sein - darunter hat das Modell sich vertan. */
+const MIN_TRICK_MS = 250;
+
+/** Länger als das ist kein einzelner Trick mehr, sondern eine ganze Sequenz. */
+const MAX_TRICK_MS = 4000;
+
+interface ViralRaw {
+  description: string;
+  stuntScore: number;
+  takeoffMs: number;
+  landingMs: number;
+}
+
+async function analyzeViralClip(
+  buffer: Buffer,
+  mimeType: string,
+  durationMs: number | null,
+): Promise<ClipAnalysis> {
+  const ai = client();
+
+  const durationHint = durationMs
+    ? `Der Clip ist ${(durationMs / 1000).toFixed(1)} Sekunden lang.`
+    : "Die genaue Länge des Clips ist unbekannt.";
+
+  // Bewusst ergebnisoffen formuliert: nicht "wann ist der Sprung", sondern "ob
+  // überhaupt einer vorkommt". Sonst legt das Modell auch in einem Clip ohne
+  // Trick zwei Zeitpunkte fest, und der Edit zeigt nichts.
+  const prompt = `Du wertest einen Parkour-Rohclip für einen schnell geschnittenen Edit aus. ${durationHint}
+
+Antworte ausschliesslich auf Englisch.
+
+Beschreibe wörtlich und neutral, was zu sehen ist: Ort, Hindernis, welche Bewegung ausgeführt wird. Erfinde nichts.
+
+Bewerte stuntScore (0-1): wie spektakulär und wie sauber ausgeführt ist der Trick?
+- 0 bedeutet: es kommt gar kein Trick vor - nur Gehen, Anlauf, Aufwärmen, Zuschauen, ein Fehlversuch oder ein Abbruch.
+- 0.3 bedeutet: eine einfache Bewegung, etwa ein kleiner Sprung oder ein Vault.
+- 0.7 bedeutet: ein klarer, sauberer Trick mit Höhe, Weite oder Rotation.
+- 1 bedeutet: aussergewöhnlich - grosse Höhe, grosse Distanz, mehrfache Rotation, sichtbares Risiko.
+Sei streng. Die meisten Rohclips liegen unter 0.5.
+
+Bestimme dann die zwei entscheidenden Zeitpunkte in Millisekunden ab Clipbeginn:
+- takeoffMs: der Moment, in dem der Körper den Boden oder das Hindernis verlässt und der Trick beginnt.
+- landingMs: der Moment, in dem er wieder aufkommt und der Trick vorbei ist.
+
+Diese beiden Zeitpunkte sind das Wichtigste an dieser Aufgabe. Aus ihnen wird geschnitten - liegen sie falsch, zeigt das fertige Video den Anlauf statt den Sprung. Der Anlauf davor gehört NICHT dazu, das Weglaufen danach auch nicht.
+
+Kommt kein Trick vor, setze stuntScore auf 0 und beide Zeitpunkte auf die auffälligste Bewegung im Clip.`;
+
+  const uploaded = await uploadForAnalysis(ai, buffer, mimeType);
+
+  try {
+    const response = await ai.models.generateContent({
+      model: MODEL,
+      contents: [
+        {
+          role: "user",
+          parts: [
+            {
+              fileData: { fileUri: uploaded.uri!, mimeType: uploaded.mimeType ?? mimeType },
+              videoMetadata: { fps: ANALYSIS_FPS },
+            },
+            { text: prompt },
+          ],
+        },
+      ],
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            description: { type: Type.STRING },
+            stuntScore: { type: Type.NUMBER },
+            takeoffMs: { type: Type.INTEGER },
+            landingMs: { type: Type.INTEGER },
+          },
+          required: ["description", "stuntScore", "takeoffMs", "landingMs"],
+        },
+      },
+    });
+
+    return correctViralAnalysis(JSON.parse(response.text ?? "{}") as Partial<ViralRaw>, durationMs);
+  } finally {
+    await ai.files.delete({ name: uploaded.name! }).catch(() => {});
+  }
+}
+
+/**
+ * Deterministische Nachkorrektur (Lehre 4 und 9): auf die tatsächliche
+ * Cliplänge begrenzen, Reihenfolge erzwingen, unplausible Fenster stutzen.
+ *
+ * startMs/endMs bekommen etwas Vorlauf und Nachlauf um den Trick herum - ein
+ * Sprung, der exakt am Absprung anfängt, wirkt abgehackt, und die Landung ist
+ * die Pointe. Der eigentliche Schnitt entsteht später aus diesen Werten.
+ */
+function correctViralAnalysis(
+  raw: Partial<ViralRaw>,
+  durationMs: number | null,
+): ClipAnalysis {
+  const description = raw.description?.trim() || "Keine Beschreibung verfügbar.";
+  const stuntScore = clamp(raw.stuntScore ?? 0, 0, 1);
+  const limit = durationMs ?? Number.MAX_SAFE_INTEGER;
+
+  let takeoff = clamp(raw.takeoffMs ?? 0, 0, limit);
+  let landing = clamp(raw.landingMs ?? takeoff + 800, 0, limit);
+
+  // Vertauscht gelieferte Zeitpunkte kommen vor und wären sonst ein leeres
+  // Fenster.
+  if (landing < takeoff) [takeoff, landing] = [landing, takeoff];
+
+  if (landing - takeoff < MIN_TRICK_MS) landing = Math.min(takeoff + 800, limit);
+  if (landing - takeoff > MAX_TRICK_MS) landing = takeoff + MAX_TRICK_MS;
+
+  // Deckt das "Fenster" praktisch den ganzen Clip ab, hat das Modell keinen
+  // Trick gefunden, sondern den Clip beschrieben. Dann lieber die Mitte.
+  if (durationMs && landing - takeoff > durationMs * 0.9) {
+    takeoff = durationMs / 2 - 400;
+    landing = takeoff + 800;
+  }
+
+  const startMs = Math.round(Math.max(0, takeoff - PRE_TAKEOFF_MS));
+  const endMs = Math.round(Math.min(limit, landing + POST_LANDING_MS));
+
+  return {
+    description,
+    // Für die virale Sparte ohne Bedeutung, das Feld gehört der anderen.
+    apparelScore: 0,
+    stuntScore,
+    highlightStartMs: Math.round(takeoff),
+    highlightEndMs: Math.round(landing),
+    startMs,
+    endMs,
+  };
+}
+
+/** Etwas Anlauf, damit der Absprung nicht aus dem Nichts kommt. */
+const PRE_TAKEOFF_MS = 200;
+
+/** Die Landung ist die Pointe - sie braucht einen Moment zum Wirken. */
+const POST_LANDING_MS = 350;
 
 export interface ClipCandidate {
   id: string;
@@ -343,6 +507,80 @@ function validateSelection(
     proposed && proposed.length <= MAX_HOOK_CHARS ? proposed : HOOK_EXAMPLES[0];
 
   return { selectedClipIds, hookText };
+}
+
+// ---------------------------------------------------------------------------
+// Reihenfolge der Höhepunkte im viralen Edit
+// ---------------------------------------------------------------------------
+
+export interface ViralCandidate {
+  id: string;
+  description: string;
+  stuntScore: number;
+  /** Wie lang der Trick dauert - kurze Tricks schneiden sich knackiger. */
+  trickMs: number;
+}
+
+/**
+ * Wählt und ordnet die Höhepunkte für einen viralen Edit.
+ *
+ * Anders als in der Promo-Sparte wird hier kein Text formuliert - der kommt
+ * aus dem gewählten Konzept. Es geht allein um Auswahl und Reihenfolge: ein
+ * Edit lebt davon, dass er stark anfängt und stärker aufhört.
+ */
+export async function selectViralScenes(
+  candidates: ViralCandidate[],
+  desiredCount: number,
+): Promise<string[]> {
+  const ai = client();
+
+  const candidateList = candidates
+    .map(
+      (c) =>
+        `- id: ${c.id} | stuntScore: ${c.stuntScore.toFixed(2)} | Trickdauer: ${(c.trickMs / 1000).toFixed(1)}s | ${c.description}`,
+    )
+    .join("\n");
+
+  const prompt = `Du stellst einen schnell geschnittenen Parkour-Edit zusammen. Jede Einstellung zeigt etwa eine Sekunde: genau den Trick, nichts davor, nichts danach.
+
+Verfügbare Höhepunkte:
+${candidateList}
+
+Wähle genau ${desiredCount} IDs aus dieser Liste und bringe sie in die Reihenfolge, in der sie im Video erscheinen sollen.
+
+Regeln für die Reihenfolge:
+- Der erste Clip entscheidet, ob jemand weiterschaut: er muss sofort beeindrucken.
+- Danach steigern: die stärksten Tricks gehören ans Ende.
+- Zwei sehr ähnliche Bewegungen oder Orte nicht direkt hintereinander.
+- Clips ohne echten Trick (stuntScore nahe 0) nur nehmen, wenn sonst zu wenige da sind.
+
+Gib ausschliesslich IDs aus der Liste zurück.`;
+
+  const response = await ai.models.generateContent({
+    model: MODEL,
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    config: {
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: { selectedClipIds: { type: Type.ARRAY, items: { type: Type.STRING } } },
+        required: ["selectedClipIds"],
+      },
+    },
+  });
+
+  const raw = JSON.parse(response.text ?? "{}") as { selectedClipIds?: string[] };
+  const known = new Set(candidates.map((c) => c.id));
+  const picked = Array.from(new Set((raw.selectedClipIds ?? []).filter((id) => known.has(id))));
+
+  // Liefert das Modell zu wenige gültige IDs, mit den spektakulärsten
+  // Kandidaten auffüllen statt den Auftrag scheitern zu lassen.
+  for (const candidate of [...candidates].sort((a, b) => b.stuntScore - a.stuntScore)) {
+    if (picked.length >= desiredCount) break;
+    if (!picked.includes(candidate.id)) picked.push(candidate.id);
+  }
+
+  return picked.slice(0, desiredCount);
 }
 
 // ---------------------------------------------------------------------------

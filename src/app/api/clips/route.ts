@@ -1,20 +1,30 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { CURRENT_ANALYSIS_VERSION } from "@/lib/pipeline";
+import { trackFromRequest } from "@/lib/trackParam";
 
 // Greift bei jedem Aufruf live auf die Datenbank zu - nicht statisch cachen.
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const track = trackFromRequest(request);
+
+  // "Tauglich" heisst je Sparte etwas anderes: beim Promo-Video, dass die
+  // Kleidung zu sehen ist, beim viralen Edit, dass ueberhaupt ein Trick
+  // vorkommt.
+  const usableWhere =
+    track === "viral"
+      ? { track, analysisVersion: CURRENT_ANALYSIS_VERSION, stuntScore: { gte: 0.25 } }
+      : { track, analysisVersion: CURRENT_ANALYSIS_VERSION, apparelScore: { gte: 0.5 } };
+
   const [total, analyzed, usable] = await Promise.all([
-    prisma.clip.count(),
-    prisma.clip.count({ where: { analysisVersion: CURRENT_ANALYSIS_VERSION } }),
-    prisma.clip.count({
-      where: { analysisVersion: CURRENT_ANALYSIS_VERSION, apparelScore: { gte: 0.5 } },
-    }),
+    prisma.clip.count({ where: { track } }),
+    prisma.clip.count({ where: { track, analysisVersion: CURRENT_ANALYSIS_VERSION } }),
+    prisma.clip.count({ where: usableWhere }),
   ]);
 
   const clips = await prisma.clip.findMany({
+    where: { track },
     orderBy: [{ sourceFolderName: "asc" }, { name: "asc" }],
     take: 500,
   });

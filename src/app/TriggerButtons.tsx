@@ -2,8 +2,16 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import type { Track } from "@/lib/trackClient";
 
-export function TriggerButtons() {
+/**
+ * Auslöser einer Sparte.
+ *
+ * In der Promo-Sparte gibt es zusätzlich den Knopf für ein sofortiges Video -
+ * dort steht im Dashboard fest, wie es aussehen soll. Ein viraler Edit
+ * entsteht dagegen immer nach einem Konzept und wird deshalb dort ausgelöst.
+ */
+export function TriggerButtons({ track }: { track: Track }) {
   const router = useRouter();
   const [busy, setBusy] = useState<"trigger" | "sync" | null>(null);
   const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null);
@@ -12,7 +20,7 @@ export function TriggerButtons() {
     setBusy(kind);
     setMessage(null);
     try {
-      const url = kind === "trigger" ? "/api/trigger" : "/api/clips/sync";
+      const url = kind === "trigger" ? "/api/trigger" : `/api/clips/sync?track=${track}`;
       const res = await fetch(url, { method: "POST" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Unbekannter Fehler");
@@ -38,11 +46,17 @@ export function TriggerButtons() {
   return (
     <div>
       <div className="actions">
-        <button onClick={() => run("trigger")} disabled={busy !== null}>
-          {busy === "trigger" ? "Video wird erzeugt…" : "Jetzt Video erzeugen"}
-        </button>
+        {track === "promo" && (
+          <button onClick={() => run("trigger")} disabled={busy !== null}>
+            {busy === "trigger" ? "Video wird erzeugt…" : "Jetzt Promo-Video erzeugen"}
+          </button>
+        )}
         <button className="secondary" onClick={() => run("sync")} disabled={busy !== null}>
-          {busy === "sync" ? "Wird abgeglichen…" : "Clip-Bibliothek abgleichen"}
+          {busy === "sync"
+            ? "Wird abgeglichen…"
+            : track === "viral"
+              ? "Parkour-Clips abgleichen"
+              : "Clip-Bibliothek abgleichen"}
         </button>
       </div>
       {message && (

@@ -13,10 +13,22 @@ datasource db {
   directUrl = env("DATABASE_URL_UNPOOLED")
 }
 
+/// Die beiden Sparten des Werkzeugs. Sie teilen sich Technik, aber sonst
+/// nichts: eigener Drive-Quellordner, eigene Bibliothek, eigene Auswertung,
+/// eigener Zielordner. Ein Clip gehoert immer genau einer Sparte an - der,
+/// aus deren Ordner er stammt.
+///
+/// "promo"  - Werbevideos fuer die Kleidung. Bewertet wird, wie gut die
+///            Kleidung zu sehen ist.
+/// "viral"  - Parkour-Edits. Bewertet wird, wie spektakulaer der Trick ist,
+///            und es zaehlt der Moment des Sprungs selbst.
 model Clip {
   id          String @id @default(cuid())
   driveFileId String @unique
   name        String
+
+  /// "promo" oder "viral" - siehe oben.
+  track String @default("promo")
 
   durationMs Int?
 
@@ -29,9 +41,23 @@ model Clip {
   /// Was auf dem Clip zu sehen ist - Grundlage für die Auswahl.
   description String?
 
-  /// Wie gut die Kleidung erkennbar ist (0-1). Clips, auf denen man nichts
-  /// von der Kleidung sieht, taugen für Werbung nicht.
+  /// Nur Sparte "promo": wie gut die Kleidung erkennbar ist (0-1). Clips, auf
+  /// denen man nichts von der Kleidung sieht, taugen für Werbung nicht.
   apparelScore Float?
+
+  /// Nur Sparte "viral": wie spektakulär der Trick ist (0-1). 0 heisst, dass
+  /// gar kein Trick vorkommt - nur Gehen, Anlauf oder Vorbereitung.
+  stuntScore Float?
+
+  /// Nur Sparte "viral": der eigentliche Höhepunkt, in Millisekunden ab
+  /// Clipbeginn - vom Absprung bis zur Landung.
+  ///
+  /// Getrennt von startMs/endMs, weil beides verschiedene Fragen sind: hier
+  /// steht, wo der Trick stattfindet, dort, was davon geschnitten wird. Nur
+  /// so lässt sich der Schnitt später anders setzen (mehr Anlauf, mehr
+  /// Landung), ohne den Clip neu auswerten zu müssen.
+  highlightStartMs Int?
+  highlightEndMs   Int?
 
   /// Bester Ausschnitt für die Verwendung (Millisekunden im Rohclip).
   startMs Int?
@@ -54,6 +80,7 @@ model Clip {
 
   @@index([apparelScore])
   @@index([lastUsedAt])
+  @@index([track])
 }
 
 /// Laufendes Protokoll dessen, was die Pipeline gerade tut.
@@ -66,6 +93,8 @@ model ActivityLog {
   at      DateTime @default(now())
   /// info | error
   level   String   @default("info")
+  /// Sparte, zu der der Eintrag gehört: "promo" oder "viral".
+  track   String   @default("promo")
   message String
   /// Zugehöriger Job, falls der Eintrag aus einem Video-Auftrag stammt.
   videoId String?
@@ -75,6 +104,9 @@ model ActivityLog {
 
 model PromoVideo {
   id String @id @default(cuid())
+
+  /// Sparte, aus der dieses Video stammt: "promo" oder "viral".
+  track String @default("promo")
 
   /// Der erzeugte Hook-Text, wie er im Video steht.
   hookText String
@@ -117,6 +149,7 @@ model PromoVideo {
 
   @@index([status])
   @@index([createdAt])
+  @@index([track])
 }
 
 /// Vorgaben für den täglichen Lauf. Genau eine Zeile mit fester ID, damit
@@ -153,8 +186,12 @@ model DailyConfig {
 /// Quelllink - nicht das fremde Video selbst. Es dient der Inspiration, nicht
 /// der Weiterverbreitung.
 model Concept {
-  id    String  @id @default(cuid())
+  id    String @id @default(cuid())
   title String
+
+  /// Für welche Sparte diese Vorlage gedacht ist: "promo" oder "viral".
+  /// Bei den viralen Edits liefert das Konzept den Text des Videos.
+  track String @default("promo")
 
   /// Link zum urspruenglichen Beitrag, falls mitgeschickt.
   sourceUrl String?

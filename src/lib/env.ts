@@ -23,16 +23,35 @@ export const env = {
   get driveSourceFolderId() {
     return required("DRIVE_SOURCE_FOLDER_ID");
   },
+  /**
+   * Quellordner der viralen Sparte ("Parkour-Bangers").
+   *
+   * Anders als beim Promo-Ordner steht hier eine Vorgabe im Code: die ID ist
+   * kein Geheimnis, der Ordner ist gesetzt, und so muss für die zweite Sparte
+   * keine weitere Variable in Vercel angelegt werden. Umhängen lässt sie sich
+   * trotzdem jederzeit über die Umgebungsvariable.
+   */
+  get driveViralFolderId() {
+    return process.env.DRIVE_VIRAL_FOLDER_ID || "1WDtxBREWE1MPYAvqjUbAtI8mRbXziYMO";
+  },
   /** Zielordner wird von der Anwendung selbst angelegt (drive.file sieht nur
    *  Eigenes), deshalb genügt der Name statt einer ID. */
   get driveOutputFolderName() {
     return process.env.DRIVE_OUTPUT_FOLDER_NAME || "EdgeChase Promo-Videos";
+  },
+  /** Getrennter Zielordner für die virale Sparte - die beiden Sorten Video
+   *  sollen auch in Drive nicht durcheinandergeraten. */
+  get driveViralOutputFolderName() {
+    return process.env.DRIVE_VIRAL_OUTPUT_FOLDER_NAME || "EdgeChase Virale Edits";
   },
   /** Optional: feste ID des Zielordners. Nur sinnvoll für einen Ordner, den
    *  die Anwendung selbst angelegt hat - dann übersteht die Zuordnung auch ein
    *  Umbenennen in Drive. */
   get driveOutputFolderId(): string | null {
     return process.env.DRIVE_OUTPUT_FOLDER_ID || null;
+  },
+  get driveViralOutputFolderId(): string | null {
+    return process.env.DRIVE_VIRAL_OUTPUT_FOLDER_ID || null;
   },
   get googleOAuthClientId() {
     return required("GOOGLE_OAUTH_CLIENT_ID");

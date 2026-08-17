@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import type { Track } from "@/lib/trackClient";
 
 interface Concept {
   id: string;
@@ -21,7 +22,7 @@ interface Concept {
 const PART_BYTES = 3_500_000;
 const MAX_PARTS = 80;
 
-export function ConceptLibrary() {
+export function ConceptLibrary({ track }: { track: Track }) {
   const router = useRouter();
   const [concepts, setConcepts] = useState<Concept[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
@@ -30,14 +31,15 @@ export function ConceptLibrary() {
   const fileRef = useRef<HTMLInputElement>(null);
 
   async function load() {
-    const res = await fetch("/api/concepts", { cache: "no-store" });
+    const res = await fetch(`/api/concepts?track=${track}`, { cache: "no-store" });
     const data = await res.json();
     setConcepts(data.concepts ?? []);
   }
 
   useEffect(() => {
     load();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [track]);
 
   async function upload(file: File) {
     setBusy("upload");
@@ -73,7 +75,7 @@ export function ConceptLibrary() {
       const res = await fetch("/api/concepts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ uploadId, parts, mimeType: file.type }),
+        body: JSON.stringify({ uploadId, parts, mimeType: file.type, track }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
@@ -125,7 +127,7 @@ export function ConceptLibrary() {
   return (
     <section className="library">
       <div className="live-head">
-        <h2>Konzepte</h2>
+        <h2>{track === "viral" ? "Konzepte (Vorlage für Edits)" : "Konzepte"}</h2>
         <button
           className="secondary"
           onClick={() => fileRef.current?.click()}
@@ -136,9 +138,9 @@ export function ConceptLibrary() {
       </div>
 
       <p className="chat-hint">
-        Ein fremdes Video hochladen — Hook-Text, Textgestaltung, Anzahl Einstellungen und Länge
-        werden daraus abgeleitet und als Vorlage gespeichert. Das Video selbst wird nach der
-        Auswertung wieder gelöscht.
+        {track === "viral"
+          ? "Ein Referenz-Reel hochladen — daraus werden Text, Textgestaltung, Anzahl Einstellungen und Länge übernommen. Der Text des Konzepts ist der Text des Edits. Das hochgeladene Video selbst wird nach der Auswertung wieder gelöscht."
+          : "Ein fremdes Video hochladen — Hook-Text, Textgestaltung, Anzahl Einstellungen und Länge werden daraus abgeleitet und als Vorlage gespeichert. Das Video selbst wird nach der Auswertung wieder gelöscht."}
       </p>
 
       {/* Nicht per display:none versteckt: Safari auf dem iPhone öffnet die
@@ -159,7 +161,9 @@ export function ConceptLibrary() {
 
       {concepts.length === 0 ? (
         <p className="empty-state">
-          Noch keine Konzepte. Lade ein Video hoch oder schick eins per Kurzbefehl vom Handy.
+          {track === "viral"
+            ? "Noch kein Konzept. Ohne Konzept gibt es keinen Text für den Edit - lade ein Referenz-Reel hoch."
+            : "Noch keine Konzepte. Lade ein Video hoch oder schick eins per Kurzbefehl vom Handy."}
         </p>
       ) : (
         <ul className="clips">
@@ -182,7 +186,7 @@ export function ConceptLibrary() {
 
                 <div className="actions" style={{ marginTop: 8, marginBottom: 0 }}>
                   <button onClick={() => verwenden(concept)} disabled={busy !== null}>
-                    Video nach diesem Konzept
+                    {track === "viral" ? "Edit nach diesem Konzept" : "Video nach diesem Konzept"}
                   </button>
                   {concept.sourceUrl && (
                     <a

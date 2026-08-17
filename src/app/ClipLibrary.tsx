@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import type { Track } from "@/lib/trackClient";
 
 interface Clip {
   id: string;
@@ -8,6 +9,9 @@ interface Clip {
   sourceFolderName: string | null;
   description: string | null;
   apparelScore: number | null;
+  stuntScore: number | null;
+  highlightStartMs: number | null;
+  highlightEndMs: number | null;
   startMs: number | null;
   endMs: number | null;
   durationMs: number | null;
@@ -17,13 +21,26 @@ interface Clip {
   analysisVersion: number | null;
 }
 
-type Draft = { description: string; apparelScore: string; startMs: string; endMs: string };
+/**
+ * Der Entwurf hält bewusst nur "Bewertung" und "Fenster", nicht die konkreten
+ * Feldnamen: in der Promo-Sparte steht dahinter die Kleidungsbewertung und der
+ * Ausschnitt, in der viralen die Stuntbewertung und das Trickfenster. Was
+ * gemeint ist, entscheidet die Sparte.
+ */
+type Draft = { description: string; score: string; startMs: string; endMs: string };
 
 function seconds(ms: number | null): string {
   return ms === null ? "?" : (ms / 1000).toFixed(1);
 }
 
-export function ClipLibrary() {
+/** Welche Felder eines Clips die Sparte bearbeitet. */
+function felder(clip: Clip, track: Track) {
+  return track === "viral"
+    ? { score: clip.stuntScore, startMs: clip.highlightStartMs, endMs: clip.highlightEndMs }
+    : { score: clip.apparelScore, startMs: clip.startMs, endMs: clip.endMs };
+}
+
+export function ClipLibrary({ track }: { track: Track }) {
   const [clips, setClips] = useState<Clip[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
@@ -33,7 +50,7 @@ export function ClipLibrary() {
   const [note, setNote] = useState<string | null>(null);
 
   async function load() {
-    const res = await fetch("/api/clips", { cache: "no-store" });
+    const res = await fetch(`/api/clips?track=${track}`, { cache: "no-store" });
     const data = await res.json();
     setClips(data.clips);
     setLoading(false);
@@ -41,7 +58,8 @@ export function ClipLibrary() {
 
   useEffect(() => {
     load();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [track]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -58,11 +76,12 @@ export function ClipLibrary() {
     }
     setOpenId(clip.id);
     setNote(null);
+    const f = felder(clip, track);
     setDraft({
       description: clip.description ?? "",
-      apparelScore: (clip.apparelScore ?? 0).toFixed(2),
-      startMs: String(clip.startMs ?? 0),
-      endMs: String(clip.endMs ?? 0),
+      score: (f.score ?? 0).toFixed(2),
+      startMs: String(f.startMs ?? 0),
+      endMs: String(f.endMs ?? 0),
     });
   }
 
@@ -75,8 +94,9 @@ export function ClipLibrary() {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          track,
           description: draft.description,
-          apparelScore: Number(draft.apparelScore.replace(",", ".")),
+          score: Number(draft.score.replace(",", ".")),
           startMs: Number(draft.startMs),
           endMs: Number(draft.endMs),
         }),
@@ -103,9 +123,9 @@ export function ClipLibrary() {
       await load();
       setDraft({
         description: data.description,
-        apparelScore: data.apparelScore.toFixed(2),
-        startMs: String(data.startMs),
-        endMs: String(data.endMs),
+        score: (track === "viral" ? (data.stuntScore ?? 0) : data.apparelScore).toFixed(2),
+        startMs: String(track === "viral" ? (data.highlightStartMs ?? 0) : data.startMs),
+        endMs: String(track === "viral" ? (data.highlightEndMs ?? 0) : data.endMs),
       });
     } catch (err) {
       setNote(err instanceof Error ? err.message : String(err));
@@ -117,7 +137,7 @@ export function ClipLibrary() {
   return (
     <section className="library">
       <div className="live-head">
-        <h2>Clip-Bibliothek</h2>
+        <h2>{track === "viral" ? "Parkour-Clips" : "Clip-Bibliothek"}</h2>
         <input
           className="search"
           value={query}
@@ -147,9 +167,19 @@ export function ClipLibrary() {
                     {clip.analysisVersion === null && <span className="tag warn">nicht analysiert</span>}
                   </span>
                   <span className="clip-meta">
-                    {clip.sourceFolderName ?? "—"} · Kleidung{" "}
-                    {clip.apparelScore === null ? "—" : clip.apparelScore.toFixed(2)} ·{" "}
-                    {seconds(clip.startMs)}–{seconds(clip.endMs)}s
+                    {clip.sourceFolderName ?? "—"} ·{" "}
+                    {track === "viral" ? (
+                      <>
+                        Stunt {clip.stuntScore === null ? "—" : clip.stuntScore.toFixed(2)} ·
+                        Höhepunkt {seconds(clip.highlightStartMs)}–{seconds(clip.highlightEndMs)}s
+                      </>
+                    ) : (
+                      <>
+                        Kleidung{" "}
+                        {clip.apparelScore === null ? "—" : clip.apparelScore.toFixed(2)} ·{" "}
+                        {seconds(clip.startMs)}–{seconds(clip.endMs)}s
+                      </>
+                    )}
                   </span>
                   <span className="clip-desc">{clip.description ?? "Keine Beschreibung"}</span>
                 </button>
@@ -167,21 +197,21 @@ export function ClipLibrary() {
 
                     <div className="field-row">
                       <label>
-                        Kleidung (0–1)
+                        {track === "viral" ? "Stunt (0–1)" : "Kleidung (0–1)"}
                         <input
-                          value={draft.apparelScore}
-                          onChange={(e) => setDraft({ ...draft, apparelScore: e.target.value })}
+                          value={draft.score}
+                          onChange={(e) => setDraft({ ...draft, score: e.target.value })}
                         />
                       </label>
                       <label>
-                        Ausschnitt ab (ms)
+                        {track === "viral" ? "Absprung (ms)" : "Ausschnitt ab (ms)"}
                         <input
                           value={draft.startMs}
                           onChange={(e) => setDraft({ ...draft, startMs: e.target.value })}
                         />
                       </label>
                       <label>
-                        Ausschnitt bis (ms)
+                        {track === "viral" ? "Landung (ms)" : "Ausschnitt bis (ms)"}
                         <input
                           value={draft.endMs}
                           onChange={(e) => setDraft({ ...draft, endMs: e.target.value })}
@@ -190,6 +220,8 @@ export function ClipLibrary() {
                     </div>
 
                     <p className="chat-hint">
+                      {track === "viral" &&
+                        "Absprung und Landung bestimmen den Schnitt: das fertige Video zeigt genau dieses Fenster, mit etwas Vorlauf und Nachlauf. "}
                       Clip ist {seconds(clip.durationMs)}s lang.
                       {clip.lastUsedAt
                         ? ` Zuletzt verwendet am ${new Date(clip.lastUsedAt).toLocaleDateString("de-DE")}.`

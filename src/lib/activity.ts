@@ -9,7 +9,7 @@ import { prisma } from "./db";
  */
 export async function logActivity(
   message: string,
-  options: { level?: "info" | "error"; videoId?: string } = {},
+  options: { level?: "info" | "error"; videoId?: string; track?: "promo" | "viral" } = {},
 ): Promise<void> {
   try {
     await prisma.activityLog.create({
@@ -17,6 +17,7 @@ export async function logActivity(
         message,
         level: options.level ?? "info",
         videoId: options.videoId ?? null,
+        track: options.track ?? "promo",
       },
     });
   } catch {

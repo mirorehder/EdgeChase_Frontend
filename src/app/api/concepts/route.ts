@@ -9,6 +9,7 @@ import {
   fetchUpload,
 } from "@/lib/renderStage";
 import { istBerechtigt } from "@/lib/ingestAuth";
+import { trackFromRequest, trackFromValue } from "@/lib/trackParam";
 import { logActivity } from "@/lib/activity";
 import { env } from "@/lib/env";
 
@@ -16,8 +17,12 @@ import { env } from "@/lib/env";
 export const maxDuration = 180;
 export const dynamic = "force-dynamic";
 
-export async function GET() {
-  const concepts = await prisma.concept.findMany({ orderBy: { createdAt: "desc" }, take: 100 });
+export async function GET(request: NextRequest) {
+  const concepts = await prisma.concept.findMany({
+    where: { track: trackFromRequest(request) },
+    orderBy: { createdAt: "desc" },
+    take: 100,
+  });
   return NextResponse.json({ concepts });
 }
 
@@ -38,7 +43,9 @@ export async function POST(request: NextRequest) {
       parts?: number;
       mimeType?: string;
       sourceUrl?: string;
+      track?: string;
     };
+    const track = trackFromValue(body.track);
 
     // Zwei Herkuenfte: aus dem Dashboard kommt die Datei in Stuecken durch die
     // eigene Anwendung, aus einem Kurzbefehl als ein Stueck ueber eine
@@ -62,6 +69,7 @@ export async function POST(request: NextRequest) {
     const concept = await prisma.concept.create({
       data: {
         title: analysis.title,
+        track,
         sourceUrl: body.sourceUrl?.trim() || null,
         hookText: analysis.hookText,
         textStyle: analysis.textStyle,

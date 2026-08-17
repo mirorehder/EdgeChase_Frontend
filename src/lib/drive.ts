@@ -18,6 +18,18 @@ const APPLE_DOUBLE_PREFIX = "._";
 // oder noch laufende Uploads ab.
 const MIN_VIDEO_BYTES = 100_000;
 
+// Die beiden Sparten des Werkzeugs. Sie teilen sich nur die Technik: eigener
+// Quellordner, eigene Bibliothek, eigener Zielordner. Der Typ selbst liegt in
+// trackClient.ts, damit ihn auch die Oberfläche verwenden kann, ohne diese
+// Datei (und mit ihr googleapis) mitzuziehen.
+export { isTrack, TRACKS, type Track } from "./trackClient";
+import type { Track } from "./trackClient";
+
+/** Wurzelordner der Sparte in Drive. */
+function sourceFolderId(track: Track): string {
+  return track === "viral" ? env.driveViralFolderId : env.driveSourceFolderId;
+}
+
 let cachedAuth: GoogleAuth | null = null;
 
 function getAuth(): GoogleAuth {
@@ -104,19 +116,27 @@ async function listFolderEntries(
  * Quellbaums, und die dort abgelegten fertigen Videos dürfen nicht als
  * Rohmaterial für das nächste Video wieder eingelesen werden.
  */
-export async function listSourceClips(): Promise<DriveClipFile[]> {
+export async function listSourceClips(track: Track = "promo"): Promise<DriveClipFile[]> {
   const drive = getDriveClient();
   const excluded = excludedFolderNames();
+
+  // Die Wurzelordner der beiden Sparten liegen heute nebeneinander, keiner
+  // unter dem anderen. Sollte das jemand in Drive umhängen, dürfen die Sparten
+  // trotzdem nicht ineinanderlaufen - deshalb wird der jeweils andere
+  // Wurzelordner beim Absteigen ausgelassen.
+  const otherRootId = sourceFolderId(track === "viral" ? "promo" : "viral");
   // Der Zielordner liegt zwar ausserhalb des Quellbaums (die Anwendung legt
   // ihn selbst an), könnte aber von Hand dorthin verschoben werden. Wird er
   // über den Namen ausgeschlossen, kämen fertige Videos nicht als Rohmaterial
   // für das nächste Video zurück.
-  const outputFolderName = env.driveOutputFolderName.toLowerCase();
+  const outputFolderNames = new Set(
+    [env.driveOutputFolderName, env.driveViralOutputFolderName].map((n) => n.toLowerCase()),
+  );
 
   const files: DriveClipFile[] = [];
   const visited = new Set<string>();
   const queue: Array<{ id: string; name: string; depth: number }> = [
-    { id: env.driveSourceFolderId, name: "(Quellordner)", depth: 0 },
+    { id: sourceFolderId(track), name: "(Quellordner)", depth: 0 },
   ];
 
   while (queue.length) {
@@ -145,7 +165,8 @@ export async function listSourceClips(): Promise<DriveClipFile[]> {
 
     if (folder.depth >= MAX_FOLDER_DEPTH) continue;
     for (const sub of subfolders) {
-      if (sub.name!.toLowerCase() === outputFolderName) continue;
+      if (sub.id === otherRootId) continue;
+      if (outputFolderNames.has(sub.name!.toLowerCase())) continue;
       if (excluded.has(sub.name!.toLowerCase())) continue;
       queue.push({ id: sub.id!, name: sub.name!, depth: folder.depth + 1 });
     }
@@ -195,10 +216,17 @@ function getWriteClient(): drive_v3.Drive {
   return cachedOAuthDrive;
 }
 
-let cachedOutputFolderId: string | null = null;
+const cachedOutputFolderIds = new Map<Track, string>();
+
+/** Name und ggf. festgenagelte ID des Zielordners je Sparte. */
+function outputFolderSettings(track: Track): { name: string; pinned: string | null } {
+  return track === "viral"
+    ? { name: env.driveViralOutputFolderName, pinned: env.driveViralOutputFolderId }
+    : { name: env.driveOutputFolderName, pinned: env.driveOutputFolderId };
+}
 
 /**
- * Liefert den Zielordner und legt ihn an, falls er fehlt.
+ * Liefert den Zielordner der Sparte und legt ihn an, falls er fehlt.
  *
  * Mit drive.file sieht die Anwendung ausschliesslich, was sie selbst angelegt
  * hat - ein von Hand erstellter Ordner wäre für sie unsichtbar und ein Upload
@@ -206,19 +234,20 @@ let cachedOutputFolderId: string | null = null;
  * selbst stammen. Verschieben lässt er sich hinterher trotzdem beliebig, die
  * Zuordnung läuft über die ID.
  */
-export async function ensureOutputFolder(): Promise<string> {
-  if (cachedOutputFolderId) return cachedOutputFolderId;
+export async function ensureOutputFolder(track: Track = "promo"): Promise<string> {
+  const cached = cachedOutputFolderIds.get(track);
+  if (cached) return cached;
+
+  const { name, pinned } = outputFolderSettings(track);
 
   // Feste ID hat Vorrang: die Suche läuft sonst über den Namen, und ein
   // Umbenennen in Drive würde beim nächsten Lauf einen zweiten Ordner anlegen.
-  const pinned = env.driveOutputFolderId;
   if (pinned) {
-    cachedOutputFolderId = pinned;
+    cachedOutputFolderIds.set(track, pinned);
     return pinned;
   }
 
   const drive = getWriteClient();
-  const name = env.driveOutputFolderName;
   const escaped = name.replace(/'/g, "\\'");
 
   const existing = await drive.files.list({
@@ -229,7 +258,7 @@ export async function ensureOutputFolder(): Promise<string> {
 
   const found = existing.data.files?.[0]?.id;
   if (found) {
-    cachedOutputFolderId = found;
+    cachedOutputFolderIds.set(track, found);
     return found;
   }
 
@@ -241,7 +270,7 @@ export async function ensureOutputFolder(): Promise<string> {
     throw new Error("Zielordner konnte nicht angelegt werden.");
   }
 
-  cachedOutputFolderId = created.data.id;
+  cachedOutputFolderIds.set(track, created.data.id);
   return created.data.id;
 }
 
@@ -253,9 +282,10 @@ export async function ensureOutputFolder(): Promise<string> {
  */
 export async function findFileInOutputFolder(
   fileName: string,
+  track: Track = "promo",
 ): Promise<{ id: string; webViewLink: string | null } | null> {
   const drive = getWriteClient();
-  const folderId = await ensureOutputFolder();
+  const folderId = await ensureOutputFolder(track);
   const escaped = fileName.replace(/'/g, "\\'");
 
   const res = await drive.files.list({
@@ -272,9 +302,10 @@ export async function findFileInOutputFolder(
 export async function uploadToOutputFolder(
   fileName: string,
   buffer: Buffer,
+  track: Track = "promo",
 ): Promise<{ id: string; webViewLink: string | null }> {
   const drive = getWriteClient();
-  const folderId = await ensureOutputFolder();
+  const folderId = await ensureOutputFolder(track);
 
   const res = await drive.files.create({
     requestBody: {
@@ -307,13 +338,14 @@ function bufferToStream(buffer: Buffer) {
 export async function uploadToOutputFolderWithRetry(
   fileName: string,
   buffer: Buffer,
+  track: Track = "promo",
   maxAttempts = 3,
 ): Promise<{ id: string; webViewLink: string | null }> {
   let lastError: unknown;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     if (attempt > 1) {
-      const existing = await findFileInOutputFolder(fileName);
+      const existing = await findFileInOutputFolder(fileName, track);
       if (existing) return existing;
 
       const backoffMs = 2000 * 2 ** (attempt - 2); // 2s, 4s, ...
@@ -321,7 +353,7 @@ export async function uploadToOutputFolderWithRetry(
     }
 
     try {
-      return await uploadToOutputFolder(fileName, buffer);
+      return await uploadToOutputFolder(fileName, buffer, track);
     } catch (err) {
       lastError = err;
     }

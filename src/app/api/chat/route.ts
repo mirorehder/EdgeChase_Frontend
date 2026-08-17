@@ -16,8 +16,11 @@ export async function POST(request: NextRequest) {
     }
 
     const [clips, recentVideos] = await Promise.all([
+      // Der Dialog gehört zur Promo-Sparte: die Parkour-Clips haben weder
+      // eine Kleidungsbewertung noch etwas mit der Rabattcode-Aktion zu tun.
       prisma.clip.findMany({
         where: {
+          track: "promo",
           analysisVersion: CURRENT_ANALYSIS_VERSION,
           apparelScore: { gte: 0.5 },
         },
@@ -25,6 +28,7 @@ export async function POST(request: NextRequest) {
         take: 40,
       }),
       prisma.promoVideo.findMany({
+        where: { track: "promo" },
         orderBy: { createdAt: "desc" },
         take: 10,
         select: { hookText: true },

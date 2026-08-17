@@ -67,15 +67,21 @@ const TEXT_STYLES: Record<z.infer<typeof textStyleSchema>, TextStyleSpec> = {
     strokePx: 3,
     lineHeight: LINE_HEIGHT,
   },
-  // Nachbau der Referenz: schmalerer Satzspiegel, mehr Zeilen, deutlich
-  // kraeftigere Kontur, Textblock etwas hoeher als die Bildmitte.
+  // Nachbau der Referenz: mehr Zeilen, deutlich kraeftigere Kontur, Textblock
+  // etwas hoeher als die Bildmitte.
+  //
+  // Der Satzspiegel war zunaechst auf 72 % der Breite gesetzt. An einem echten
+  // Render gemessen war das zu schmal: ein Text, dessen Verfasser drei Zeilen
+  // gesetzt hat, wurde auf fuenf zerfranste Zeilen umbrochen, weil jede
+  // gesetzte Zeile nochmals nicht passte. Mit 84 % bleiben die gesetzten
+  // Umbrueche stehen.
   reference: {
     fontFamily: "Nunito, Arial, sans-serif",
     fontWeight: 900,
-    maxWidthRatio: 0.72,
+    maxWidthRatio: 0.84,
     paddingTopRatio: 0.22,
     fontSizeMin: 40,
-    fontSizeMax: 66,
+    fontSizeMax: 72,
     maxLines: 7,
     strokePx: 7,
     lineHeight: 1.2,
@@ -148,6 +154,26 @@ function fitWrappedText(
   maxWidth: number,
   spec: TextStyleSpec,
 ): { fontSize: number; lines: string[] } {
+  // Hat der Verfasser den Text selbst umbrochen, ist diese Zeilenzahl das
+  // Ziel, nicht nur die Obergrenze.
+  //
+  // Ohne diese Unterscheidung sucht die Schleife bloss die groesste Schrift,
+  // die irgendwie unter maxLines bleibt - und zerlegt dabei jede gesetzte
+  // Zeile weiter. An einem echten Render beobachtet: aus drei gesetzten
+  // Zeilen wurden sechs zerfranste, weil sechs eben auch noch unter sieben
+  // liegt. Passt die gesetzte Aufteilung selbst bei kleinster Schrift nicht,
+  // greift die alte Regel.
+  const gesetzteZeilen = text.split("\n").map((l) => l.trim()).filter(Boolean).length;
+
+  if (gesetzteZeilen > 1) {
+    for (let fontSize = spec.fontSizeMax; fontSize >= spec.fontSizeMin; fontSize -= 2) {
+      const lines = wrapLines(text, fontSize, maxWidth, spec);
+      if (lines.length === gesetzteZeilen) {
+        return { fontSize, lines };
+      }
+    }
+  }
+
   for (let fontSize = spec.fontSizeMax; fontSize >= spec.fontSizeMin; fontSize -= 2) {
     const lines = wrapLines(text, fontSize, maxWidth, spec);
     if (lines.length <= spec.maxLines) {

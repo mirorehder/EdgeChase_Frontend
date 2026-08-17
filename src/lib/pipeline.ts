@@ -1,10 +1,18 @@
 import { prisma } from "./db";
-import { listSourceClips, downloadFile, uploadToOutputFolderWithRetry } from "./drive";
+import {
+  listSourceClips,
+  downloadFile,
+  uploadToOutputFolderWithRetry,
+  type Track,
+} from "./drive";
 import {
   analyzeClip,
   selectScenesAndHook,
+  selectViralScenes,
+  type ClipAnalysis,
   type ClipCandidate,
   type VideoSpec,
+  type ViralCandidate,
 } from "./gemini";
 import { renderPromoVideo } from "./render";
 import {
@@ -53,9 +61,14 @@ export interface SyncResult {
   newlyAdded: number;
 }
 
-/** Gleicht den Drive-Quellordner mit der Clip-Bibliothek ab; neue Clips werden angelegt, bestehende bleiben unangetastet. */
-export async function syncClipLibrary(): Promise<SyncResult> {
-  const driveFiles = await listSourceClips();
+const TRACK_LABEL: Record<Track, string> = {
+  promo: "Promo",
+  viral: "Virale Edits",
+};
+
+/** Gleicht den Drive-Quellordner der Sparte mit ihrer Clip-Bibliothek ab; neue Clips werden angelegt, bestehende bleiben unangetastet. */
+export async function syncClipLibrary(track: Track = "promo"): Promise<SyncResult> {
+  const driveFiles = await listSourceClips(track);
   const existing = await prisma.clip.findMany({ select: { driveFileId: true } });
   const existingIds = new Set(existing.map((c) => c.driveFileId));
 
@@ -66,6 +79,7 @@ export async function syncClipLibrary(): Promise<SyncResult> {
       data: {
         driveFileId: file.id,
         name: file.name,
+        track,
         durationMs: file.durationMs,
         sourceFolderId: file.folderId,
         sourceFolderName: file.folderName,
@@ -74,16 +88,19 @@ export async function syncClipLibrary(): Promise<SyncResult> {
   }
 
   await logActivity(
-    `Ordner abgeglichen: ${driveFiles.length} Clips in Drive, ${newFiles.length} neu aufgenommen.`,
+    `${TRACK_LABEL[track]}: Ordner abgeglichen, ${driveFiles.length} Clips in Drive, ` +
+      `${newFiles.length} neu aufgenommen.`,
+    { track },
   );
   return { totalInDrive: driveFiles.length, newlyAdded: newFiles.length };
 }
 
-/** Wie viele Clips noch auf ihre Analyse warten - damit die Oberfläche zeigen
- *  kann, ob ein weiterer Durchlauf nötig ist. */
-export async function countUnanalyzedClips(): Promise<number> {
+/** Wie viele Clips der Sparte noch auf ihre Analyse warten - damit die
+ *  Oberfläche zeigen kann, ob ein weiterer Durchlauf nötig ist. */
+export async function countUnanalyzedClips(track: Track = "promo"): Promise<number> {
   return prisma.clip.count({
     where: {
+      track,
       editedAt: null,
       OR: [{ analysisVersion: null }, { analysisVersion: { not: CURRENT_ANALYSIS_VERSION } }],
     },
@@ -99,35 +116,22 @@ export async function reanalyzeClip(clipId: string): Promise<AnalyzedClipSummary
   const clip = await prisma.clip.findUnique({ where: { id: clipId } });
   if (!clip) throw new Error("Clip nicht gefunden.");
 
-  await logActivity(`Analysiere ${clip.name} erneut ...`);
+  const track = (clip.track as Track) ?? "promo";
+  await logActivity(`Analysiere ${clip.name} erneut ...`, { track });
 
   const buffer = await downloadFile(clip.driveFileId);
-  const analysis = await analyzeClip(buffer, guessMimeType(clip.name), clip.durationMs);
+  const analysis = await analyzeClip(buffer, guessMimeType(clip.name), clip.durationMs, track);
 
   await prisma.clip.update({
     where: { id: clip.id },
-    data: {
-      description: analysis.description,
-      apparelScore: analysis.apparelScore,
-      startMs: analysis.startMs,
-      endMs: analysis.endMs,
-      analysisVersion: CURRENT_ANALYSIS_VERSION,
-      editedAt: null,
-    },
+    data: { ...analysisFields(analysis), editedAt: null },
   });
 
-  await logActivity(
-    `${clip.name} neu bewertet: Kleidung ${analysis.apparelScore.toFixed(2)}. ${analysis.description}`,
-  );
+  await logActivity(`${clip.name} neu bewertet: ${analysisSummary(analysis, track)}`, {
+    track,
+  });
 
-  return {
-    clipId: clip.id,
-    name: clip.name,
-    description: analysis.description,
-    apparelScore: analysis.apparelScore,
-    startMs: analysis.startMs,
-    endMs: analysis.endMs,
-  };
+  return { clipId: clip.id, name: clip.name, ...analysis };
 }
 
 export interface AnalyzedClipSummary {
@@ -137,14 +141,49 @@ export interface AnalyzedClipSummary {
   apparelScore: number;
   startMs: number;
   endMs: number;
+  stuntScore?: number;
+  highlightStartMs?: number;
+  highlightEndMs?: number;
+}
+
+/** Was aus einer Analyse in die Datenbank wandert - für beide Sparten gleich,
+ *  die jeweils fremden Felder bleiben schlicht leer. */
+function analysisFields(analysis: ClipAnalysis) {
+  return {
+    description: analysis.description,
+    apparelScore: analysis.apparelScore,
+    stuntScore: analysis.stuntScore ?? null,
+    highlightStartMs: analysis.highlightStartMs ?? null,
+    highlightEndMs: analysis.highlightEndMs ?? null,
+    startMs: analysis.startMs,
+    endMs: analysis.endMs,
+    analysisVersion: CURRENT_ANALYSIS_VERSION,
+  };
+}
+
+/** Einzeiler fürs Protokoll - je Sparte die Kennzahl, auf die es ankommt. */
+function analysisSummary(analysis: ClipAnalysis, track: Track): string {
+  const cut =
+    `Schnitt ${(analysis.startMs / 1000).toFixed(1)}-${(analysis.endMs / 1000).toFixed(1)}s`;
+
+  if (track === "viral") {
+    const trick =
+      analysis.highlightStartMs !== undefined && analysis.highlightEndMs !== undefined
+        ? `Trick ${(analysis.highlightStartMs / 1000).toFixed(1)}-${(analysis.highlightEndMs / 1000).toFixed(1)}s`
+        : "Trick unbekannt";
+    return `Stunt ${(analysis.stuntScore ?? 0).toFixed(2)}, ${trick}, ${cut}. ${analysis.description}`;
+  }
+  return `Kleidung ${analysis.apparelScore.toFixed(2)}, ${cut}. ${analysis.description}`;
 }
 
 /** Analysiert alle noch nicht (oder mit alter Prompt-Version) ausgewerteten Clips - siehe Auftrag 5.1. */
 export async function analyzeUnanalyzedClips(
   limit = ANALYZE_BATCH_LIMIT,
+  track: Track = "promo",
 ): Promise<AnalyzedClipSummary[]> {
   const pending = await prisma.clip.findMany({
     where: {
+      track,
       // Von Hand korrigierte Clips bleiben unangetastet, auch wenn die
       // Analyse-Version hochgezählt wird.
       editedAt: null,
@@ -158,7 +197,7 @@ export async function analyzeUnanalyzedClips(
 
   const total = pending.length;
   for (const [index, clip] of pending.entries()) {
-    await logActivity(`Analysiere ${clip.name} (${index + 1} von ${total}) ...`);
+    await logActivity(`Analysiere ${clip.name} (${index + 1} von ${total}) ...`, { track });
     const buffer = await downloadFile(clip.driveFileId);
     const mimeType = guessMimeType(clip.name);
 
@@ -174,33 +213,13 @@ export async function analyzeUnanalyzedClips(
       }
     }
 
-    const analysis = await analyzeClip(buffer, mimeType, clip.durationMs);
+    const analysis = await analyzeClip(buffer, mimeType, clip.durationMs, track);
 
-    await prisma.clip.update({
-      where: { id: clip.id },
-      data: {
-        description: analysis.description,
-        apparelScore: analysis.apparelScore,
-        startMs: analysis.startMs,
-        endMs: analysis.endMs,
-        analysisVersion: CURRENT_ANALYSIS_VERSION,
-      },
-    });
+    await prisma.clip.update({ where: { id: clip.id }, data: analysisFields(analysis) });
 
-    await logActivity(
-      `${clip.name}: Kleidung ${analysis.apparelScore.toFixed(2)}, Ausschnitt ` +
-        `${(analysis.startMs / 1000).toFixed(1)}-${(analysis.endMs / 1000).toFixed(1)}s. ` +
-        analysis.description,
-    );
+    await logActivity(`${clip.name}: ${analysisSummary(analysis, track)}`, { track });
 
-    results.push({
-      clipId: clip.id,
-      name: clip.name,
-      description: analysis.description,
-      apparelScore: analysis.apparelScore,
-      startMs: analysis.startMs,
-      endMs: analysis.endMs,
-    });
+    results.push({ clipId: clip.id, name: clip.name, ...analysis });
   }
 
   return results;
@@ -270,6 +289,7 @@ export async function composeVideo(options: ComposeOptions = {}): Promise<Compos
 
   const candidates = await prisma.clip.findMany({
     where: {
+      track: "promo",
       apparelScore: { gte: APPAREL_SCORE_THRESHOLD },
       analysisVersion: CURRENT_ANALYSIS_VERSION,
     },
@@ -284,6 +304,7 @@ export async function composeVideo(options: ComposeOptions = {}): Promise<Compos
   }
 
   const recentVideos = await prisma.promoVideo.findMany({
+    where: { track: "promo" },
     orderBy: { createdAt: "desc" },
     take: 10,
     select: { hookText: true },
@@ -301,6 +322,7 @@ export async function composeVideo(options: ComposeOptions = {}): Promise<Compos
   const namedClips = options.clipNames?.length
     ? await prisma.clip.findMany({
         where: {
+          track: "promo",
           analysisVersion: CURRENT_ANALYSIS_VERSION,
           OR: options.clipNames.map((name) => ({ name: { contains: name } })),
         },
@@ -356,6 +378,136 @@ export async function composeVideo(options: ComposeOptions = {}): Promise<Compos
   return { hookText: selection.hookText, scenes };
 }
 
+// ---------------------------------------------------------------------------
+// Sparte "viral": Höhepunkte aneinanderreihen
+// ---------------------------------------------------------------------------
+
+/** Unterhalb davon ist kein Trick zu sehen, den ein Edit zeigen könnte. */
+const STUNT_SCORE_THRESHOLD = 0.25;
+
+/** Nach dem Vorbild der Referenz: rund eine Sekunde je Einstellung. */
+const VIRAL_TARGET_SECONDS_PER_SCENE = 1.0;
+
+/** Ein Trick, der länger dauert, darf seine Szene entsprechend ausdehnen -
+ *  lieber eine etwas längere Einstellung als eine abgeschnittene Landung. */
+const VIRAL_MAX_SECONDS_PER_SCENE = 1.8;
+const VIRAL_MIN_SECONDS_PER_SCENE = 0.7;
+
+const VIRAL_DEFAULT_TOTAL_SECONDS = 13;
+
+export interface ViralComposeOptions {
+  /** Text des Overlays - stammt aus dem gewählten Konzept. */
+  hookText: string;
+  /** Wie viele Einstellungen. Ohne Angabe aus der Zielllänge abgeleitet. */
+  clipCount?: number;
+  totalSeconds?: number;
+}
+
+/**
+ * Schneidet eine Szene so zu, dass der Trick darin vollständig vorkommt.
+ *
+ * Massgeblich ist das analysierte Trickfenster, nicht eine feste Sekundenzahl:
+ * ein Backflip dauert eine halbe Sekunde, ein Precision-Sprung über eine
+ * Lücke deutlich länger. Wird stur auf 1,0s geschnitten, fehlt beim einen die
+ * Landung und beim anderen passiert die halbe Zeit nichts. Die Zielllänge
+ * steuert deshalb nur, wie viele Einstellungen ins Video passen.
+ */
+export function viralSceneWindow(clip: {
+  highlightStartMs: number | null;
+  highlightEndMs: number | null;
+  startMs: number | null;
+  endMs: number | null;
+  durationMs: number | null;
+}): { startMs: number; seconds: number } {
+  const limit = clip.durationMs ?? Number.MAX_SAFE_INTEGER;
+
+  // Ohne erkanntes Trickfenster bleibt der analysierte Ausschnitt - besser als
+  // nichts, aber es ist der Ausnahmefall.
+  const takeoff = clip.highlightStartMs ?? clip.startMs ?? 0;
+  const landing = clip.highlightEndMs ?? clip.endMs ?? takeoff + 1000;
+
+  const wanted = (landing - takeoff) / 1000 + 0.55; // Vorlauf plus Nachlauf
+  const seconds = Math.min(
+    VIRAL_MAX_SECONDS_PER_SCENE,
+    Math.max(VIRAL_MIN_SECONDS_PER_SCENE, wanted),
+  );
+
+  // Der Absprung bekommt ein Fünftel der Szene als Vorlauf, der Rest gehört
+  // dem Flug und der Landung.
+  let startMs = takeoff - seconds * 1000 * 0.2;
+  startMs = Math.max(0, Math.min(startMs, limit - seconds * 1000));
+
+  return { startMs: Math.round(Math.max(0, startMs)), seconds: Math.round(seconds * 100) / 100 };
+}
+
+/** Stellt einen viralen Edit aus den stärksten Höhepunkten zusammen. */
+export async function composeViralVideo(options: ViralComposeOptions): Promise<ComposedVideo> {
+  const totalSeconds = options.totalSeconds ?? VIRAL_DEFAULT_TOTAL_SECONDS;
+  const wantedCount =
+    options.clipCount ?? Math.round(totalSeconds / VIRAL_TARGET_SECONDS_PER_SCENE);
+
+  const candidates = await prisma.clip.findMany({
+    where: {
+      track: "viral",
+      analysisVersion: CURRENT_ANALYSIS_VERSION,
+      stuntScore: { gte: STUNT_SCORE_THRESHOLD },
+    },
+    orderBy: { lastUsedAt: { sort: "asc", nulls: "first" } },
+    take: Math.max(CANDIDATE_POOL_SIZE, wantedCount * 3),
+  });
+
+  if (candidates.length < 3) {
+    throw new Error(
+      `Nicht genug Höhepunkte (stuntScore >= ${STUNT_SCORE_THRESHOLD}) für einen Edit - vorhanden: ${candidates.length}. Erst die Clips der viralen Sparte analysieren.`,
+    );
+  }
+
+  const payload: ViralCandidate[] = candidates.map((c) => ({
+    id: c.id,
+    description: c.description ?? "",
+    stuntScore: c.stuntScore ?? 0,
+    trickMs: (c.highlightEndMs ?? 0) - (c.highlightStartMs ?? 0),
+  }));
+
+  const orderedIds = await selectViralScenes(payload, Math.min(wantedCount, candidates.length));
+  const byId = new Map(candidates.map((c) => [c.id, c]));
+
+  const scenes: ComposedScene[] = [];
+  let used = 0;
+
+  for (const id of orderedIds) {
+    const clip = byId.get(id);
+    if (!clip) continue;
+
+    const { startMs, seconds } = viralSceneWindow(clip);
+
+    // Die Zielllänge ist eine Obergrenze, keine Quote: lieber ein Video, das
+    // 12,4s statt 13,0s lang ist, als eine angeschnittene letzte Landung.
+    if (used + seconds > totalSeconds + VIRAL_MAX_SECONDS_PER_SCENE) break;
+
+    scenes.push({
+      clipId: clip.id,
+      driveFileId: clip.driveFileId,
+      startMs,
+      endMs: startMs + Math.round(seconds * 1000),
+      seconds,
+    });
+    used += seconds;
+    if (used >= totalSeconds) break;
+  }
+
+  if (scenes.length < 3) {
+    throw new Error("Zu wenige verwertbare Höhepunkte für einen Edit.");
+  }
+
+  await logActivity(
+    `Virale Edits: ${scenes.length} Höhepunkte zusammengestellt, ${used.toFixed(1)}s.`,
+    { track: "viral" },
+  );
+
+  return { hookText: options.hookText, scenes };
+}
+
 /** Rendert, lädt hoch und aktualisiert den Job - mit bis zu 3 Versuchen (Auftrag 5.5). */
 export async function processJob(jobId: string): Promise<void> {
   for (let attempt = 1; attempt <= MAX_RENDER_ATTEMPTS; attempt++) {
@@ -364,11 +516,13 @@ export async function processJob(jobId: string): Promise<void> {
       data: { status: "rendering", attempts: attempt, claimedAt: new Date() },
     });
 
+    const track = (job.track as Track) ?? "promo";
+
     try {
       const scenes = job.scenes as unknown as ComposedScene[];
       await logActivity(
         `Render gestartet (Versuch ${attempt} von ${MAX_RENDER_ATTEMPTS}) ...`,
-        { videoId: jobId },
+        { videoId: jobId, track },
       );
       const renderStartedAt = Date.now();
       const buffer = await renderPromoVideo(
@@ -386,11 +540,13 @@ export async function processJob(jobId: string): Promise<void> {
       await logActivity(
         `Render fertig: ${(buffer.length / 1_000_000).toFixed(1)} MB in ` +
           `${((Date.now() - renderStartedAt) / 1000).toFixed(0)}s. Lade nach Drive hoch ...`,
-        { videoId: jobId },
+        { videoId: jobId, track },
       );
 
+      // Jede Sparte hat ihren eigenen Zielordner in Drive - Werbevideos und
+      // Parkour-Edits sollen auch dort nicht durcheinandergeraten.
       const fileName = hookTextToFileName(job.hookText);
-      const upload = await uploadToOutputFolderWithRetry(fileName, buffer);
+      const upload = await uploadToOutputFolderWithRetry(fileName, buffer, track);
 
       await prisma.promoVideo.update({
         where: { id: jobId },
@@ -406,7 +562,7 @@ export async function processJob(jobId: string): Promise<void> {
         data: { lastUsedAt: new Date() },
       });
 
-      await logActivity(`Fertig: ${fileName} liegt in Drive.`, { videoId: jobId });
+      await logActivity(`Fertig: ${fileName} liegt in Drive.`, { videoId: jobId, track });
       return;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -415,7 +571,7 @@ export async function processJob(jobId: string): Promise<void> {
         isLastAttempt
           ? `Endgültig fehlgeschlagen: ${message}`
           : `Versuch ${attempt} fehlgeschlagen, wird wiederholt: ${message}`,
-        { level: "error", videoId: jobId },
+        { level: "error", videoId: jobId, track },
       );
 
       await prisma.promoVideo.update({
@@ -459,6 +615,41 @@ export async function createJobFromSpec(
   });
 
   await logActivity(`Auftrag aus Anweisung angelegt: "${requestedVia}"`, { videoId: job.id });
+  return job.id;
+}
+
+/**
+ * Legt einen viralen Edit nach einem gespeicherten Konzept an.
+ *
+ * Aus dem Konzept kommen Text und Textgestaltung; Länge und Anzahl der
+ * Einstellungen dienen als Richtwert, den die Höhepunkte selbst noch
+ * verschieben dürfen.
+ */
+export async function createViralJobFromConcept(conceptId: string): Promise<string> {
+  const concept = await prisma.concept.findUnique({ where: { id: conceptId } });
+  if (!concept) throw new Error("Konzept nicht gefunden.");
+
+  const composed = await composeViralVideo({
+    hookText: concept.hookText,
+    clipCount: concept.clipCount || undefined,
+    totalSeconds: concept.totalSeconds || undefined,
+  });
+
+  const job = await prisma.promoVideo.create({
+    data: {
+      track: "viral",
+      hookText: composed.hookText,
+      scenes: composed.scenes as unknown as object,
+      status: "queued",
+      textStyle: concept.textStyle,
+      requestedVia: `Konzept: ${concept.title}`,
+    },
+  });
+
+  await logActivity(`Viraler Edit nach Konzept "${concept.title}" angelegt.`, {
+    videoId: job.id,
+    track: "viral",
+  });
   return job.id;
 }
 

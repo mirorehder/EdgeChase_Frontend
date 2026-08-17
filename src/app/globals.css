@@ -9,6 +9,8 @@
   --ok: #3ecf8e;
   --warn: #f5a623;
   --err: #ef4444;
+  /* Leitfarbe der viralen Sparte - deutlich anders als das Promo-Blau. */
+  --viral: #f5643c;
 }
 
 * {
@@ -530,4 +532,74 @@ tr:last-child td {
   width: 16px;
   height: 16px;
   accent-color: var(--accent);
+}
+
+/* --------------------------------------------------------------------------
+   Sparten
+   Die Trennung muss auf einen Blick sichtbar sein, nicht nur in den
+   Überschriften: die aktive Sparte bekommt eine eigene Leitfarbe, die sich
+   auch auf Knöpfe und Fortschrittsbalken darunter durchzieht.
+   -------------------------------------------------------------------------- */
+
+.sparten {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+
+.sparte {
+  flex: 1 1 220px;
+  text-align: left;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+
+.sparte:hover {
+  color: var(--text);
+}
+
+.sparte-titel {
+  display: block;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.sparte-unter {
+  display: block;
+  margin-top: 3px;
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+.sparte-promo.aktiv {
+  color: var(--text);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+}
+
+.sparte-viral.aktiv {
+  color: var(--text);
+  border-color: var(--viral);
+  background: color-mix(in srgb, var(--viral) 12%, var(--surface));
+}
+
+/* Die Leitfarbe der Sparte gilt für alles darunter. Dadurch stimmen Knöpfe,
+   Balken und Verweise ohne eigene Regeln je Bauteil. */
+.sparte-inhalt-viral {
+  --accent: var(--viral);
+}
+
+.sparte-hinweis {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+  margin: -8px 0 22px;
+  padding-left: 12px;
+  border-left: 2px solid var(--accent);
 }
