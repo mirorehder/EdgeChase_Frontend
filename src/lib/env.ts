@@ -24,7 +24,7 @@ export const env = {
     return required("DRIVE_SOURCE_FOLDER_ID");
   },
   /**
-   * Quellordner der viralen Sparte ("Parkour-Bangers").
+   * Quellordner der viralen Sparte ("Parkour Bangers").
    *
    * Anders als beim Promo-Ordner steht hier eine Vorgabe im Code: die ID ist
    * kein Geheimnis, der Ordner ist gesetzt, und so muss für die zweite Sparte
@@ -32,7 +32,7 @@ export const env = {
    * trotzdem jederzeit über die Umgebungsvariable.
    */
   get driveViralFolderId() {
-    return process.env.DRIVE_VIRAL_FOLDER_ID || "1WDtxBREWE1MPYAvqjUbAtI8mRbXziYMO";
+    return process.env.DRIVE_VIRAL_FOLDER_ID || "1t-9kl96htTGEiKqhRiA_Ab9f5T5EpMIN";
   },
   /** Zielordner wird von der Anwendung selbst angelegt (drive.file sieht nur
    *  Eigenes), deshalb genügt der Name statt einer ID. */

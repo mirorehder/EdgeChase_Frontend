@@ -543,15 +543,17 @@ export async function selectViralScenes(
 
   const prompt = `Du stellst einen schnell geschnittenen Parkour-Edit zusammen. Jede Einstellung zeigt etwa eine Sekunde: genau den Trick, nichts davor, nichts danach.
 
-Verfügbare Höhepunkte:
+Verfügbare Höhepunkte, bereits nach stuntScore sortiert - der stärkste Trick steht oben:
 ${candidateList}
 
 Wähle genau ${desiredCount} IDs aus dieser Liste und bringe sie in die Reihenfolge, in der sie im Video erscheinen sollen.
 
+WICHTIGSTE REGEL: Es zählt, wie spektakulär die Tricks sind. Nimm die am höchsten bewerteten Clips. Übergehe einen stark bewerteten Trick niemals zugunsten von Abwechslung - lieber zwei ähnliche starke Tricks als einen schwachen. Weggelassen wird immer von unten, also das Schwächste zuerst.
+
 Regeln für die Reihenfolge:
-- Der erste Clip entscheidet, ob jemand weiterschaut: er muss sofort beeindrucken.
-- Danach steigern: die stärksten Tricks gehören ans Ende.
-- Zwei sehr ähnliche Bewegungen oder Orte nicht direkt hintereinander.
+- Der erste Clip entscheidet, ob jemand weiterschaut: er muss sofort beeindrucken. Nimm dafür einen der stärksten.
+- Der allerstärkste Trick gehört ans Ende.
+- Sind zwei Clips gleich stark bewertet, stelle den mit dem anderen Ort oder der anderen Bewegung dazwischen.
 - Clips ohne echten Trick (stuntScore nahe 0) nur nehmen, wenn sonst zu wenige da sind.
 
 Gib ausschliesslich IDs aus der Liste zurück.`;

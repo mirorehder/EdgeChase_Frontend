@@ -133,10 +133,23 @@ export async function listSourceClips(track: Track = "promo"): Promise<DriveClip
     [env.driveOutputFolderName, env.driveViralOutputFolderName].map((n) => n.toLowerCase()),
   );
 
+  // Den echten Namen des Wurzelordners holen. Clips, die direkt darin liegen,
+  // stünden sonst in der Bibliothek unter "(Quellordner)" - der Ordnername ist
+  // aber genau das Themensignal, das die Auswahl und die Übersicht brauchen.
+  const rootId = sourceFolderId(track);
+  let rootName = "(Quellordner)";
+  try {
+    const meta = await drive.files.get({ fileId: rootId, fields: "name" });
+    if (meta.data.name) rootName = meta.data.name;
+  } catch {
+    // Kommt der Name nicht, bleibt der Platzhalter - dafür soll der Abgleich
+    // nicht scheitern.
+  }
+
   const files: DriveClipFile[] = [];
   const visited = new Set<string>();
   const queue: Array<{ id: string; name: string; depth: number }> = [
-    { id: sourceFolderId(track), name: "(Quellordner)", depth: 0 },
+    { id: rootId, name: rootName, depth: 0 },
   ];
 
   while (queue.length) {

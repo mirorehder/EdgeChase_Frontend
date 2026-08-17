@@ -59,7 +59,18 @@ function guessMimeType(fileName: string): string {
 export interface SyncResult {
   totalInDrive: number;
   newlyAdded: number;
+  /** Clips, die im Quellordner nicht mehr vorkommen und entfernt wurden. */
+  removed: number;
 }
+
+/**
+ * Unterhalb dieser Zahl wird nicht aufgeräumt.
+ *
+ * Ein leeres oder sehr kurzes Ergebnis aus Drive heisst viel eher, dass die
+ * Ordner-ID falsch gesetzt ist oder die Freigabe fehlt, als dass wirklich
+ * alles gelöscht wurde. In dem Fall wäre ein Aufräumen die falsche Antwort.
+ */
+const MIN_LISTING_FOR_PRUNE = 5;
 
 const TRACK_LABEL: Record<Track, string> = {
   promo: "Promo",
@@ -87,12 +98,35 @@ export async function syncClipLibrary(track: Track = "promo"): Promise<SyncResul
     });
   }
 
+  // Aufräumen, was nicht mehr im Quellordner liegt.
+  //
+  // Der Fall tritt vor allem auf, wenn der Quellordner gewechselt wird: die
+  // Clips des alten Ordners blieben sonst in der Bibliothek und kämen weiter
+  // in Videos vor. Von Hand bearbeitete Clips bleiben stehen - eine Korrektur
+  // des Nutzers wird nicht stillschweigend weggeworfen, auch nicht hier.
+  const driveIds = new Set(driveFiles.map((f) => f.id));
+  let removed = 0;
+
+  if (driveFiles.length >= MIN_LISTING_FOR_PRUNE) {
+    const veraltet = await prisma.clip.findMany({
+      where: { track, editedAt: null },
+      select: { id: true, driveFileId: true },
+    });
+    const zuEntfernen = veraltet.filter((c) => !driveIds.has(c.driveFileId));
+
+    if (zuEntfernen.length) {
+      await prisma.clip.deleteMany({ where: { id: { in: zuEntfernen.map((c) => c.id) } } });
+      removed = zuEntfernen.length;
+    }
+  }
+
   await logActivity(
     `${TRACK_LABEL[track]}: Ordner abgeglichen, ${driveFiles.length} Clips in Drive, ` +
-      `${newFiles.length} neu aufgenommen.`,
+      `${newFiles.length} neu aufgenommen` +
+      (removed ? `, ${removed} nicht mehr im Ordner und entfernt.` : "."),
     { track },
   );
-  return { totalInDrive: driveFiles.length, newlyAdded: newFiles.length };
+  return { totalInDrive: driveFiles.length, newlyAdded: newFiles.length, removed };
 }
 
 /** Wie viele Clips der Sparte noch auf ihre Analyse warten - damit die
@@ -395,6 +429,11 @@ const VIRAL_MIN_SECONDS_PER_SCENE = 0.7;
 
 const VIRAL_DEFAULT_TOTAL_SECONDS = 13;
 
+/** Ersatzleute über die gewünschte Anzahl hinaus: genug, damit die Auswahl
+ *  Reihenfolge und Abwechslung gestalten kann, zu wenig, um einen der besten
+ *  Tricks fallen zu lassen. */
+const VIRAL_POOL_SPARE = 4;
+
 export interface ViralComposeOptions {
   /** Text des Overlays - stammt aus dem gewählten Konzept. */
   hookText: string;
@@ -446,14 +485,29 @@ export async function composeViralVideo(options: ViralComposeOptions): Promise<C
   const wantedCount =
     options.clipCount ?? Math.round(totalSeconds / VIRAL_TARGET_SECONDS_PER_SCENE);
 
+  // Hier zählt die Bewertung, nicht die Rotation.
+  //
+  // In der Promo-Sparte ist es andersherum: dort werden die am längsten nicht
+  // verwendeten Clips bevorzugt, damit die täglichen Videos sich abwechseln.
+  // Ein viraler Edit hat aber genau eine Aufgabe - beeindrucken -, und ein
+  // mittelmässiger Trick nur deshalb, weil er lange nicht dran war, macht das
+  // Video schwächer. Die Rotation entscheidet deshalb nur noch zwischen Clips
+  // mit gleicher Bewertung.
+  //
+  // Der Kandidatenkreis bleibt bewusst eng (die Gewünschten plus ein paar
+  // Ersatzleute): bei einem grossen Kreis könnte die Auswahl einen der
+  // stärksten Tricks zugunsten von Abwechslung übergehen.
   const candidates = await prisma.clip.findMany({
     where: {
       track: "viral",
       analysisVersion: CURRENT_ANALYSIS_VERSION,
       stuntScore: { gte: STUNT_SCORE_THRESHOLD },
     },
-    orderBy: { lastUsedAt: { sort: "asc", nulls: "first" } },
-    take: Math.max(CANDIDATE_POOL_SIZE, wantedCount * 3),
+    orderBy: [
+      { stuntScore: "desc" },
+      { lastUsedAt: { sort: "asc", nulls: "first" } },
+    ],
+    take: wantedCount + VIRAL_POOL_SPARE,
   });
 
   if (candidates.length < 3) {
@@ -500,8 +554,16 @@ export async function composeViralVideo(options: ViralComposeOptions): Promise<C
     throw new Error("Zu wenige verwertbare Höhepunkte für einen Edit.");
   }
 
+  // Die Bewertungen mitschreiben: nur so lässt sich nachsehen, ob wirklich die
+  // stärksten Tricks im Video gelandet sind, statt es dem Video ansehen zu
+  // müssen.
+  const bewertungen = scenes
+    .map((s) => (byId.get(s.clipId)?.stuntScore ?? 0).toFixed(2))
+    .join(", ");
+
   await logActivity(
-    `Virale Edits: ${scenes.length} Höhepunkte zusammengestellt, ${used.toFixed(1)}s.`,
+    `Virale Edits: ${scenes.length} Höhepunkte zusammengestellt, ${used.toFixed(1)}s. ` +
+      `Stunt-Bewertungen: ${bewertungen} (von ${candidates.length} Kandidaten).`,
     { track: "viral" },
   );
 

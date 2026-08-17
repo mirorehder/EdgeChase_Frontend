@@ -30,6 +30,9 @@ export function TriggerButtons({ track }: { track: Track }) {
           kind === "trigger"
             ? `Video-Job gestartet (${data.jobId}).`
             : `Abgleich fertig: ${data.syncResult.newlyAdded} neue Clips, ${data.analyzed.length} analysiert.` +
+              (data.syncResult.removed > 0
+                ? ` ${data.syncResult.removed} nicht mehr im Ordner, entfernt.`
+                : "") +
               (data.remaining > 0
                 ? ` Noch ${data.remaining} offen - Abgleich erneut auslösen.`
                 : ""),

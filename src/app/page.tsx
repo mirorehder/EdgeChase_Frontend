@@ -177,9 +177,10 @@ export default async function DashboardPage() {
           <>
             <Kennzahlen data={viral} track="viral" />
             <p className="sparte-hinweis">
-              Quelle: der Ordner „Parkour-Bangers" in Drive. Ausgewählt wird nach dem Trick selbst -
-              jede Einstellung zeigt den Moment von Absprung bis Landung, rund eine Sekunde lang.
-              Der Text stammt aus einem Konzept. Läuft nur auf Knopfdruck.
+              Quelle: der Ordner „Parkour Bangers" in Drive. Genommen werden immer die am höchsten
+              bewerteten Tricks, nicht die am längsten nicht verwendeten. Jede Einstellung zeigt den
+              Moment von Absprung bis Landung, rund eine Sekunde lang. Der Text stammt aus einem
+              Konzept. Läuft nur auf Knopfdruck.
             </p>
 
             <TriggerButtons track="viral" />
