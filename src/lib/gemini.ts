@@ -723,6 +723,98 @@ function ersatzAufbauClip(candidates: SetupCandidate[], sceneHint: string): stri
 }
 
 // ---------------------------------------------------------------------------
+// Der Dateiname: ein Titel zu genau diesem Video
+// ---------------------------------------------------------------------------
+
+/**
+ * Laenger wird kein Dateiname mehr ueberflogen, und Drive zeigt in der
+ * Listenansicht ohnehin nicht mehr an.
+ */
+const MAX_TITLE_CHARS = 60;
+
+export interface TitleInput {
+  /** Was in den Einstellungen zu sehen ist, in ihrer Reihenfolge. */
+  sceneDescriptions: string[];
+  /** Die eingeblendeten Texte in ihrer Reihenfolge. */
+  texts: string[];
+  track: Track;
+}
+
+/**
+ * Erfindet einen kurzen, treffenden Titel fuer das fertige Video.
+ *
+ * Bisher hiess jede Datei wie ihr Hook-Text. Bei den viralen Edits fuehrt das
+ * dazu, dass jedes Video nach demselben Konzept gleich heisst - in einem
+ * Ordner, aus dem gepostet werden soll, ist das unbrauchbar. Der Titel richtet
+ * sich deshalb nach dem, was tatsaechlich im Video passiert.
+ */
+export async function erfindeVideoTitel(input: TitleInput): Promise<string> {
+  const szenen = input.sceneDescriptions
+    .map((d, i) => `${i + 1}. ${d}`)
+    .join("\n");
+  const texte = input.texts.filter(Boolean).map((t) => `- "${t.replace(/\n/g, " ")}"`).join("\n");
+
+  const worum =
+    input.track === "viral"
+      ? "ein schnell geschnittener Parkour-Edit fuer Instagram"
+      : "ein kurzes Werbevideo einer Streetwear-Marke";
+
+  try {
+    const ai = client();
+    const response = await ai.models.generateContent({
+      model: MODEL,
+      contents: [
+        {
+          role: "user",
+          parts: [
+            {
+              text: `Du gibst einem fertigen Video einen Titel. Es ist ${worum}.
+
+Das ist in den Einstellungen zu sehen, in dieser Reihenfolge:
+${szenen}
+
+${texte ? `Eingeblendet steht im Video:\n${texte}` : "Im Video steht kein Text."}
+
+Finde einen Titel auf Englisch. Anforderungen:
+- Er muss zu genau DIESEM Video passen - greif auf, was oben tatsaechlich zu sehen ist, nicht auf Parkour im Allgemeinen.
+- Witzig und cool, wie eine Bildunterschrift, die jemand wirklich posten wuerde. Kein Behoerdendeutsch, keine Aufzaehlung, keine Erklaerung.
+- Hoechstens ${MAX_TITLE_CHARS} Zeichen.
+- Nur Buchstaben, Ziffern und Leerzeichen. Keine Emojis, keine Anfuehrungszeichen, keine Satzzeichen, keine Hashtags.
+- Wiederhole nicht einfach den eingeblendeten Text.
+
+Gib nur den Titel zurueck.`,
+            },
+          ],
+        },
+      ],
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: { title: { type: Type.STRING } },
+          required: ["title"],
+        },
+      },
+    });
+
+    const raw = (JSON.parse(response.text ?? "{}") as { title?: string }).title ?? "";
+    const sauber = raw
+      .replace(/[^a-zA-Z0-9 ]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, MAX_TITLE_CHARS)
+      .trim();
+
+    if (sauber.length >= 3) return sauber;
+  } catch (err) {
+    console.warn("Titel ohne Modell:", err instanceof Error ? err.message : err);
+  }
+
+  // Ohne Modell bleibt der bisherige Weg: der eingeblendete Text.
+  return input.texts.find((t) => t.trim())?.replace(/\n/g, " ").trim() ?? "";
+}
+
+// ---------------------------------------------------------------------------
 // Dialog: aus einer frei formulierten Anweisung eine Videobeschreibung machen
 // ---------------------------------------------------------------------------
 

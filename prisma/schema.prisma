@@ -131,6 +131,14 @@ model PromoVideo {
   /// Leer bedeutet: hookText steht über der ganzen Länge.
   textPhases Json?
 
+  /// Wie die Datei in Drive heissen soll - ein kurzer, treffender Titel zu
+  /// genau diesem Video.
+  ///
+  /// Wird beim Anlegen des Auftrags festgelegt und nicht beim Hochladen: ein
+  /// Wiederholversuch muss denselben Namen verwenden, sonst greift der
+  /// Duplikatschutz nicht mehr. Leer bedeutet, dass der Hook-Text herhält.
+  fileTitle String?
+
   status   String @default("queued") // queued | rendering | done | failed
   attempts Int    @default(0)
 

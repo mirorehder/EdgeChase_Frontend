@@ -8,6 +8,7 @@ import {
 import {
   analyzeClip,
   selectScenesAndHook,
+  erfindeVideoTitel,
   selectSetupClip,
   selectViralScenes,
   type ClipAnalysis,
@@ -282,6 +283,8 @@ export interface ComposedVideo {
   scenes: ComposedScene[];
   /** Leer bedeutet: hookText steht über der ganzen Länge. */
   textPhases?: ComposedTextPhase[];
+  /** Titel für die Datei in Drive - passend zu genau diesem Video. */
+  fileTitle?: string;
 }
 
 /**
@@ -435,7 +438,13 @@ export async function composeVideo(options: ComposeOptions = {}): Promise<Compos
     );
   }
 
-  return { hookText: selection.hookText, scenes };
+  const fileTitle = await erfindeVideoTitel({
+    sceneDescriptions: selectedClips.map((c) => c.description || c.name),
+    texts: [selection.hookText],
+    track: "promo",
+  });
+
+  return { hookText: selection.hookText, scenes, fileTitle };
 }
 
 // ---------------------------------------------------------------------------
@@ -754,7 +763,25 @@ export async function composeViralVideo(options: ViralComposeOptions): Promise<C
     );
   }
 
-  return { hookText: phasen[0].text, scenes: alleSzenen, textPhases };
+  // Frisch nachschlagen statt aus dem Kandidatenkreis: die Eröffnung stammt
+  // aus einer eigenen Abfrage und stünde dort nicht drin.
+  const fileTitle = await erfindeVideoTitel({
+    sceneDescriptions: await beschreibungenFuer(alleSzenen),
+    texts: phasen.map((p) => p.text),
+    track: "viral",
+  });
+
+  return { hookText: phasen[0].text, scenes: alleSzenen, textPhases, fileTitle };
+}
+
+/** Die Clip-Beschreibungen in der Reihenfolge der Szenen. */
+async function beschreibungenFuer(szenen: ComposedScene[]): Promise<string[]> {
+  const clips = await prisma.clip.findMany({
+    where: { id: { in: szenen.map((s) => s.clipId) } },
+    select: { id: true, name: true, description: true },
+  });
+  const byId = new Map(clips.map((c) => [c.id, c]));
+  return szenen.map((s) => byId.get(s.clipId)?.description || byId.get(s.clipId)?.name || "Clip");
 }
 
 /**
@@ -841,12 +868,14 @@ export async function processJob(jobId: string): Promise<void> {
 
       // Jede Sparte hat ihren eigenen Zielordner in Drive - Werbevideos und
       // Parkour-Edits sollen auch dort nicht durcheinandergeraten.
-      const fileName = hookTextToFileName(job.hookText);
+      const fileName = hookTextToFileName(job.fileTitle || job.hookText);
+      await logActivity(`Dateiname: ${fileName}`, { videoId: jobId, track });
       const upload = await uploadToOutputFolderWithRetry(
         fileName,
         buffer,
         track,
         job.driveFolderId,
+        job.createdAt,
       );
 
       await prisma.promoVideo.update({
@@ -911,6 +940,7 @@ export async function createJobFromSpec(
       scenes: composed.scenes as unknown as object,
       status: "queued",
       textStyle: spec.textStyle,
+      fileTitle: composed.fileTitle || null,
       requestedVia,
     },
   });
@@ -1059,6 +1089,7 @@ export async function createViralJobFromConcept(
       scenes: composed.scenes as unknown as object,
       status: "queued",
       textPhases: (composed.textPhases as unknown as object) ?? undefined,
+      fileTitle: composed.fileTitle || null,
       textStyle: concept.textStyle,
       requestedVia: `Konzept: ${concept.title}`,
       driveFolderId: options.driveFolderId ?? null,
@@ -1131,6 +1162,7 @@ export async function runDailyJob(): Promise<string | null> {
       scenes: composed.scenes as unknown as object,
       status: "queued",
       textStyle: settings.textStyle,
+      fileTitle: composed.fileTitle || null,
       videoVolume: settings.videoVolume,
     },
   });

@@ -297,6 +297,16 @@ export async function findFileInOutputFolder(
   fileName: string,
   track: Track = "promo",
   folderIdOverride?: string | null,
+  /**
+   * Nur Dateien beruecksichtigen, die nach diesem Zeitpunkt entstanden sind.
+   *
+   * Seit die Dateinamen aus einem erfundenen Titel stammen, koennen zwei
+   * verschiedene Videos denselben Namen treffen. Ohne diese Schranke haelt ein
+   * Wiederholversuch das fremde Video faelschlich fuer sein eigenes und
+   * verlinkt es. Was vor dem Start des Auftrags existierte, kann nicht von ihm
+   * stammen.
+   */
+  notBefore?: Date | null,
 ): Promise<{ id: string; webViewLink: string | null } | null> {
   const drive = getWriteClient();
   const folderId = folderIdOverride || (await ensureOutputFolder(track));
@@ -304,12 +314,17 @@ export async function findFileInOutputFolder(
 
   const res = await drive.files.list({
     q: `'${folderId}' in parents and trashed = false and name = '${escaped}'`,
-    fields: "files(id, webViewLink)",
-    pageSize: 1,
+    fields: "files(id, webViewLink, createdTime)",
+    orderBy: "createdTime desc",
+    pageSize: 5,
   });
-  const file = res.data.files?.[0];
-  if (!file?.id) return null;
-  return { id: file.id, webViewLink: file.webViewLink ?? null };
+
+  for (const file of res.data.files ?? []) {
+    if (!file.id) continue;
+    if (notBefore && file.createdTime && new Date(file.createdTime) < notBefore) continue;
+    return { id: file.id, webViewLink: file.webViewLink ?? null };
+  }
+  return null;
 }
 
 /** Lädt eine fertige Videodatei in den Zielordner hoch. */
@@ -355,13 +370,14 @@ export async function uploadToOutputFolderWithRetry(
   buffer: Buffer,
   track: Track = "promo",
   folderIdOverride?: string | null,
+  notBefore?: Date | null,
   maxAttempts = 3,
 ): Promise<{ id: string; webViewLink: string | null }> {
   let lastError: unknown;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     if (attempt > 1) {
-      const existing = await findFileInOutputFolder(fileName, track, folderIdOverride);
+      const existing = await findFileInOutputFolder(fileName, track, folderIdOverride, notBefore);
       if (existing) return existing;
 
       const backoffMs = 2000 * 2 ** (attempt - 2); // 2s, 4s, ...

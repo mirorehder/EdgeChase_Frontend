@@ -88,6 +88,9 @@ function Videoliste({ data, track }: { data: TrackData; track: Track }) {
               </td>
               <td className="hook-text">
                 {job.hookText}
+                {job.fileTitle && (
+                  <div className="clip-list">Dateiname: {job.fileTitle}</div>
+                )}
                 {job.requestedVia && (
                   <div className="clip-list">auf Zuruf: „{job.requestedVia}"</div>
                 )}
