@@ -409,6 +409,20 @@ export async function composeVideo(options: ComposeOptions = {}): Promise<Compos
     `Zusammengestellt: ${scenes.length} Clips, ` +
       `${scenes.reduce((sum, s) => sum + s.seconds, 0).toFixed(1)}s. Hook: "${selection.hookText}"`,
   );
+
+  // Wurden weniger Clips verwendet als verlangt, liegt das fast immer daran,
+  // dass zu wenige den Kleidungs-Schwellwert erreichen. Ohne diesen Hinweis
+  // ist am fertigen Video nicht zu erkennen, ob die Vorgabe nicht gegriffen
+  // hat oder schlicht das Material fehlte.
+  if (wantedCount && scenes.length < wantedCount) {
+    await logActivity(
+      `Nur ${scenes.length} statt ${wantedCount} Clips - es gab ${candidates.length} Kandidaten ` +
+        `mit Kleidung >= ${APPAREL_SCORE_THRESHOLD}. Mehr Clips analysieren oder die Bewertung ` +
+        `in der Bibliothek von Hand anheben.`,
+      { level: "error" },
+    );
+  }
+
   return { hookText: selection.hookText, scenes };
 }
 
@@ -731,7 +745,18 @@ export async function runDailyJob(): Promise<string | null> {
     return null;
   }
 
-  await logActivity("Tageslauf gestartet.");
+  // Die geltenden Vorgaben mitschreiben. Ohne sie lässt sich hinterher nicht
+  // unterscheiden, ob eine Einstellung nicht gespeichert wurde oder ob die
+  // Zusammenstellung sie nicht erfüllen konnte.
+  await logActivity(
+    `Tageslauf gestartet. Vorgaben: ${settings.clipCount} Clips à ${settings.maxSecondsPerScene}s, ` +
+      `Stil "${settings.textStyle}", Ton ${settings.videoVolume}, ` +
+      (settings.hookText
+        ? `fester Text über ${settings.hookText.split("\n").length} Zeilen`
+        : "Text wird neu formuliert") +
+      (settings.themeHint ? `, Thema "${settings.themeHint}"` : "") +
+      ".",
+  );
   await syncClipLibrary();
   await analyzeUnanalyzedClips(DAILY_ANALYZE_LIMIT);
 
