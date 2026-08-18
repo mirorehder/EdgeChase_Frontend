@@ -72,6 +72,7 @@ export async function POST(request: NextRequest) {
         track,
         sourceUrl: body.sourceUrl?.trim() || null,
         hookText: analysis.hookText,
+        textPhases: analysis.textPhases as unknown as object,
         textStyle: analysis.textStyle,
         clipCount: analysis.clipCount,
         totalSeconds: analysis.totalSeconds,
@@ -83,7 +84,9 @@ export async function POST(request: NextRequest) {
 
     await logActivity(
       `Konzept gespeichert: "${concept.title}" - ${concept.clipCount} Einstellungen, ` +
-        `${concept.totalSeconds}s, Stil ${concept.textStyle}.`,
+        `${concept.totalSeconds}s, Stil ${concept.textStyle}, ` +
+        `${analysis.textPhases.length} Textphase(n).`,
+      { track },
     );
 
     return NextResponse.json(concept);

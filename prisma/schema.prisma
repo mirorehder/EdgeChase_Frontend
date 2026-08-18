@@ -127,6 +127,10 @@ model PromoVideo {
   /// Verwendete Clips in Reihenfolge: [{ clipId, startMs, endMs, seconds }]
   scenes Json
 
+  /// Textphasen im fertigen Video: [{ text, startMs, durationMs }].
+  /// Leer bedeutet: hookText steht über der ganzen Länge.
+  textPhases Json?
+
   status   String @default("queued") // queued | rendering | done | failed
   attempts Int    @default(0)
 
@@ -202,8 +206,21 @@ model Concept {
   /// Link zum urspruenglichen Beitrag, falls mitgeschickt.
   sourceUrl String?
 
-  /// Der eingeblendete Text im Wortlaut, mit den Zeilenumbrüchen des Originals.
+  /// Der Haupttext im Wortlaut - die erste Phase aus textPhases. Bleibt als
+  /// eigenes Feld erhalten, weil Listen, Dateinamen und die Promo-Sparte nur
+  /// einen einzelnen Text brauchen.
   hookText String
+
+  /// Die Textphasen des Videos in ihrer Reihenfolge, als JSON-Liste:
+  /// [{ text, seconds, role, sceneHint }]
+  ///
+  /// Manche Videos brauchen mehrere Texte nacheinander, damit sie überhaupt
+  /// Sinn ergeben - erst ein unterstellter Vorwurf, dann die Antwort, die die
+  /// folgende Montage beweist. Ein einziger durchgehender Text kann das nicht
+  /// leisten. "role" unterscheidet Aufbau ("setup") von Pointe ("payoff"),
+  /// "sceneHint" hält fest, was im Original während dieses Textes zu sehen war
+  /// - danach wird der passende eigene Clip gesucht.
+  textPhases Json @default("[]")
 
   /// Welche unserer beiden Textgestaltungen dem Original am naechsten kommt.
   textStyle String @default("reference")

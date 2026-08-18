@@ -4,11 +4,19 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Track } from "@/lib/trackClient";
 
+interface TextPhase {
+  text: string;
+  seconds: number;
+  role: string;
+  sceneHint: string;
+}
+
 interface Concept {
   id: string;
   title: string;
   sourceUrl: string | null;
   hookText: string;
+  textPhases: TextPhase[];
   textStyle: string;
   clipCount: number;
   totalSeconds: number;
@@ -28,6 +36,8 @@ export function ConceptLibrary({ track }: { track: Track }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [fehler, setFehler] = useState(false);
+  const [offenId, setOffenId] = useState<string | null>(null);
+  const [entwurf, setEntwurf] = useState<{ title: string; phases: TextPhase[] } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   async function load() {
@@ -124,6 +134,53 @@ export function ConceptLibrary({ track }: { track: Track }) {
     await load();
   }
 
+  function oeffnen(concept: Concept) {
+    if (offenId === concept.id) {
+      setOffenId(null);
+      setEntwurf(null);
+      return;
+    }
+    setOffenId(concept.id);
+    setEntwurf({
+      title: concept.title,
+      phases: concept.textPhases?.length
+        ? concept.textPhases.map((p) => ({ ...p }))
+        : [{ text: concept.hookText, seconds: concept.totalSeconds, role: "plain", sceneHint: "" }],
+    });
+  }
+
+  function phaseAendern(i: number, feld: keyof TextPhase, wert: string) {
+    if (!entwurf) return;
+    const phases = entwurf.phases.map((p, j) =>
+      j === i ? { ...p, [feld]: feld === "seconds" ? Number(wert) : wert } : p,
+    );
+    setEntwurf({ ...entwurf, phases });
+  }
+
+  async function speichern(id: string) {
+    if (!entwurf) return;
+    setBusy(id);
+    setFehler(false);
+    try {
+      const res = await fetch(`/api/concepts/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: entwurf.title, textPhases: entwurf.phases }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setNote("Konzept gespeichert.");
+      setOffenId(null);
+      setEntwurf(null);
+      await load();
+    } catch (err) {
+      setFehler(true);
+      setNote(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
   return (
     <section className="library">
       <div className="live-head">
@@ -179,14 +236,49 @@ export function ConceptLibrary({ track }: { track: Track }) {
                   {concept.secondsPerScene}s je Szene
                   {concept.theme ? ` · ${concept.theme}` : ""}
                 </span>
-                <span className="clip-desc" style={{ whiteSpace: "pre-wrap" }}>
-                  {concept.hookText || "(kein Text im Video)"}
-                </span>
+                {/* Mehrere Textphasen nacheinander: erst der Aufbau, dann die
+                    Pointe. Erst die Abfolge ergibt bei solchen Videos den
+                    Sinn, deshalb stehen sie einzeln da und nicht als ein
+                    Block. */}
+                {(concept.textPhases?.length ?? 0) > 1 ? (
+                  <div className="phasen">
+                    {concept.textPhases.map((phase, i) => (
+                      <div key={i} className="phase">
+                        <span className="tag">
+                          {phase.role === "setup"
+                            ? "Aufbau"
+                            : phase.role === "payoff"
+                              ? "Pointe"
+                              : `Text ${i + 1}`}
+                          {" · "}
+                          {phase.seconds}s
+                        </span>
+                        <span className="clip-desc" style={{ whiteSpace: "pre-wrap" }}>
+                          {phase.text}
+                        </span>
+                        {phase.sceneHint && (
+                          <span className="clip-meta">Bild dazu: {phase.sceneHint}</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <span className="clip-desc" style={{ whiteSpace: "pre-wrap" }}>
+                    {concept.hookText || "(kein Text im Video)"}
+                  </span>
+                )}
                 {concept.notes && <span className="clip-meta">{concept.notes}</span>}
 
                 <div className="actions" style={{ marginTop: 8, marginBottom: 0 }}>
                   <button onClick={() => verwenden(concept)} disabled={busy !== null}>
                     {track === "viral" ? "Edit nach diesem Konzept" : "Video nach diesem Konzept"}
+                  </button>
+                  <button
+                    className="secondary"
+                    onClick={() => oeffnen(concept)}
+                    disabled={busy !== null}
+                  >
+                    {offenId === concept.id ? "Zuklappen" : "Texte bearbeiten"}
                   </button>
                   {concept.sourceUrl && (
                     <a
@@ -206,6 +298,91 @@ export function ConceptLibrary({ track }: { track: Track }) {
                     Löschen
                   </button>
                 </div>
+
+                {offenId === concept.id && entwurf && (
+                  <div className="clip-editor">
+                    <label>
+                      Bezeichnung
+                      <input
+                        value={entwurf.title}
+                        onChange={(e) => setEntwurf({ ...entwurf, title: e.target.value })}
+                      />
+                    </label>
+
+                    {entwurf.phases.map((phase, i) => (
+                      <div key={i} className="phase-editor">
+                        <label>
+                          <span>
+                            {entwurf.phases.length === 1
+                              ? "Text"
+                              : i === 0
+                                ? "Aufbau - der Text, der die Erwartung setzt"
+                                : i === entwurf.phases.length - 1
+                                  ? "Pointe - die Antwort, die die Montage beweist"
+                                  : `Text ${i + 1}`}
+                          </span>
+                          <textarea
+                            rows={3}
+                            value={phase.text}
+                            onChange={(e) => phaseAendern(i, "text", e.target.value)}
+                          />
+                        </label>
+                        <div className="field-row">
+                          <label>
+                            Dauer (s)
+                            <input
+                              type="number"
+                              min={1}
+                              step={0.5}
+                              value={phase.seconds}
+                              onChange={(e) => phaseAendern(i, "seconds", e.target.value)}
+                            />
+                          </label>
+                          <label>
+                            Bild dazu (steuert die Clipwahl)
+                            <input
+                              value={phase.sceneHint}
+                              placeholder="z.B. ruhig dastehend, kein Trick"
+                              onChange={(e) => phaseAendern(i, "sceneHint", e.target.value)}
+                            />
+                          </label>
+                          <button
+                            className="secondary"
+                            onClick={() =>
+                              setEntwurf({
+                                ...entwurf,
+                                phases: entwurf.phases.filter((_, j) => j !== i),
+                              })
+                            }
+                            disabled={entwurf.phases.length < 2}
+                          >
+                            Phase entfernen
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+
+                    <div className="actions">
+                      <button
+                        className="secondary"
+                        onClick={() =>
+                          setEntwurf({
+                            ...entwurf,
+                            phases: [
+                              ...entwurf.phases,
+                              { text: "", seconds: 3, role: "payoff", sceneHint: "" },
+                            ],
+                          })
+                        }
+                      >
+                        Phase hinzufügen
+                      </button>
+                      <button onClick={() => speichern(concept.id)} disabled={busy !== null}>
+                        {busy === concept.id ? "Speichert …" : "Speichern"}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </li>
           ))}

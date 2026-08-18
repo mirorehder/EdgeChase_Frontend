@@ -603,3 +603,29 @@ tr:last-child td {
   padding-left: 12px;
   border-left: 2px solid var(--accent);
 }
+
+/* Textphasen eines Konzepts - jede Phase eigenständig lesbar, damit die
+   Abfolge Aufbau -> Pointe auf einen Blick erkennbar ist. */
+.phasen {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 6px 0;
+}
+
+.phase {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-left: 10px;
+  border-left: 2px solid var(--accent);
+}
+
+.phase .tag {
+  align-self: flex-start;
+}
+
+.phase-editor {
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}

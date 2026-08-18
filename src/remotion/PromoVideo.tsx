@@ -19,12 +19,27 @@ export const sceneSchema = z.object({
  */
 export const textStyleSchema = z.enum(["banner", "reference"]);
 
+/**
+ * Eine Textphase auf der Zeitachse des Videos.
+ *
+ * Manche Videos brauchen mehrere Texte nacheinander, damit sie ueberhaupt Sinn
+ * ergeben: erst ein unterstellter Vorwurf, dann die Antwort, die die folgende
+ * Montage beweist. Ein einziger durchgehender Text kann das nicht leisten.
+ */
+export const textPhaseSchema = z.object({
+  text: z.string(),
+  startMs: z.number(),
+  durationMs: z.number(),
+});
+
 export const promoVideoSchema = z.object({
   hookText: z.string(),
   scenes: z.array(sceneSchema).min(1),
   textStyle: textStyleSchema.optional(),
   /** Originalton der Clips, 0 (stumm) bis 1. Ohne Angabe voll hörbar. */
   videoVolume: z.number().min(0).max(4).optional(),
+  /** Leer bedeutet: hookText steht über der ganzen Länge. */
+  textPhases: z.array(textPhaseSchema).optional(),
 });
 
 export type PromoVideoProps = z.infer<typeof promoVideoSchema>;
@@ -227,6 +242,7 @@ export const PromoVideo: React.FC<PromoVideoProps> = ({
   scenes,
   textStyle,
   videoVolume,
+  textPhases,
 }) => {
   const { fps } = useVideoConfig();
   const volume = videoVolume ?? 1;
@@ -269,7 +285,24 @@ export const PromoVideo: React.FC<PromoVideoProps> = ({
           </Sequence>
         );
       })}
-      {hookText.trim() ? <HookTextOverlay text={hookText} spec={spec} /> : null}
+      {/* Ohne Phasenangabe steht der eine Text ueber der ganzen Laenge - so
+          verhalten sich alle bisherigen Auftraege unveraendert weiter. */}
+      {textPhases?.length
+        ? textPhases
+            .filter((phase) => phase.text.trim())
+            .map((phase, i) => (
+              <Sequence
+                key={`text-${i}`}
+                from={Math.round((phase.startMs / 1000) * fps)}
+                durationInFrames={Math.max(1, Math.round((phase.durationMs / 1000) * fps))}
+                layout="none"
+              >
+                <HookTextOverlay text={phase.text} spec={spec} />
+              </Sequence>
+            ))
+        : hookText.trim()
+          ? <HookTextOverlay text={hookText} spec={spec} />
+          : null}
     </AbsoluteFill>
   );
 };

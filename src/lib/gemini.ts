@@ -616,6 +616,113 @@ Gib ausschliesslich IDs aus der Liste zurück.`;
 }
 
 // ---------------------------------------------------------------------------
+// Der Aufbau-Clip: passend zum Bild der Vorlage, nicht zur Bewertung
+// ---------------------------------------------------------------------------
+
+export interface SetupCandidate {
+  id: string;
+  description: string;
+  stuntScore: number;
+  seconds: number;
+}
+
+/**
+ * Sucht den Clip, der am ehesten zu dem passt, was in der Vorlage unter dem
+ * Aufbau-Text zu sehen war.
+ *
+ * Bewusst nicht nach Bewertung: stand in der Vorlage jemand ruhig am Wasser,
+ * waere der spektakulaerste Trick die falsche Wahl - die Pointe lebt vom
+ * Kontrast. Deshalb duerfen hier auch Clips ohne Trick antreten.
+ */
+export async function selectSetupClip(
+  candidates: SetupCandidate[],
+  sceneHint: string,
+  setupText: string,
+): Promise<string | null> {
+  if (!candidates.length) return null;
+
+  try {
+    const ai = client();
+    const liste = candidates
+      .map(
+        (c) =>
+          `- id: ${c.id} | Trick-Bewertung: ${c.stuntScore.toFixed(2)} | Laenge: ${c.seconds.toFixed(1)}s | ${c.description}`,
+      )
+      .join("\n");
+
+    const response = await ai.models.generateContent({
+      model: MODEL,
+      contents: [
+        {
+          role: "user",
+          parts: [
+            {
+              text: `Du suchst die Eroeffnungseinstellung fuer einen Parkour-Edit.
+
+Ueber dieser Einstellung steht der Text: "${setupText.replace(/\n/g, " ")}"
+
+In der Vorlage war dabei zu sehen: ${sceneHint || "(nicht ueberliefert)"}
+
+Verfuegbare Clips:
+${liste}
+
+Waehle die eine ID, deren Inhalt dem am naechsten kommt, was in der Vorlage zu sehen war. Es geht NICHT darum, den spektakulaersten Trick zu finden - es geht um die passende Stimmung und Situation. War in der Vorlage jemand ruhig zu sehen, nimm etwas Ruhiges. Sprach ein Gesicht in die Kamera, nimm einen Clip mit sichtbarer Person. War es Action, dann Action.
+
+Gib genau eine ID aus der Liste zurueck.`,
+            },
+          ],
+        },
+      ],
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: { clipId: { type: Type.STRING }, begruendung: { type: Type.STRING } },
+          required: ["clipId"],
+        },
+      },
+    });
+
+    const raw = JSON.parse(response.text ?? "{}") as { clipId?: string };
+    const treffer = candidates.find((c) => c.id === raw.clipId);
+    if (treffer) return treffer.id;
+  } catch (err) {
+    console.warn("Aufbau-Clip ohne Modell:", err instanceof Error ? err.message : err);
+  }
+
+  return ersatzAufbauClip(candidates, sceneHint);
+}
+
+/**
+ * Ohne Modell: die Beschreibung mit der groessten Wortueberschneidung zum
+ * Hinweis gewinnt. Gibt es keine Ueberschneidung, der ruhigste Clip - ein
+ * Aufbau lebt eher von Ruhe als von Action.
+ */
+function ersatzAufbauClip(candidates: SetupCandidate[], sceneHint: string): string {
+  const woerter = new Set(
+    sceneHint
+      .toLowerCase()
+      .split(/[^a-zäöüß]+/)
+      .filter((w) => w.length > 3),
+  );
+
+  if (woerter.size) {
+    const bewertet = candidates
+      .map((c) => {
+        const beschreibung = c.description.toLowerCase();
+        let treffer = 0;
+        for (const w of woerter) if (beschreibung.includes(w)) treffer++;
+        return { id: c.id, treffer };
+      })
+      .sort((a, b) => b.treffer - a.treffer);
+
+    if (bewertet[0].treffer > 0) return bewertet[0].id;
+  }
+
+  return [...candidates].sort((a, b) => a.stuntScore - b.stuntScore)[0].id;
+}
+
+// ---------------------------------------------------------------------------
 // Dialog: aus einer frei formulierten Anweisung eine Videobeschreibung machen
 // ---------------------------------------------------------------------------
 
@@ -761,9 +868,84 @@ Antworte mit status "question" und einer Frage in reply, ODER mit status "ready"
 // Konzept: Merkmale eines fremden Videos ableiten
 // ---------------------------------------------------------------------------
 
+/**
+ * Eine Textphase des Videos.
+ *
+ * Manche Videos brauchen mehrere Texte nacheinander, damit sie ueberhaupt Sinn
+ * ergeben: erst ein unterstellter Vorwurf, dann die Antwort, die die folgende
+ * Montage beweist. Ein einziger durchgehender Text kann das nicht leisten.
+ */
+export interface ConceptTextPhase {
+  /** Wortlaut im Original, mit Zeilenumbruechen. */
+  text: string;
+  /** Wie lange die Phase im Original zu sehen war. */
+  seconds: number;
+  /** "setup" (Aufbau), "payoff" (Pointe) oder "plain" (durchgehender Text). */
+  role: "setup" | "payoff" | "plain";
+  /**
+   * Was im Original waehrend dieses Textes im Bild war.
+   *
+   * Danach wird spaeter der eigene Clip gesucht: stand jemand ruhig da,
+   * soll auch bei uns etwas Ruhiges kommen; sprach ein Gesicht in die
+   * Kamera, moeglichst ein Gesicht.
+   */
+  sceneHint: string;
+}
+
+/** Kürzer kann keine Phase sein - darunter ist nichts zu lesen. */
+const MIN_PHASE_SECONDS = 1;
+
+/**
+ * Bringt die gelieferten Phasen in Form.
+ *
+ * Deterministisch statt auf Prompt-Befolgung vertrauend: leere Texte fliegen
+ * raus, die Rollen werden auf die drei erlaubten Werte gezwungen, und wenn nur
+ * eine Phase übrig bleibt, heisst sie "plain" - "setup" ohne folgende Pointe
+ * ergibt keinen Sinn.
+ */
+function korrigierePhasen(
+  raw: Partial<ConceptTextPhase>[] | undefined,
+  hookText: string | undefined,
+  totalSeconds: number,
+): ConceptTextPhase[] {
+  const saeubern = (t: string) =>
+    t.replace(/[ \t]+/g, " ").replace(/ ?\n ?/g, "\n").trim();
+
+  let phasen = (raw ?? [])
+    .map((p) => ({
+      text: saeubern(p.text ?? ""),
+      seconds: Math.max(MIN_PHASE_SECONDS, p.seconds ?? 0),
+      role:
+        p.role === "setup" || p.role === "payoff" || p.role === "plain"
+          ? p.role
+          : ("plain" as const),
+      sceneHint: (p.sceneHint ?? "").trim(),
+    }))
+    .filter((p) => p.text.length > 0);
+
+  // Kam gar keine Liste, aber ein Text: als einzige Phase behandeln. So
+  // verhalten sich ältere Antworten wie bisher.
+  if (!phasen.length && hookText?.trim()) {
+    phasen = [
+      { text: saeubern(hookText), seconds: totalSeconds, role: "plain", sceneHint: "" },
+    ];
+  }
+
+  if (phasen.length === 1) phasen[0].role = "plain";
+  else {
+    // Bei mehreren Phasen ist die erste der Aufbau und die letzte die Pointe,
+    // egal wie das Modell sie benannt hat.
+    phasen[0].role = "setup";
+    phasen[phasen.length - 1].role = "payoff";
+  }
+
+  return phasen;
+}
+
 export interface ConceptAnalysis {
   title: string;
   hookText: string;
+  textPhases: ConceptTextPhase[];
   textStyle: "banner" | "reference";
   clipCount: number;
   totalSeconds: number;
@@ -802,7 +984,14 @@ export async function analyzeConcept(
 
 title: eine kurze Bezeichnung, an der man das Konzept wiedererkennt (3-6 Woerter).
 
-hookText: der eingeblendete Text wortwoertlich, mit den Zeilenumbruechen des Originals als \\n. Aendere nichts daran, auch keine Tippfehler. Ist kein Text eingeblendet, gib einen leeren Text zurueck.
+textPhases: die eingeblendeten Texte in ihrer Reihenfolge. WICHTIG: viele dieser Videos zeigen nacheinander MEHRERE verschiedene Texte, und erst die Abfolge ergibt den Sinn - etwa erst ein unterstellter Vorwurf in Anfuehrungszeichen, dann die Antwort darauf. Schau das ganze Video an und lege fuer JEDEN Textwechsel eine eigene Phase an. Wechselt der Text nie, ist es genau eine Phase. Fuer jede Phase:
+  - text: der Wortlaut wortwoertlich, mit den Zeilenumbruechen des Originals als \\n. Aendere nichts daran, auch keine Tippfehler und keine Anfuehrungszeichen.
+  - seconds: wie lange dieser Text zu sehen ist.
+  - role: "setup" fuer den Aufbau (die Behauptung, die Frage, der Vorwurf), "payoff" fuer die Antwort oder Pointe, "plain" wenn es nur einen durchgehenden Text gibt.
+  - sceneHint: was waehrend dieses Textes im Bild zu sehen ist, in wenigen Worten und auf Deutsch - zum Beispiel "ruhig am Wasser stehend, kein Trick" oder "Gesicht spricht in die Kamera" oder "schnelle Montage von Backflips". Das ist wichtig: danach wird spaeter das eigene Bildmaterial ausgesucht.
+Zeitabschnitte am Ende ohne Text (Abspann, Logo, Handle) gehoeren NICHT in die Liste.
+
+hookText: der Wortlaut der ersten Phase, unveraendert.
 
 textStyle: "banner", wenn es ein kurzer Satz in grosser Schrift ist (bis etwa 80 Zeichen, hoechstens drei Zeilen). "reference", wenn es laengerer Fliesstext ueber mehrere Zeilen ist.
 
@@ -826,6 +1015,19 @@ notes: kurze Beobachtungen zur Gestaltung - Schriftart-Eindruck, Farben, Kontur,
           properties: {
             title: { type: Type.STRING },
             hookText: { type: Type.STRING },
+            textPhases: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  text: { type: Type.STRING },
+                  seconds: { type: Type.NUMBER },
+                  role: { type: Type.STRING },
+                  sceneHint: { type: Type.STRING },
+                },
+                required: ["text", "seconds", "role", "sceneHint"],
+              },
+            },
             textStyle: { type: Type.STRING },
             clipCount: { type: Type.INTEGER },
             totalSeconds: { type: Type.NUMBER },
@@ -842,9 +1044,12 @@ notes: kurze Beobachtungen zur Gestaltung - Schriftart-Eindruck, Farben, Kontur,
     const clipCount = Math.min(12, Math.max(1, Math.round(raw.clipCount ?? 4)));
     const totalSeconds = Math.max(1, raw.totalSeconds ?? 10);
 
+    const textPhases = korrigierePhasen(raw.textPhases, raw.hookText, totalSeconds);
+
     return {
       title: raw.title?.trim() || "Unbenanntes Konzept",
-      hookText: (raw.hookText ?? "").replace(/[ \t]+/g, " ").replace(/ ?\n ?/g, "\n").trim(),
+      hookText: textPhases[0]?.text ?? "",
+      textPhases,
       textStyle: raw.textStyle === "banner" ? "banner" : "reference",
       clipCount,
       totalSeconds: Math.round(totalSeconds * 10) / 10,

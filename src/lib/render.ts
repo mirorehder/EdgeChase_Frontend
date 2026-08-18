@@ -68,10 +68,17 @@ export async function renderPromoVideo(
   scenes: RenderScene[],
   textStyle?: "banner" | "reference",
   videoVolume?: number,
+  textPhases?: { text: string; startMs: number; durationMs: number }[],
 ): Promise<Buffer> {
   const bucket = bucketFromServeUrl(env.remotionServeUrl);
 
-  const props: PromoVideoProps = { hookText, scenes: [], textStyle, videoVolume };
+  const props: PromoVideoProps = {
+    hookText,
+    scenes: [],
+    textStyle,
+    videoVolume,
+    textPhases: textPhases?.length ? textPhases : undefined,
+  };
 
   for (const scene of scenes) {
     if (!(await isClipMirrored(bucket, scene.driveFileId))) {
@@ -82,9 +89,16 @@ export async function renderPromoVideo(
     props.scenes.push({
       src: clipUrl(bucket, scene.driveFileId),
       startMs: scene.startMs,
-      // Gedeckelt auf 2,5 s pro Clip (Auftrag 5.2); nie länger als der
-      // tatsächlich analysierte Ausschnitt, sonst friert das letzte Bild ein.
-      durationMs: Math.min(2500, scene.endMs - scene.startMs),
+      // Die Länge kommt so, wie die Zusammenstellung sie festgelegt hat.
+      //
+      // Hier stand ein harter Deckel von 2,5 s. Der gehört aber in die
+      // Zusammenstellung, nicht in den Render: sie kennt die Grenzen ihrer
+      // Sparte und schneidet nie über den analysierten Ausschnitt hinaus. Der
+      // Deckel hier hat stillschweigend zwei Dinge kaputtgemacht - eine im
+      // Dashboard eingestellte Szenenlänge über 2,5 s wurde ignoriert, und
+      // eine längere Eröffnungseinstellung wäre abgeschnitten worden, während
+      // die Textphasen weiter auf die volle Länge gerechnet hätten.
+      durationMs: scene.endMs - scene.startMs,
     });
   }
 

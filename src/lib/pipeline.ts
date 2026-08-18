@@ -8,9 +8,11 @@ import {
 import {
   analyzeClip,
   selectScenesAndHook,
+  selectSetupClip,
   selectViralScenes,
   type ClipAnalysis,
   type ClipCandidate,
+  type ConceptTextPhase,
   type VideoSpec,
   type ViralCandidate,
 } from "./gemini";
@@ -268,9 +270,18 @@ export interface ComposedScene {
   seconds: number;
 }
 
+/** Eine Textphase auf der Zeitachse des fertigen Videos. */
+export interface ComposedTextPhase {
+  text: string;
+  startMs: number;
+  durationMs: number;
+}
+
 export interface ComposedVideo {
   hookText: string;
   scenes: ComposedScene[];
+  /** Leer bedeutet: hookText steht über der ganzen Länge. */
+  textPhases?: ComposedTextPhase[];
 }
 
 /**
@@ -463,6 +474,27 @@ export interface ViralComposeOptions {
    * sonst dieselben Clips und wären kaum zu unterscheiden.
    */
   excludeClipIds?: string[];
+  /**
+   * Die Textphasen des Konzepts. Bei mehr als einer bekommt die erste eine
+   * eigene, längere Eröffnungseinstellung.
+   */
+  textPhases?: ConceptTextPhase[];
+}
+
+/** Wie lang die Aufbau-Einstellung höchstens und mindestens sein darf. */
+const SETUP_MIN_SECONDS = 2;
+const SETUP_MAX_SECONDS = 5;
+
+/**
+ * Mindestdauer, damit ein Text lesbar ist.
+ *
+ * Die Länge stammt sonst aus der Vorlage - ist die dort sehr knapp bemessen
+ * oder wurde sie falsch geschätzt, bliebe der Text unlesbar stehen. Lehre aus
+ * dem Schwesterprojekt: Lesezeit einplanen.
+ */
+function lesezeitSekunden(text: string): number {
+  const woerter = text.trim().split(/\s+/).filter(Boolean).length;
+  return 0.6 + woerter * 0.32;
 }
 
 /**
@@ -502,11 +534,101 @@ export function viralSceneWindow(clip: {
   return { startMs: Math.round(Math.max(0, startMs)), seconds: Math.round(seconds * 100) / 100 };
 }
 
+/**
+ * Schneidet die Eröffnungseinstellung zu.
+ *
+ * Anders als bei den Höhepunkten steht hier die Dauer fest - sie kommt aus der
+ * Vorlage. Liegt im Clip ein Trick, endet der Ausschnitt kurz danach: in der
+ * Vorlage steht der Aufbau-Text über einer Einstellung, die mit dem Absprung
+ * endet, und genau dieser Rhythmus soll erhalten bleiben.
+ */
+function setupSceneWindow(
+  clip: { highlightEndMs: number | null; durationMs: number | null },
+  seconds: number,
+): { startMs: number; seconds: number } {
+  const limit = clip.durationMs ?? seconds * 1000;
+  const dauerMs = Math.min(seconds * 1000, limit);
+
+  const ende = clip.highlightEndMs ? Math.min(clip.highlightEndMs + 300, limit) : dauerMs;
+  const startMs = Math.max(0, Math.min(ende - dauerMs, limit - dauerMs));
+
+  return { startMs: Math.round(startMs), seconds: Math.round((dauerMs / 1000) * 100) / 100 };
+}
+
+/** Sucht die Eröffnungseinstellung passend zum Bild der Vorlage. */
+async function waehleAufbauSzene(
+  phase: ConceptTextPhase,
+  ausgeschlossen: string[],
+): Promise<ComposedScene | null> {
+  // Bewusst ohne Mindestbewertung: der Aufbau darf ausdrücklich ein ruhiger
+  // Clip sein, und genau die sind sonst aussortiert.
+  const kandidaten = await prisma.clip.findMany({
+    where: {
+      track: "viral",
+      analysisVersion: CURRENT_ANALYSIS_VERSION,
+      ...(ausgeschlossen.length ? { id: { notIn: ausgeschlossen } } : {}),
+    },
+    orderBy: { lastUsedAt: { sort: "asc", nulls: "first" } },
+    take: 30,
+  });
+  if (!kandidaten.length) return null;
+
+  const gewaehlt = await selectSetupClip(
+    kandidaten.map((c) => ({
+      id: c.id,
+      description: c.description ?? "",
+      stuntScore: c.stuntScore ?? 0,
+      seconds: (c.durationMs ?? 0) / 1000,
+    })),
+    phase.sceneHint,
+    phase.text,
+  );
+
+  const clip = kandidaten.find((c) => c.id === gewaehlt) ?? kandidaten[0];
+
+  // Die Vorlage gibt die Dauer vor; die Lesezeit ist die Untergrenze, damit
+  // ein langer Aufbau-Text nicht unlesbar vorbeihuscht.
+  const gewuenscht = Math.min(
+    SETUP_MAX_SECONDS,
+    Math.max(SETUP_MIN_SECONDS, phase.seconds, lesezeitSekunden(phase.text)),
+  );
+  const fenster = setupSceneWindow(clip, gewuenscht);
+
+  await logActivity(
+    `Eröffnung gewählt: ${clip.name} (Trick-Bewertung ${(clip.stuntScore ?? 0).toFixed(2)}) ` +
+      `über ${fenster.seconds.toFixed(1)}s. Gesucht war: ${phase.sceneHint || "(kein Hinweis)"}`,
+    { track: "viral" },
+  );
+
+  return {
+    clipId: clip.id,
+    driveFileId: clip.driveFileId,
+    startMs: fenster.startMs,
+    endMs: fenster.startMs + Math.round(fenster.seconds * 1000),
+    seconds: fenster.seconds,
+  };
+}
+
 /** Stellt einen viralen Edit aus den stärksten Höhepunkten zusammen. */
 export async function composeViralVideo(options: ViralComposeOptions): Promise<ComposedVideo> {
-  const totalSeconds = options.totalSeconds ?? VIRAL_DEFAULT_TOTAL_SECONDS;
-  const wantedCount =
-    options.clipCount ?? Math.round(totalSeconds / VIRAL_TARGET_SECONDS_PER_SCENE);
+  const gesamtSoll = options.totalSeconds ?? VIRAL_DEFAULT_TOTAL_SECONDS;
+  const phasen: ConceptTextPhase[] = options.textPhases?.length
+    ? options.textPhases
+    : [{ text: options.hookText, seconds: gesamtSoll, role: "plain", sceneHint: "" }];
+
+  // Bei mehreren Textphasen bekommt der Aufbau eine eigene, längere
+  // Eröffnungseinstellung. Die Montage teilt sich den Rest.
+  const aufbau =
+    phasen.length > 1
+      ? await waehleAufbauSzene(phasen[0], options.excludeClipIds ?? [])
+      : null;
+
+  const totalSeconds = Math.max(3, gesamtSoll - (aufbau?.seconds ?? 0));
+  const wantedCount = Math.max(
+    2,
+    (options.clipCount ?? Math.round(gesamtSoll / VIRAL_TARGET_SECONDS_PER_SCENE)) -
+      (aufbau ? 1 : 0),
+  );
 
   // Hier zählt die Bewertung, nicht die Rotation.
   //
@@ -520,7 +642,12 @@ export async function composeViralVideo(options: ViralComposeOptions): Promise<C
   // Der Kandidatenkreis bleibt bewusst eng (die Gewünschten plus ein paar
   // Ersatzleute): bei einem grossen Kreis könnte die Auswahl einen der
   // stärksten Tricks zugunsten von Abwechslung übergehen.
-  const ausgeschlossen = options.excludeClipIds ?? [];
+  // Der Aufbau-Clip ist verbraucht und darf in der Montage nicht noch einmal
+  // auftauchen.
+  const ausgeschlossen = [
+    ...(options.excludeClipIds ?? []),
+    ...(aufbau ? [aufbau.clipId] : []),
+  ];
   const grundfilter = {
     track: "viral",
     analysisVersion: CURRENT_ANALYSIS_VERSION,
@@ -603,13 +730,77 @@ export async function composeViralVideo(options: ViralComposeOptions): Promise<C
     .map((s) => (byId.get(s.clipId)?.stuntScore ?? 0).toFixed(2))
     .join(", ");
 
+  const alleSzenen = aufbau ? [aufbau, ...scenes] : scenes;
+  const textPhases = verteilePhasen(phasen, aufbau?.seconds ?? 0, used);
+
   await logActivity(
-    `Virale Edits: ${scenes.length} Höhepunkte zusammengestellt, ${used.toFixed(1)}s. ` +
+    `Virale Edits: ${scenes.length} Höhepunkte zusammengestellt, ` +
+      `${(used + (aufbau?.seconds ?? 0)).toFixed(1)}s. ` +
       `Stunt-Bewertungen: ${bewertungen} (von ${candidates.length} Kandidaten).`,
     { track: "viral" },
   );
 
-  return { hookText: options.hookText, scenes };
+  if (textPhases.length > 1) {
+    await logActivity(
+      `Textphasen: ` +
+        textPhases
+          .map(
+            (p) =>
+              `"${p.text.replace(/\n/g, " ").slice(0, 40)}" ` +
+              `${(p.startMs / 1000).toFixed(1)}-${((p.startMs + p.durationMs) / 1000).toFixed(1)}s`,
+          )
+          .join(" | "),
+      { track: "viral" },
+    );
+  }
+
+  return { hookText: phasen[0].text, scenes: alleSzenen, textPhases };
+}
+
+/**
+ * Legt die Textphasen auf die Zeitachse des fertigen Videos.
+ *
+ * Die erste Phase deckt genau die Eröffnungseinstellung ab - der Textwechsel
+ * fällt damit auf einen Schnitt, nicht mitten in eine Einstellung. Die
+ * restlichen Phasen teilen sich die Montage im Verhältnis ihrer Dauer in der
+ * Vorlage.
+ */
+function verteilePhasen(
+  phasen: ConceptTextPhase[],
+  aufbauSekunden: number,
+  montageSekunden: number,
+): ComposedTextPhase[] {
+  if (phasen.length === 1) {
+    return [
+      {
+        text: phasen[0].text,
+        startMs: 0,
+        durationMs: Math.round((aufbauSekunden + montageSekunden) * 1000),
+      },
+    ];
+  }
+
+  const ergebnis: ComposedTextPhase[] = [
+    { text: phasen[0].text, startMs: 0, durationMs: Math.round(aufbauSekunden * 1000) },
+  ];
+
+  const rest = phasen.slice(1);
+  const summe = rest.reduce((a, p) => a + Math.max(0.1, p.seconds), 0);
+  let laufend = aufbauSekunden * 1000;
+
+  for (const [i, phase] of rest.entries()) {
+    // Die letzte Phase bekommt den Rest, damit durch das Runden am Ende keine
+    // textlose Lücke bleibt.
+    const dauerMs =
+      i === rest.length - 1
+        ? Math.round((aufbauSekunden + montageSekunden) * 1000) - laufend
+        : Math.round((Math.max(0.1, phase.seconds) / summe) * montageSekunden * 1000);
+
+    ergebnis.push({ text: phase.text, startMs: Math.round(laufend), durationMs: dauerMs });
+    laufend += dauerMs;
+  }
+
+  return ergebnis;
 }
 
 /** Rendert, lädt hoch und aktualisiert den Job - mit bis zu 3 Versuchen (Auftrag 5.5). */
@@ -639,6 +830,7 @@ export async function processJob(jobId: string): Promise<void> {
         })),
         (job.textStyle as "banner" | "reference" | null) ?? undefined,
         job.videoVolume,
+        (job.textPhases as unknown as ComposedTextPhase[] | null) ?? undefined,
       );
 
       await logActivity(
@@ -857,6 +1049,7 @@ export async function createViralJobFromConcept(
     clipCount: concept.clipCount || undefined,
     totalSeconds: concept.totalSeconds || undefined,
     excludeClipIds: options.excludeClipIds,
+    textPhases: (concept.textPhases as unknown as ConceptTextPhase[]) ?? [],
   });
 
   const job = await prisma.promoVideo.create({
@@ -865,6 +1058,7 @@ export async function createViralJobFromConcept(
       hookText: composed.hookText,
       scenes: composed.scenes as unknown as object,
       status: "queued",
+      textPhases: (composed.textPhases as unknown as object) ?? undefined,
       textStyle: concept.textStyle,
       requestedVia: `Konzept: ${concept.title}`,
       driveFolderId: options.driveFolderId ?? null,
