@@ -28,7 +28,7 @@ import { env } from "./env";
 import { hookTextToFileName } from "./filename";
 import { logActivity } from "./activity";
 import { getDailySettings } from "./dailyConfig";
-import { getViralSchedule, scheduledOutputFolderId } from "./viralSchedule";
+import { getViralSchedule, scheduledOutputFolderId, viralTextStyle } from "./viralSchedule";
 
 // Hochzählen, wenn sich Analyse-Felder oder der Analyse-Prompt ändern -
 // Clips mit älterer Version werten sich dann automatisch neu aus.
@@ -1213,7 +1213,9 @@ export async function createViralJobFromConcept(
       textPhases: (composed.textPhases as unknown as object) ?? undefined,
       fileTitle: composed.fileTitle || null,
       origin: options.origin ?? "manual",
-      textStyle: concept.textStyle,
+      // Nicht concept.textStyle: die Gestaltung ist unsere Entscheidung und
+      // für alle Parkour-Edits dieselbe.
+      textStyle: viralTextStyle(),
       requestedVia: `Konzept: ${concept.title}`,
       driveFolderId: options.driveFolderId ?? null,
     },

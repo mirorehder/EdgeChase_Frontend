@@ -79,6 +79,18 @@ export function scheduledOutputFolderId(): string {
   return process.env.DRIVE_VIRAL_POST_FOLDER_ID || "1gCQ-WHW1qKW3_nLgLxjT3Ty3askP2mIQ";
 }
 
+/**
+ * Textgestaltung aller Parkour-Edits.
+ *
+ * Bewusst nicht aus dem Konzept übernommen: das Konzept beschreibt ein fremdes
+ * Video, und dessen Textgestaltung ist nicht unsere. Der Stil ist eine
+ * Entscheidung über das eigene Erscheinungsbild und gilt deshalb für jeden
+ * Edit gleich - ob vom Zeitplan oder von Hand ausgelöst.
+ */
+export function viralTextStyle(): string {
+  return process.env.VIRAL_TEXT_STYLE || "rund-nunito";
+}
+
 /** Nur zur Anzeige im Dashboard. */
 export function scheduleTimeLabel(): string {
   return env.cronScheduleLabel;

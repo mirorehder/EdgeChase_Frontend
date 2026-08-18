@@ -3,6 +3,12 @@ import { AbsoluteFill, continueRender, delayRender, OffthreadVideo, Sequence, us
 import { measureText } from "@remotion/layout-utils";
 import { z } from "zod";
 import { NUNITO_BLACK_WOFF2 } from "./assets/nunito";
+import {
+  BALOO_700,
+  FREDOKA_600,
+  NUNITO_700,
+  QUICKSAND_700,
+} from "./assets/rundschriften";
 
 export const sceneSchema = z.object({
   /** Öffentlich per HTTP erreichbare URL des Rohclips (siehe lib/renderStage.ts). */
@@ -17,7 +23,16 @@ export const sceneSchema = z.object({
  * Nutzer als Referenz vorgegeben hat: laengerer Fliesstext ueber mehrere
  * Zeilen, abgerundete fette Schrift, kraeftige schwarze Kontur.
  */
-export const textStyleSchema = z.enum(["banner", "reference"]);
+export const textStyleSchema = z.enum([
+  "banner",
+  "reference",
+  // Vorschlaege fuer die Parkour-Edits: runde Schrift, weiss mit leichter
+  // schwarzer Kontur, mittig knapp oberhalb der Bildmitte, eher klein.
+  "rund-nunito",
+  "rund-quicksand",
+  "rund-baloo",
+  "rund-fredoka",
+]);
 
 /**
  * Eine Textphase auf der Zeitachse des Videos.
@@ -62,13 +77,41 @@ interface TextStyleSpec {
   fontFamily: string;
   fontWeight: number;
   maxWidthRatio: number;
-  paddingTopRatio: number;
+  /**
+   * Wo die MITTE des Textblocks sitzt, als Anteil der Bildhoehe.
+   *
+   * Frueher wurde die Oberkante gesetzt (paddingTopRatio). Damit wandert der
+   * Block je nach Zeilenzahl nach unten - ein einzeiliger Text sitzt ganz
+   * woanders als ein vierzeiliger. Ueber die Mitte bleibt die Lage stabil,
+   * egal wie lang der Text ist.
+   */
+  centerYRatio?: number;
+  paddingTopRatio?: number;
   fontSizeMin: number;
   fontSizeMax: number;
   maxLines: number;
   strokePx: number;
   lineHeight: number;
+  /** Woher die eingebettete Schrift kommt; leer heisst Systemschrift. */
+  fontSource?: { family: string; weight: string; data: string };
 }
+
+/**
+ * Gemeinsame Grundlage der vier Vorschlaege fuer die Parkour-Edits.
+ *
+ * Alle teilen: weiss, leichte schwarze Kontur, mittig, knapp oberhalb der
+ * Bildmitte, eher klein - gross genug zum Lesen, klein genug, um das Bild
+ * nicht zuzudecken.
+ */
+const RUND_BASIS = {
+  maxWidthRatio: 0.78,
+  centerYRatio: 0.42,
+  fontSizeMin: 34,
+  fontSizeMax: 56,
+  maxLines: 4,
+  strokePx: 3,
+  lineHeight: 1.25,
+} as const;
 
 const TEXT_STYLES: Record<z.infer<typeof textStyleSchema>, TextStyleSpec> = {
   banner: {
@@ -101,16 +144,43 @@ const TEXT_STYLES: Record<z.infer<typeof textStyleSchema>, TextStyleSpec> = {
     strokePx: 7,
     lineHeight: 1.2,
   },
+
+  "rund-nunito": {
+    ...RUND_BASIS,
+    fontFamily: "NunitoRund, Arial, sans-serif",
+    fontWeight: 700,
+    fontSource: { family: "NunitoRund", weight: "700", data: NUNITO_700 },
+  },
+  "rund-quicksand": {
+    ...RUND_BASIS,
+    fontFamily: "Quicksand, Arial, sans-serif",
+    fontWeight: 700,
+    // Quicksand laeuft schmaler, ein Hauch mehr Groesse gleicht das aus.
+    fontSizeMax: 60,
+    fontSource: { family: "Quicksand", weight: "700", data: QUICKSAND_700 },
+  },
+  "rund-baloo": {
+    ...RUND_BASIS,
+    fontFamily: "Baloo2, Arial, sans-serif",
+    fontWeight: 700,
+    fontSource: { family: "Baloo2", weight: "700", data: BALOO_700 },
+  },
+  "rund-fredoka": {
+    ...RUND_BASIS,
+    fontFamily: "Fredoka, Arial, sans-serif",
+    fontWeight: 600,
+    fontSource: { family: "Fredoka", weight: "600", data: FREDOKA_600 },
+  },
 };
 
 /** Bettet die Schrift ein und haelt den Render an, bis sie geladen ist -
  *  sonst wird das erste Bild mit der Ersatzschrift gezeichnet. */
-const useEmbeddedFont = (enabled: boolean) => {
-  const [handle] = React.useState(() => (enabled ? delayRender("Schrift laden") : null));
+const useEmbeddedFont = (quelle: TextStyleSpec["fontSource"] | null) => {
+  const [handle] = React.useState(() => (quelle ? delayRender("Schrift laden") : null));
 
   React.useEffect(() => {
-    if (!enabled || handle === null) return;
-    const font = new FontFace("Nunito", `url(${NUNITO_BLACK_WOFF2})`, { weight: "900" });
+    if (!quelle || handle === null) return;
+    const font = new FontFace(quelle.family, `url(${quelle.data})`, { weight: quelle.weight });
     font
       .load()
       .then((loaded) => {
@@ -118,7 +188,7 @@ const useEmbeddedFont = (enabled: boolean) => {
         continueRender(handle);
       })
       .catch(() => continueRender(handle));
-  }, [enabled, handle]);
+  }, [quelle, handle]);
 };
 
 /**
@@ -204,15 +274,34 @@ const HookTextOverlay: React.FC<{ text: string; spec: TextStyleSpec }> = ({ text
   const maxWidth = width * spec.maxWidthRatio;
   const { fontSize, lines } = fitWrappedText(text, maxWidth, spec);
 
+  // Zwei Arten, die Lage zu bestimmen: ueber die Mitte des Textblocks (neu,
+  // stabil unabhaengig von der Zeilenzahl) oder ueber die Oberkante (die
+  // bisherigen Stile, damit sie sich nicht veraendern).
+  const ueberMitte = spec.centerYRatio !== undefined;
+
   return (
     <AbsoluteFill
-      style={{
-        justifyContent: "flex-start",
-        alignItems: "center",
-        paddingTop: `${spec.paddingTopRatio * 100}%`,
-      }}
+      style={
+        ueberMitte
+          ? { justifyContent: "center", alignItems: "center" }
+          : {
+              justifyContent: "flex-start",
+              alignItems: "center",
+              paddingTop: `${(spec.paddingTopRatio ?? 0.12) * 100}%`,
+            }
+      }
     >
-      <div style={{ width: maxWidth, textAlign: "center" }}>
+      <div
+        style={{
+          width: maxWidth,
+          textAlign: "center",
+          // Aus der Bildmitte um die Differenz nach oben schieben. 0.5 waere
+          // genau die Mittellinie, 0.42 sitzt knapp darueber.
+          ...(ueberMitte
+            ? { transform: `translateY(${((spec.centerYRatio ?? 0.5) - 0.5) * 100}vh)` }
+            : {}),
+        }}
+      >
         {lines.map((line, i) => (
           <div
             key={i}
@@ -247,7 +336,14 @@ export const PromoVideo: React.FC<PromoVideoProps> = ({
   const { fps } = useVideoConfig();
   const volume = videoVolume ?? 1;
   const spec = TEXT_STYLES[textStyle ?? "banner"];
-  useEmbeddedFont(spec.fontFamily.startsWith("Nunito"));
+  // Der alte Referenz-Stil bringt seine Schrift noch ueber den frueheren Weg
+  // mit; die neuen tragen ihre Quelle selbst.
+  useEmbeddedFont(
+    spec.fontSource ??
+      (spec.fontFamily.startsWith("Nunito,")
+        ? { family: "Nunito", weight: "900", data: NUNITO_BLACK_WOFF2 }
+        : null),
+  );
   let startFrame = 0;
 
   return (
