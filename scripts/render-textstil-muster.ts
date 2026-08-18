@@ -11,7 +11,12 @@ import { google } from "googleapis";
 import { env } from "../src/lib/env";
 import { bucketFromServeUrl, clipUrl } from "../src/lib/renderStage";
 
-const STILE = ["rund-nunito", "rund-quicksand", "rund-baloo", "rund-fredoka"] as const;
+const STILE = (process.env.MUSTER_STILE?.split(",") ?? [
+  "rund-nunito",
+  "rund-quicksand",
+  "rund-baloo",
+  "rund-fredoka",
+]) as readonly string[];
 
 /** Ein Text in der Länge, wie er im Betrieb wirklich vorkommt. */
 const TEXT = process.env.MUSTER_TEXT ?? "Nah I can backflip";
@@ -65,7 +70,7 @@ async function main() {
       composition: "PromoVideo",
       inputProps: {
         hookText: TEXT,
-        textStyle: stil,
+        textStyle: stil as never,
         scenes: [
           {
             src: clipUrl(bucket, clip.id),

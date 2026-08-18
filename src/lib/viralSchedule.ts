@@ -88,7 +88,7 @@ export function scheduledOutputFolderId(): string {
  * Edit gleich - ob vom Zeitplan oder von Hand ausgelöst.
  */
 export function viralTextStyle(): string {
-  return process.env.VIRAL_TEXT_STYLE || "rund-nunito";
+  return process.env.VIRAL_TEXT_STYLE || "rund-baloo";
 }
 
 /** Nur zur Anzeige im Dashboard. */

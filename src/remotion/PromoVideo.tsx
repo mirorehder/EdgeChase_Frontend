@@ -106,8 +106,10 @@ interface TextStyleSpec {
 const RUND_BASIS = {
   maxWidthRatio: 0.78,
   centerYRatio: 0.42,
-  fontSizeMin: 34,
-  fontSizeMax: 56,
+  // Ein Fuenftel groesser als der erste Entwurf - so gewaehlt an den
+  // Musterbildern, die ueber echtem Material gerendert wurden.
+  fontSizeMin: 40,
+  fontSizeMax: 68,
   maxLines: 4,
   strokePx: 3,
   lineHeight: 1.25,
@@ -156,7 +158,7 @@ const TEXT_STYLES: Record<z.infer<typeof textStyleSchema>, TextStyleSpec> = {
     fontFamily: "Quicksand, Arial, sans-serif",
     fontWeight: 700,
     // Quicksand laeuft schmaler, ein Hauch mehr Groesse gleicht das aus.
-    fontSizeMax: 60,
+    fontSizeMax: 72,
     fontSource: { family: "Quicksand", weight: "700", data: QUICKSAND_700 },
   },
   "rund-baloo": {
