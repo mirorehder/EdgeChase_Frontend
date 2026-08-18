@@ -19,6 +19,8 @@ interface Clip {
   editedAt: string | null;
   lastUsedAt: string | null;
   analysisVersion: number | null;
+  analysisFailures: number;
+  analysisError: string | null;
 }
 
 /**
@@ -166,6 +168,13 @@ export function ClipLibrary({ track }: { track: Track }) {
                     {clip.editedAt && <span className="tag">bearbeitet</span>}
                     {clip.analysisVersion === null && <span className="tag warn">nicht analysiert</span>}
                   </span>
+                  {clip.analysisFailures > 0 && (
+                    <span className="clip-meta error-text">
+                      Auswertung gescheitert ({clip.analysisFailures}×)
+                      {clip.analysisFailures >= 3 ? ", wird übersprungen" : ""}:{" "}
+                      {clip.analysisError}
+                    </span>
+                  )}
                   <span className="clip-meta">
                     {clip.sourceFolderName ?? "—"} ·{" "}
                     {track === "viral" ? (

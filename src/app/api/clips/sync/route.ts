@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   analyzeUnanalyzedClips,
+  countBlockedClips,
   countUnanalyzedClips,
   syncClipLibrary,
 } from "@/lib/pipeline";
@@ -15,7 +16,8 @@ export async function POST(request: NextRequest) {
     const syncResult = await syncClipLibrary(track);
     const analyzed = await analyzeUnanalyzedClips(undefined, track);
     const remaining = await countUnanalyzedClips(track);
-    return NextResponse.json({ syncResult, analyzed, remaining });
+    const blocked = await countBlockedClips(track);
+    return NextResponse.json({ syncResult, analyzed, remaining, blocked });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ error: message }, { status: 500 });

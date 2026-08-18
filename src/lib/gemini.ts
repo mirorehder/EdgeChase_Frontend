@@ -33,11 +33,17 @@ function client() {
  */
 async function uploadForAnalysis(
   ai: GoogleGenAI,
-  buffer: Buffer,
+  quelle: Buffer | string,
   mimeType: string,
 ): Promise<GenAIFile> {
+  // Ein Pfad wird durchgereicht - die Bibliothek liest die Datei dann selbst
+  // stueckweise. Ein Buffer muss dagegen noch einmal kopiert werden, was bei
+  // grossen Clips genau das Speicherproblem waere, das der Pfad vermeidet.
   let file = await ai.files.upload({
-    file: new Blob([new Uint8Array(buffer)], { type: mimeType }),
+    file:
+      typeof quelle === "string"
+        ? quelle
+        : new Blob([new Uint8Array(quelle)], { type: mimeType }),
     config: { mimeType },
   });
 
@@ -81,12 +87,12 @@ export interface ClipAnalysis {
  * Modellschätzung) und wird für die Korrektur in Schritt 2 gebraucht.
  */
 export async function analyzeClip(
-  buffer: Buffer,
+  quelle: Buffer | string,
   mimeType: string,
   durationMs: number | null,
   track: Track = "promo",
 ): Promise<ClipAnalysis> {
-  if (track === "viral") return analyzeViralClip(buffer, mimeType, durationMs);
+  if (track === "viral") return analyzeViralClip(quelle, mimeType, durationMs);
 
   const ai = client();
 
@@ -111,7 +117,7 @@ Bewerte apparelScore (0-1): wie gut und wie lange ist die getragene Kleidung kla
 
 Wähle den besten zusammenhängenden Ausschnitt von höchstens 4 Sekunden (startMs/endMs, Millisekunden ab Clipbeginn) - die Stelle, an der die Kleidung am besten zu sehen ist und am meisten passiert. Rohmaterial beginnt fast immer mit Vorbereitung: vermeide die ersten Sekunden, außer der Clip ist insgesamt sehr kurz. Bevorzuge eine Stelle aus der Mitte oder zweiten Hälfte.`;
 
-  const uploaded = await uploadForAnalysis(ai, buffer, mimeType);
+  const uploaded = await uploadForAnalysis(ai, quelle, mimeType);
 
   try {
     const response = await ai.models.generateContent({
@@ -222,7 +228,7 @@ interface ViralRaw {
 }
 
 async function analyzeViralClip(
-  buffer: Buffer,
+  quelle: Buffer | string,
   mimeType: string,
   durationMs: number | null,
 ): Promise<ClipAnalysis> {
@@ -256,7 +262,7 @@ Diese beiden Zeitpunkte sind das Wichtigste an dieser Aufgabe. Aus ihnen wird ge
 
 Kommt kein Trick vor, setze stuntScore auf 0 und beide Zeitpunkte auf die auffälligste Bewegung im Clip.`;
 
-  const uploaded = await uploadForAnalysis(ai, buffer, mimeType);
+  const uploaded = await uploadForAnalysis(ai, quelle, mimeType);
 
   try {
     const response = await ai.models.generateContent({

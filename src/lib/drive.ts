@@ -188,7 +188,35 @@ export async function listSourceClips(track: Track = "promo"): Promise<DriveClip
   return files;
 }
 
-/** Lädt eine Datei komplett in den Speicher. Rohclips sind kurz (Sekunden), das bleibt unproblematisch. */
+/** Grösse einer Datei, ohne sie zu holen. */
+export async function fileSize(fileId: string): Promise<number> {
+  const res = await getDriveClient().files.get({ fileId, fields: "size" });
+  return Number(res.data.size ?? 0);
+}
+
+/**
+ * Lädt eine Datei auf die Platte statt in den Speicher.
+ *
+ * Der Weg über den Arbeitsspeicher trägt bei 4K-Material nicht: an einer
+ * echten Datei gemessen belegte ein 388-MB-Clip nach dem Herunterladen 1346 MB
+ * und nach dem Verpacken für Gemini 2123 MB - die Bibliothek hält die Daten
+ * unterwegs mehrfach. Eine Serverless-Funktion hat so viel nicht, sie wird
+ * vorher abgeräumt. Über die Platte bleibt der Verbrauch konstant.
+ */
+export async function downloadFileToPath(fileId: string, zielPfad: string): Promise<number> {
+  const { createWriteStream } = await import("node:fs");
+  const { pipeline } = await import("node:stream/promises");
+  const { stat } = await import("node:fs/promises");
+
+  const drive = getDriveClient();
+  const res = await drive.files.get({ fileId, alt: "media" }, { responseType: "stream" });
+
+  await pipeline(res.data as NodeJS.ReadableStream, createWriteStream(zielPfad));
+  return (await stat(zielPfad)).size;
+}
+
+/** Lädt eine Datei komplett in den Speicher. Nur noch für kleine Dateien -
+ *  für Rohclips gibt es downloadFileToPath. */
 export async function downloadFile(fileId: string): Promise<Buffer> {
   const drive = getDriveClient();
   const res = await drive.files.get(

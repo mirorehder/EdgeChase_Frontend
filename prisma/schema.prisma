@@ -67,6 +67,16 @@ model Clip {
   /// dann werten sich alte Clips von selbst neu aus.
   analysisVersion Int?
 
+  /// Wie oft die Analyse an diesem Clip gescheitert ist, und woran zuletzt.
+  ///
+  /// Ohne diesen Zähler blockiert ein einziger unverdaulicher Clip die ganze
+  /// Warteschlange: die Reihenfolge ist immer dieselbe, also käme er bei jedem
+  /// Abgleich wieder als erster dran und scheiterte wieder. Ab drei
+  /// Fehlversuchen wird er übersprungen; eine ausdrückliche Neuanalyse setzt
+  /// den Zähler zurück.
+  analysisFailures Int     @default(0)
+  analysisError    String?
+
   /// Wann Beschreibung, Bewertung oder Ausschnitt von Hand geändert wurden.
   /// Ist das gesetzt, überspringt die automatische Neuanalyse den Clip - eine
   /// Korrektur des Nutzers soll nicht stillschweigend überschrieben werden.

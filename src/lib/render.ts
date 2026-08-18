@@ -1,9 +1,9 @@
 import { getRenderProgress, renderMediaOnLambda } from "@remotion/lambda/client";
-import { downloadFile } from "./drive";
+import { downloadFileToPath } from "./drive";
 import {
   bucketFromServeUrl,
   isClipMirrored,
-  mirrorClip,
+  mirrorClipFromFile,
   clipUrl,
 } from "./renderStage";
 import { env } from "./env";
@@ -82,8 +82,21 @@ export async function renderPromoVideo(
 
   for (const scene of scenes) {
     if (!(await isClipMirrored(bucket, scene.driveFileId))) {
-      const buffer = await downloadFile(scene.driveFileId);
-      await mirrorClip(bucket, scene.driveFileId, buffer);
+      // Über die Platte, nicht über den Arbeitsspeicher: dieser Weg greift nur
+      // bei einem Clip, der bei der Analyse nicht gespiegelt wurde - und das
+      // sind gerade die grossen, an denen der Speicherweg scheitert.
+      const { mkdtemp, rm } = await import("node:fs/promises");
+      const { tmpdir } = await import("node:os");
+      const { join } = await import("node:path");
+
+      const verzeichnis = await mkdtemp(join(tmpdir(), "render-"));
+      const pfad = join(verzeichnis, "clip.bin");
+      try {
+        const groesse = await downloadFileToPath(scene.driveFileId, pfad);
+        await mirrorClipFromFile(bucket, scene.driveFileId, pfad, groesse);
+      } finally {
+        await rm(verzeichnis, { recursive: true, force: true }).catch(() => {});
+      }
     }
 
     props.scenes.push({

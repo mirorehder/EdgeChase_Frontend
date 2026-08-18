@@ -1,7 +1,8 @@
 import { prisma } from "./db";
 import {
   listSourceClips,
-  downloadFile,
+  downloadFileToPath,
+  fileSize,
   uploadToOutputFolderWithRetry,
   type Track,
 } from "./drive";
@@ -21,7 +22,7 @@ import { renderPromoVideo } from "./render";
 import {
   bucketFromServeUrl,
   isRenderStorageConfigured,
-  mirrorClip,
+  mirrorClipFromFile,
 } from "./renderStage";
 import { env } from "./env";
 import { hookTextToFileName } from "./filename";
@@ -40,6 +41,31 @@ export const CURRENT_ANALYSIS_VERSION = 1;
 // Ausreisser. Der Rest wird beim nächsten Lauf fortgesetzt; für einen grossen
 // Anfangsbestand den Abgleich im Dashboard mehrfach auslösen.
 const ANALYZE_BATCH_LIMIT = 5;
+
+/**
+ * Nach so vielen Fehlversuchen wird ein Clip nicht mehr automatisch
+ * angefasst. Er bliebe sonst für immer der erste in der Reihe und keiner der
+ * folgenden käme je dran.
+ */
+const MAX_ANALYSIS_FAILURES = 3;
+
+/**
+ * Nach dieser Zeit werden keine weiteren Clips mehr begonnen.
+ *
+ * Vercel räumt die Funktion nach 300 s ab. Wird sie mitten in einem Clip
+ * unterbrochen, ist auch die Arbeit der bereits fertigen verloren, weil die
+ * Antwort nie ankommt.
+ */
+const ANALYZE_TIME_BUDGET_MS = 200_000;
+
+/**
+ * Grösste Datei, die eine Auswertung hier bewältigt.
+ *
+ * Begrenzt wird nicht der Arbeitsspeicher - über die Platte bleibt der
+ * konstant -, sondern der Platz im temporären Verzeichnis: eine
+ * Serverless-Funktion hat davon 512 MB.
+ */
+const MAX_ANALYSIS_BYTES = Number(process.env.MAX_ANALYSIS_BYTES ?? 440_000_000);
 
 const APPAREL_SCORE_THRESHOLD = 0.5;
 const CANDIDATE_POOL_SIZE = 12;
@@ -140,8 +166,17 @@ export async function countUnanalyzedClips(track: Track = "promo"): Promise<numb
     where: {
       track,
       editedAt: null,
+      analysisFailures: { lt: MAX_ANALYSIS_FAILURES },
       OR: [{ analysisVersion: null }, { analysisVersion: { not: CURRENT_ANALYSIS_VERSION } }],
     },
+  });
+}
+
+/** Clips, an denen die Analyse endgültig gescheitert ist. Sie zählen nicht mehr
+ *  als "offen", dürfen aber auch nicht unbemerkt verschwinden. */
+export async function countBlockedClips(track: Track = "promo"): Promise<number> {
+  return prisma.clip.count({
+    where: { track, analysisFailures: { gte: MAX_ANALYSIS_FAILURES } },
   });
 }
 
@@ -157,12 +192,13 @@ export async function reanalyzeClip(clipId: string): Promise<AnalyzedClipSummary
   const track = (clip.track as Track) ?? "promo";
   await logActivity(`Analysiere ${clip.name} erneut ...`, { track });
 
-  const buffer = await downloadFile(clip.driveFileId);
-  const analysis = await analyzeClip(buffer, guessMimeType(clip.name), clip.durationMs, track);
+  const analysis = await analysiereEinenClip(clip, track);
 
   await prisma.clip.update({
     where: { id: clip.id },
-    data: { ...analysisFields(analysis), editedAt: null },
+    // Der Zähler wird zurückgesetzt: eine ausdrückliche Anweisung hebt die
+    // Sperre auf, die ein Clip sich durch Fehlversuche eingehandelt hat.
+    data: { ...analysisFields(analysis), editedAt: null, analysisFailures: 0, analysisError: null },
   });
 
   await logActivity(`${clip.name} neu bewertet: ${analysisSummary(analysis, track)}`, {
@@ -225,6 +261,9 @@ export async function analyzeUnanalyzedClips(
       // Von Hand korrigierte Clips bleiben unangetastet, auch wenn die
       // Analyse-Version hochgezählt wird.
       editedAt: null,
+      // Clips, an denen die Analyse mehrfach gescheitert ist, blockieren sonst
+      // die Warteschlange - die Reihenfolge ist immer dieselbe.
+      analysisFailures: { lt: MAX_ANALYSIS_FAILURES },
       OR: [{ analysisVersion: null }, { analysisVersion: { not: CURRENT_ANALYSIS_VERSION } }],
     },
     take: limit,
@@ -232,35 +271,112 @@ export async function analyzeUnanalyzedClips(
   });
 
   const results: AnalyzedClipSummary[] = [];
-
+  const gestartet = Date.now();
   const total = pending.length;
-  for (const [index, clip] of pending.entries()) {
-    await logActivity(`Analysiere ${clip.name} (${index + 1} von ${total}) ...`, { track });
-    const buffer = await downloadFile(clip.driveFileId);
-    const mimeType = guessMimeType(clip.name);
 
-    // Die Daten liegen hier ohnehin im Speicher - sie gleich in den
-    // Render-Bucket zu spiegeln kostet nichts zusätzlich und erspart dem
-    // späteren Render den Transfer von 100-200 MB pro Clip. Schlägt es fehl
+  for (const [index, clip] of pending.entries()) {
+    // Vor jedem weiteren Clip prüfen, ob die Zeit noch reicht. Wird die
+    // Funktion mitten in einem Clip abgeräumt, ist die Arbeit der bereits
+    // fertigen verloren - der Aufruf muss von selbst zum Ende kommen.
+    if (index > 0 && Date.now() - gestartet > ANALYZE_TIME_BUDGET_MS) {
+      await logActivity(
+        `Zeitfenster ausgeschöpft nach ${index} von ${total} Clips - der Rest folgt beim nächsten Abgleich.`,
+        { track },
+      );
+      break;
+    }
+
+    await logActivity(`Analysiere ${clip.name} (${index + 1} von ${total}) ...`, { track });
+
+    try {
+      const analysis = await analysiereEinenClip(clip, track);
+      await prisma.clip.update({
+        where: { id: clip.id },
+        data: { ...analysisFields(analysis), analysisFailures: 0, analysisError: null },
+      });
+      await logActivity(`${clip.name}: ${analysisSummary(analysis, track)}`, { track });
+      results.push({ clipId: clip.id, name: clip.name, ...analysis });
+    } catch (err) {
+      // Ein einzelner Clip darf den Abgleich nicht zu Fall bringen.
+      //
+      // Vorher lief die Schleife ohne Absicherung: der erste Clip, an dem
+      // etwas scheiterte, brach den ganzen Aufruf ab, und weil die
+      // Reihenfolge feststeht, kam beim nächsten Abgleich derselbe Clip
+      // wieder als erster dran. Die Bibliothek konnte an dieser Stelle nie
+      // mehr weiterkommen.
+      const message = err instanceof Error ? err.message : String(err);
+      const versuche = clip.analysisFailures + 1;
+
+      await prisma.clip.update({
+        where: { id: clip.id },
+        data: { analysisFailures: versuche, analysisError: message.slice(0, 500) },
+      });
+
+      await logActivity(
+        `${clip.name} konnte nicht ausgewertet werden (Versuch ${versuche} von ${MAX_ANALYSIS_FAILURES}): ${message}` +
+          (versuche >= MAX_ANALYSIS_FAILURES
+            ? " - wird künftig übersprungen, bis er von Hand neu ausgewertet wird."
+            : ""),
+        { level: "error", track },
+      );
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Holt einen Clip auf die Platte, spiegelt ihn und wertet ihn aus.
+ *
+ * Der Umweg über eine Datei ist nötig, weil das Rohmaterial bis 4K reicht: an
+ * einem echten 388-MB-Clip gemessen belegte der Weg über den Arbeitsspeicher
+ * 2,1 GB, weit mehr als eine Serverless-Funktion hat.
+ */
+async function analysiereEinenClip(
+  clip: { id: string; name: string; driveFileId: string; durationMs: number | null },
+  track: Track,
+): Promise<ClipAnalysis> {
+  const { mkdtemp, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+
+  // Erst die Grösse erfragen, dann herunterladen: eine zu grosse Datei würde
+  // sonst bei jedem der drei Versuche vergeblich durch die Leitung gehen.
+  const vorabGroesse = await fileSize(clip.driveFileId);
+  if (vorabGroesse > MAX_ANALYSIS_BYTES) {
+    throw new Error(
+      `Datei ist ${(vorabGroesse / 1e6).toFixed(0)} MB gross - mehr als die ` +
+        `${(MAX_ANALYSIS_BYTES / 1e6).toFixed(0)} MB, die hier verarbeitet werden können. ` +
+        `Den Clip kürzer oder in geringerer Auflösung in Drive ablegen.`,
+    );
+  }
+
+  const verzeichnis = await mkdtemp(join(tmpdir(), "clip-"));
+  const pfad = join(verzeichnis, "clip.bin");
+
+  try {
+    const groesse = await downloadFileToPath(clip.driveFileId, pfad);
+
+    // Die Datei liegt ohnehin schon da - sie gleich in den Render-Bucket zu
+    // spiegeln erspart dem späteren Render den Transfer. Schlägt es fehl
     // (oder ist AWS noch nicht eingerichtet), holt der Render es nach.
     if (isRenderStorageConfigured()) {
       try {
-        await mirrorClip(bucketFromServeUrl(env.remotionServeUrl), clip.driveFileId, buffer);
+        await mirrorClipFromFile(
+          bucketFromServeUrl(env.remotionServeUrl),
+          clip.driveFileId,
+          pfad,
+          groesse,
+        );
       } catch {
         // Absichtlich verschluckt: die Analyse soll nicht an AWS hängen.
       }
     }
 
-    const analysis = await analyzeClip(buffer, mimeType, clip.durationMs, track);
-
-    await prisma.clip.update({ where: { id: clip.id }, data: analysisFields(analysis) });
-
-    await logActivity(`${clip.name}: ${analysisSummary(analysis, track)}`, { track });
-
-    results.push({ clipId: clip.id, name: clip.name, ...analysis });
+    return await analyzeClip(pfad, guessMimeType(clip.name), clip.durationMs, track);
+  } finally {
+    await rm(verzeichnis, { recursive: true, force: true }).catch(() => {});
   }
-
-  return results;
 }
 
 export interface ComposedScene {

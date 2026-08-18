@@ -102,6 +102,35 @@ export async function mirrorClip(
   return key;
 }
 
+/**
+ * Wie mirrorClip, aber aus einer Datei statt aus dem Speicher.
+ *
+ * ContentLength muss mitgegeben werden: ohne bekannte Länge liest das
+ * AWS-Paket den Strom erst vollständig ein, um sie zu ermitteln - und wäre
+ * damit genauso speicherhungrig wie der Weg, den wir gerade verlassen haben.
+ */
+export async function mirrorClipFromFile(
+  bucket: string,
+  driveFileId: string,
+  pfad: string,
+  groesse: number,
+): Promise<string> {
+  const key = clipCacheKey(driveFileId);
+  if (await objectExists(bucket, key)) return key;
+
+  const { createReadStream } = await import("node:fs");
+  await s3Client().send(
+    new PutObjectCommand({
+      Bucket: bucket,
+      Key: key,
+      Body: createReadStream(pfad),
+      ContentLength: groesse,
+      ContentType: "video/mp4",
+    }),
+  );
+  return key;
+}
+
 /** Ob für diesen Clip bereits eine Kopie im Render-Bucket liegt. */
 export async function isClipMirrored(bucket: string, driveFileId: string): Promise<boolean> {
   return objectExists(bucket, clipCacheKey(driveFileId));

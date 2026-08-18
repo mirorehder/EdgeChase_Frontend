@@ -35,6 +35,9 @@ export function TriggerButtons({ track }: { track: Track }) {
                 : "") +
               (data.remaining > 0
                 ? ` Noch ${data.remaining} offen - Abgleich erneut auslösen.`
+                : "") +
+              (data.blocked > 0
+                ? ` ${data.blocked} Clip(s) liessen sich nicht auswerten - siehe Bibliothek.`
                 : ""),
         error: false,
       });
