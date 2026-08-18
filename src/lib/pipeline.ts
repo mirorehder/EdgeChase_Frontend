@@ -24,6 +24,7 @@ import { env } from "./env";
 import { hookTextToFileName } from "./filename";
 import { logActivity } from "./activity";
 import { getDailySettings } from "./dailyConfig";
+import { getViralSchedule, scheduledOutputFolderId } from "./viralSchedule";
 
 // Hochzählen, wenn sich Analyse-Felder oder der Analyse-Prompt ändern -
 // Clips mit älterer Version werten sich dann automatisch neu aus.
@@ -454,6 +455,14 @@ export interface ViralComposeOptions {
   /** Wie viele Einstellungen. Ohne Angabe aus der Zielllänge abgeleitet. */
   clipCount?: number;
   totalSeconds?: number;
+  /**
+   * Clips, die für dieses Video nicht infrage kommen.
+   *
+   * Gebraucht, wenn ein Tageslauf mehrere Edits erzeugt: die Auswahl nimmt
+   * immer die bestbewerteten Tricks, also bekämen alle Videos eines Laufs
+   * sonst dieselben Clips und wären kaum zu unterscheiden.
+   */
+  excludeClipIds?: string[];
 }
 
 /**
@@ -511,18 +520,37 @@ export async function composeViralVideo(options: ViralComposeOptions): Promise<C
   // Der Kandidatenkreis bleibt bewusst eng (die Gewünschten plus ein paar
   // Ersatzleute): bei einem grossen Kreis könnte die Auswahl einen der
   // stärksten Tricks zugunsten von Abwechslung übergehen.
-  const candidates = await prisma.clip.findMany({
-    where: {
-      track: "viral",
-      analysisVersion: CURRENT_ANALYSIS_VERSION,
-      stuntScore: { gte: STUNT_SCORE_THRESHOLD },
-    },
-    orderBy: [
-      { stuntScore: "desc" },
-      { lastUsedAt: { sort: "asc", nulls: "first" } },
-    ],
+  const ausgeschlossen = options.excludeClipIds ?? [];
+  const grundfilter = {
+    track: "viral",
+    analysisVersion: CURRENT_ANALYSIS_VERSION,
+    stuntScore: { gte: STUNT_SCORE_THRESHOLD },
+  } as const;
+  const sortierung = [
+    { stuntScore: "desc" as const },
+    { lastUsedAt: { sort: "asc" as const, nulls: "first" as const } },
+  ];
+
+  let candidates = await prisma.clip.findMany({
+    where: ausgeschlossen.length ? { ...grundfilter, id: { notIn: ausgeschlossen } } : grundfilter,
+    orderBy: sortierung,
     take: wantedCount + VIRAL_POOL_SPARE,
   });
+
+  // Reichen die übrigen Clips nicht für ein Video, ist ein zweites Video mit
+  // wiederverwendeten Clips immer noch besser als gar keines - aber es soll im
+  // Protokoll stehen.
+  if (candidates.length < 3 && ausgeschlossen.length) {
+    await logActivity(
+      `Zu wenige unverbrauchte Höhepunkte (${candidates.length}) - für dieses Video werden Clips erneut verwendet.`,
+      { level: "error", track: "viral" },
+    );
+    candidates = await prisma.clip.findMany({
+      where: grundfilter,
+      orderBy: sortierung,
+      take: wantedCount + VIRAL_POOL_SPARE,
+    });
+  }
 
   if (candidates.length < 3) {
     throw new Error(
@@ -622,7 +650,12 @@ export async function processJob(jobId: string): Promise<void> {
       // Jede Sparte hat ihren eigenen Zielordner in Drive - Werbevideos und
       // Parkour-Edits sollen auch dort nicht durcheinandergeraten.
       const fileName = hookTextToFileName(job.hookText);
-      const upload = await uploadToOutputFolderWithRetry(fileName, buffer, track);
+      const upload = await uploadToOutputFolderWithRetry(
+        fileName,
+        buffer,
+        track,
+        job.driveFolderId,
+      );
 
       await prisma.promoVideo.update({
         where: { id: jobId },
@@ -694,6 +727,117 @@ export async function createJobFromSpec(
   return job.id;
 }
 
+// ---------------------------------------------------------------------------
+// Täglicher Lauf der viralen Sparte
+//
+// Anders als bei den Promo-Videos wird hier nicht sofort gerendert. Ein Render
+// dauert ein bis zweieinhalb Minuten, und Vercel bricht jede Funktion nach 300
+// Sekunden ab - mehrere Edits plus das Promo-Video passen da niemals hinein.
+// Der Lauf legt deshalb nur die Aufträge an; gerendert wird jeder in einer
+// eigenen Ausführung, und jeder fertige Auftrag stösst den nächsten an.
+// ---------------------------------------------------------------------------
+
+/**
+ * Wählt die Konzepte für einen Lauf aus.
+ *
+ * In beiden Betriebsarten entscheidet, wann ein Konzept zuletzt an der Reihe
+ * war - "rotierend" bezieht das auf alle Konzepte der Sparte, "feste Auswahl"
+ * nur auf die gewählten. Ein eigener Zähler wäre störanfällig: er müsste beim
+ * Hinzufügen und Löschen von Konzepten mitgeführt werden.
+ */
+async function konzepteFuerLauf(anzahl: number): Promise<{ id: string; title: string }[]> {
+  const plan = await getViralSchedule();
+
+  const auswahl = await prisma.concept.findMany({
+    where:
+      plan.conceptMode === "fixed"
+        ? { track: "viral", id: { in: plan.conceptIds } }
+        : { track: "viral" },
+    orderBy: [{ lastUsedAt: { sort: "asc", nulls: "first" } }, { createdAt: "asc" }],
+    select: { id: true, title: true },
+  });
+
+  if (!auswahl.length) return [];
+
+  // Sind weniger Konzepte vorhanden als Videos gewünscht, wird von vorne
+  // begonnen - lieber zwei Videos nach demselben Konzept als nur eines.
+  return Array.from({ length: anzahl }, (_, i) => auswahl[i % auswahl.length]);
+}
+
+export interface ViralRunResult {
+  jobIds: string[];
+  /** Warum nichts entstanden ist - leer, wenn alles lief. */
+  hinweis?: string;
+}
+
+/**
+ * Plant den Tageslauf der viralen Sparte: legt die Aufträge an, rendert aber
+ * noch nichts.
+ */
+export async function planViralRun(force = false): Promise<ViralRunResult> {
+  const plan = await getViralSchedule();
+
+  if (!plan.enabled && !force) {
+    return { jobIds: [], hinweis: "Zeitplan ist abgeschaltet." };
+  }
+
+  const konzepte = await konzepteFuerLauf(plan.videosPerDay);
+  if (!konzepte.length) {
+    const hinweis =
+      plan.conceptMode === "fixed"
+        ? "Keines der ausgewählten Konzepte existiert noch."
+        : "Noch kein Konzept in der viralen Sparte - ohne Konzept gibt es keinen Text.";
+    await logActivity(`Zeitplan übersprungen: ${hinweis}`, { level: "error", track: "viral" });
+    return { jobIds: [], hinweis };
+  }
+
+  await logActivity(
+    `Zeitplan gestartet: ${konzepte.length} Edit(s), Konzepte ` +
+      konzepte.map((k) => `"${k.title}"`).join(", ") +
+      ".",
+    { track: "viral" },
+  );
+
+  const jobIds: string[] = [];
+  const verbrauchteClips: string[] = [];
+  let letzterFehler: string | null = null;
+
+  for (const konzept of konzepte) {
+    try {
+      const jobId = await createViralJobFromConcept(konzept.id, {
+        excludeClipIds: verbrauchteClips,
+        driveFolderId: scheduledOutputFolderId(),
+      });
+      jobIds.push(jobId);
+
+      const job = await prisma.promoVideo.findUnique({ where: { id: jobId } });
+      for (const scene of (job?.scenes as unknown as ComposedScene[]) ?? []) {
+        verbrauchteClips.push(scene.clipId);
+      }
+    } catch (err) {
+      letzterFehler = err instanceof Error ? err.message : String(err);
+      await logActivity(
+        `Edit nach "${konzept.title}" konnte nicht angelegt werden: ${letzterFehler}`,
+        { level: "error", track: "viral" },
+      );
+    }
+  }
+
+  // Ohne diesen Hinweis meldet die Oberfläche "0 Aufträge angelegt" und
+  // verschweigt, woran es lag.
+  return { jobIds, hinweis: jobIds.length === 0 && letzterFehler ? letzterFehler : undefined };
+}
+
+/** Der nächste Auftrag der Sparte, der noch auf seinen Render wartet. */
+export async function nextQueuedJobId(track: Track): Promise<string | null> {
+  const job = await prisma.promoVideo.findFirst({
+    where: { track, status: "queued" },
+    orderBy: { createdAt: "asc" },
+    select: { id: true },
+  });
+  return job?.id ?? null;
+}
+
 /**
  * Legt einen viralen Edit nach einem gespeicherten Konzept an.
  *
@@ -701,7 +845,10 @@ export async function createJobFromSpec(
  * Einstellungen dienen als Richtwert, den die Höhepunkte selbst noch
  * verschieben dürfen.
  */
-export async function createViralJobFromConcept(conceptId: string): Promise<string> {
+export async function createViralJobFromConcept(
+  conceptId: string,
+  options: { excludeClipIds?: string[]; driveFolderId?: string | null } = {},
+): Promise<string> {
   const concept = await prisma.concept.findUnique({ where: { id: conceptId } });
   if (!concept) throw new Error("Konzept nicht gefunden.");
 
@@ -709,6 +856,7 @@ export async function createViralJobFromConcept(conceptId: string): Promise<stri
     hookText: concept.hookText,
     clipCount: concept.clipCount || undefined,
     totalSeconds: concept.totalSeconds || undefined,
+    excludeClipIds: options.excludeClipIds,
   });
 
   const job = await prisma.promoVideo.create({
@@ -719,7 +867,16 @@ export async function createViralJobFromConcept(conceptId: string): Promise<stri
       status: "queued",
       textStyle: concept.textStyle,
       requestedVia: `Konzept: ${concept.title}`,
+      driveFolderId: options.driveFolderId ?? null,
     },
+  });
+
+  // Der Zeitpunkt steuert die Rotation - er wird beim Anlegen gesetzt, nicht
+  // erst nach dem Render: sonst käme bei mehreren Edits eines Laufs jedes Mal
+  // dasselbe Konzept an die Reihe.
+  await prisma.concept.update({
+    where: { id: concept.id },
+    data: { lastUsedAt: new Date() },
   });
 
   await logActivity(`Viraler Edit nach Konzept "${concept.title}" angelegt.`, {

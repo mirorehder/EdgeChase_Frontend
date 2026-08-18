@@ -532,6 +532,36 @@ export async function selectViralScenes(
   candidates: ViralCandidate[],
   desiredCount: number,
 ): Promise<string[]> {
+  try {
+    return await selectViralScenesMitModell(candidates, desiredCount);
+  } catch (err) {
+    // Das Modell ordnet hier nur - die Auswahl selbst steht schon fest, weil
+    // die Kandidatenliste nach Bewertung sortiert hereinkommt. Faellt Gemini
+    // aus, waere es falsch, deswegen den ganzen Tageslauf ausfallen zu lassen:
+    // eine feste, vernuenftige Reihenfolge ist allemal besser als kein Video.
+    console.warn("Reihenfolge ohne Modell:", err instanceof Error ? err.message : err);
+    return ersatzReihenfolge(candidates, desiredCount);
+  }
+}
+
+/**
+ * Reihenfolge ohne Modell: der zweitstaerkste Trick eroeffnet, der staerkste
+ * schliesst ab, der Rest liegt dazwischen.
+ */
+function ersatzReihenfolge(candidates: ViralCandidate[], desiredCount: number): string[] {
+  const sortiert = [...candidates]
+    .sort((a, b) => b.stuntScore - a.stuntScore)
+    .slice(0, desiredCount);
+  if (sortiert.length < 3) return sortiert.map((c) => c.id);
+
+  const [staerkster, zweiter, ...rest] = sortiert;
+  return [zweiter, ...rest, staerkster].map((c) => c.id);
+}
+
+async function selectViralScenesMitModell(
+  candidates: ViralCandidate[],
+  desiredCount: number,
+): Promise<string[]> {
   const ai = client();
 
   const candidateList = candidates

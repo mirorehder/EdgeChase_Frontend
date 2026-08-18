@@ -136,6 +136,12 @@ model PromoVideo {
   driveUrl      String?
   driveFileName String?
 
+  /// Zielordner in Drive, falls dieser Auftrag nicht in den Standardordner
+  /// seiner Sparte gehört. Die vom Zeitplan erzeugten Edits landen so in dem
+  /// Ordner, aus dem später gepostet wird, während Handversuche den
+  /// Arbeitsordner nicht vollschreiben.
+  driveFolderId String?
+
   /// Instagram-Media-ID des geposteten Videos, sobald bekannt.
   ///
   /// Wird von diesem Tool nicht gefüllt - das Posten läuft anderswo. Das
@@ -215,7 +221,34 @@ model Concept {
   /// Gedaechtnisstuetze, nicht maschinell ausgewertet.
   notes String?
 
+  /// Wann zuletzt ein Video nach diesem Konzept entstanden ist. Grundlage der
+  /// Rotation: das am längsten nicht verwendete Konzept kommt als nächstes.
+  lastUsedAt DateTime?
+
   createdAt DateTime @default(now())
 
   @@index([createdAt])
+}
+
+/// Zeitplan der viralen Sparte: was der tägliche Lauf erzeugen soll.
+///
+/// Genau eine Zeile mit fester ID, wie bei DailyConfig - so lassen sich die
+/// Vorgaben im Dashboard ändern, ohne eine neue Fassung auszurollen.
+model ViralSchedule {
+  id String @id @default("default")
+
+  /// Steht das auf false, erzeugt der Zeitplan keine Edits.
+  enabled Boolean @default(false)
+
+  /// Wie viele Edits pro Tag entstehen sollen.
+  videosPerDay Int @default(1)
+
+  /// "rotation" = reihum aus allen Konzepten der Sparte.
+  /// "fixed"    = nur aus den unter conceptIds gewählten.
+  conceptMode String @default("rotation")
+
+  /// Bei "fixed" die gewählten Konzept-IDs als JSON-Liste.
+  conceptIds Json @default("[]")
+
+  updatedAt DateTime @updatedAt
 }

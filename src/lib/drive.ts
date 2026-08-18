@@ -296,9 +296,10 @@ export async function ensureOutputFolder(track: Track = "promo"): Promise<string
 export async function findFileInOutputFolder(
   fileName: string,
   track: Track = "promo",
+  folderIdOverride?: string | null,
 ): Promise<{ id: string; webViewLink: string | null } | null> {
   const drive = getWriteClient();
-  const folderId = await ensureOutputFolder(track);
+  const folderId = folderIdOverride || (await ensureOutputFolder(track));
   const escaped = fileName.replace(/'/g, "\\'");
 
   const res = await drive.files.list({
@@ -316,9 +317,10 @@ export async function uploadToOutputFolder(
   fileName: string,
   buffer: Buffer,
   track: Track = "promo",
+  folderIdOverride?: string | null,
 ): Promise<{ id: string; webViewLink: string | null }> {
   const drive = getWriteClient();
-  const folderId = await ensureOutputFolder(track);
+  const folderId = folderIdOverride || (await ensureOutputFolder(track));
 
   const res = await drive.files.create({
     requestBody: {
@@ -352,13 +354,14 @@ export async function uploadToOutputFolderWithRetry(
   fileName: string,
   buffer: Buffer,
   track: Track = "promo",
+  folderIdOverride?: string | null,
   maxAttempts = 3,
 ): Promise<{ id: string; webViewLink: string | null }> {
   let lastError: unknown;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     if (attempt > 1) {
-      const existing = await findFileInOutputFolder(fileName, track);
+      const existing = await findFileInOutputFolder(fileName, track, folderIdOverride);
       if (existing) return existing;
 
       const backoffMs = 2000 * 2 ** (attempt - 2); // 2s, 4s, ...
@@ -366,7 +369,7 @@ export async function uploadToOutputFolderWithRetry(
     }
 
     try {
-      return await uploadToOutputFolder(fileName, buffer, track);
+      return await uploadToOutputFolder(fileName, buffer, track, folderIdOverride);
     } catch (err) {
       lastError = err;
     }

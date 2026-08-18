@@ -65,6 +65,16 @@ export const env = {
   get cronSecret() {
     return required("CRON_SECRET");
   },
+  /**
+   * Wann der tägliche Lauf startet - nur zur Anzeige.
+   *
+   * Der Zeitplan selbst steht in vercel.json und wird beim Ausrollen gesetzt;
+   * die Anwendung kann ihn zur Laufzeit nicht ändern. Weicht er ab, hier
+   * nachziehen, damit das Dashboard nicht die Unwahrheit sagt.
+   */
+  get cronScheduleLabel() {
+    return process.env.CRON_SCHEDULE_LABEL || "08:00 UTC";
+  },
   get remotionAwsAccessKeyId() {
     return required("REMOTION_AWS_ACCESS_KEY_ID");
   },

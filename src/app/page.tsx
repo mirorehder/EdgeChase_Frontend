@@ -7,6 +7,7 @@ import { VideoChat } from "./VideoChat";
 import { ClipLibrary } from "./ClipLibrary";
 import { DailySettings } from "./DailySettings";
 import { ConceptLibrary } from "./ConceptLibrary";
+import { ViralSchedule } from "./ViralSchedule";
 import { Sparten } from "./Sparten";
 
 export const dynamic = "force-dynamic";
@@ -180,10 +181,11 @@ export default async function DashboardPage() {
               Quelle: der Ordner „Parkour Bangers" in Drive. Genommen werden immer die am höchsten
               bewerteten Tricks, nicht die am längsten nicht verwendeten. Jede Einstellung zeigt den
               Moment von Absprung bis Landung, rund eine Sekunde lang. Der Text stammt aus einem
-              Konzept. Läuft nur auf Knopfdruck.
+              Konzept.
             </p>
 
             <TriggerButtons track="viral" />
+            <ViralSchedule />
             <LiveActivity track="viral" />
             <ConceptLibrary track="viral" />
             <ClipLibrary track="viral" />
