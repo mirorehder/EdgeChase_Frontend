@@ -629,3 +629,171 @@ tr:last-child td {
   padding: 10px 0;
   border-top: 1px solid var(--border);
 }
+
+/* --------------------------------------------------------------------------
+   Erzeugte Videos: zwei Gruppen, beide auf- und zuklappbar
+   Die Herkunft muss ohne Lesen erkennbar sein - dafuer je ein Zeichen, eine
+   Farbe und eine farbige Kante an jeder Zeile.
+   -------------------------------------------------------------------------- */
+
+.video-gruppen {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-bottom: 28px;
+}
+
+.video-gruppe {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.gruppe-scheduled {
+  --herkunft: var(--ok);
+}
+
+.gruppe-manual {
+  --herkunft: var(--muted);
+}
+
+.gruppe-kopf {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  background: transparent;
+  border: 0;
+  border-left: 4px solid var(--herkunft);
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.gruppe-kopf:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.gruppe-zeichen {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.gruppe-titel {
+  flex: 1;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.gruppe-hinweis {
+  display: block;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.gruppe-zahl {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.video-pfeil {
+  color: var(--muted);
+  font-size: 12px;
+  width: 12px;
+}
+
+.videos {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 4px;
+}
+
+.video {
+  border-top: 1px solid var(--border);
+}
+
+/* Auch ausserhalb ihrer Gruppe bleibt jede Zeile zuordenbar. */
+.video-scheduled {
+  border-left: 4px solid var(--ok);
+}
+
+.video-manual {
+  border-left: 4px solid var(--muted);
+}
+
+.video-kopf {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: transparent;
+  border: 0;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.video-kopf:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.video-titel {
+  flex: 1;
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.video-meta {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.video-inhalt {
+  padding: 4px 14px 16px 30px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.video-feld {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.video-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.video-inhalt .clip-list {
+  margin: 0;
+  padding-left: 18px;
+}
+
+/* Auf schmalen Bildschirmen bricht die Kopfzeile um, statt den Titel
+   wegzuquetschen. */
+@media (max-width: 620px) {
+  .video-kopf,
+  .gruppe-kopf {
+    flex-wrap: wrap;
+  }
+
+  .video-meta,
+  .gruppe-zahl {
+    width: 100%;
+    padding-left: 22px;
+  }
+}

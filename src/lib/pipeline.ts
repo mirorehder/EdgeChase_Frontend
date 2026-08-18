@@ -939,6 +939,7 @@ export async function createJobFromSpec(
       hookText: composed.hookText,
       scenes: composed.scenes as unknown as object,
       status: "queued",
+      origin: "manual",
       textStyle: spec.textStyle,
       fileTitle: composed.fileTitle || null,
       requestedVia,
@@ -1029,6 +1030,7 @@ export async function planViralRun(force = false): Promise<ViralRunResult> {
       const jobId = await createViralJobFromConcept(konzept.id, {
         excludeClipIds: verbrauchteClips,
         driveFolderId: scheduledOutputFolderId(),
+        origin: "scheduled",
       });
       jobIds.push(jobId);
 
@@ -1069,7 +1071,11 @@ export async function nextQueuedJobId(track: Track): Promise<string | null> {
  */
 export async function createViralJobFromConcept(
   conceptId: string,
-  options: { excludeClipIds?: string[]; driveFolderId?: string | null } = {},
+  options: {
+    excludeClipIds?: string[];
+    driveFolderId?: string | null;
+    origin?: "manual" | "scheduled";
+  } = {},
 ): Promise<string> {
   const concept = await prisma.concept.findUnique({ where: { id: conceptId } });
   if (!concept) throw new Error("Konzept nicht gefunden.");
@@ -1090,6 +1096,7 @@ export async function createViralJobFromConcept(
       status: "queued",
       textPhases: (composed.textPhases as unknown as object) ?? undefined,
       fileTitle: composed.fileTitle || null,
+      origin: options.origin ?? "manual",
       textStyle: concept.textStyle,
       requestedVia: `Konzept: ${concept.title}`,
       driveFolderId: options.driveFolderId ?? null,
@@ -1161,6 +1168,7 @@ export async function runDailyJob(): Promise<string | null> {
       hookText: composed.hookText,
       scenes: composed.scenes as unknown as object,
       status: "queued",
+      origin: "scheduled",
       textStyle: settings.textStyle,
       fileTitle: composed.fileTitle || null,
       videoVolume: settings.videoVolume,

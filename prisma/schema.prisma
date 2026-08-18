@@ -108,6 +108,15 @@ model PromoVideo {
   /// Sparte, aus der dieses Video stammt: "promo" oder "viral".
   track String @default("promo")
 
+  /// Wie dieses Video zustande kam: "scheduled" (der tägliche Zeitplan) oder
+  /// "manual" (im Dashboard oder per Dialog ausgelöst).
+  ///
+  /// Ein eigenes Feld, obwohl es sich heute aus requestedVia und driveFolderId
+  /// erraten liesse: die Herkunft ist eine Tatsache über den Auftrag, keine
+  /// Nebenwirkung anderer Felder. Wird eines davon später anders belegt,
+  /// stimmt die Einteilung sonst stillschweigend nicht mehr.
+  origin String @default("manual")
+
   /// Der erzeugte Hook-Text, wie er im Video steht.
   hookText String
 
@@ -168,6 +177,7 @@ model PromoVideo {
   @@index([status])
   @@index([createdAt])
   @@index([track])
+  @@index([origin])
 }
 
 /// Vorgaben für den täglichen Lauf. Genau eine Zeile mit fester ID, damit

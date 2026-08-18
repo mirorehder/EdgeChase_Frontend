@@ -9,29 +9,16 @@ import { DailySettings } from "./DailySettings";
 import { ConceptLibrary } from "./ConceptLibrary";
 import { ViralSchedule } from "./ViralSchedule";
 import { Sparten } from "./Sparten";
+import { VideoGruppen, type VideoZeile } from "./VideoGruppen";
 
 export const dynamic = "force-dynamic";
 
-const STATUS_LABEL: Record<string, string> = {
-  queued: "wartet",
-  rendering: "rendert",
-  done: "fertig",
-  failed: "fehlgeschlagen",
-};
-
-function formatDate(date: Date): string {
-  return new Intl.DateTimeFormat("de-DE", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(date);
-}
-
 interface TrackData {
-  jobs: Awaited<ReturnType<typeof prisma.promoVideo.findMany>>;
+  zeilen: VideoZeile[];
+  fertig: number;
   total: number;
   analyzed: number;
   usable: number;
-  clipNameById: Map<string, string>;
 }
 
 /** Alles, was eine Sparte für ihre Ansicht braucht - streng auf sie begrenzt. */
@@ -49,77 +36,36 @@ async function ladeSparte(track: Track): Promise<TrackData> {
     prisma.clip.findMany({ where: { track }, select: { id: true, name: true } }),
   ]);
 
-  return { jobs, total, analyzed, usable, clipNameById: new Map(clips.map((c) => [c.id, c.name])) };
-}
+  const clipNameById = new Map(clips.map((c) => [c.id, c.name]));
 
-function Videoliste({ data, track }: { data: TrackData; track: Track }) {
-  if (data.jobs.length === 0) {
-    return (
-      <p className="empty-state">
-        {track === "viral"
-          ? "Noch keine Edits erzeugt. Lade ein Referenz-Reel als Konzept hoch und starte damit."
-          : "Noch keine Videos erzeugt. Löse oben einen Lauf aus."}
-      </p>
-    );
-  }
+  // Die Liste wird in einer Client-Komponente aufgeklappt, deshalb hier schon
+  // auf einfache Werte herunterbrechen - Datumsobjekte und Prisma-Typen lassen
+  // sich nicht hinüberreichen.
+  const zeilen: VideoZeile[] = jobs.map((job) => ({
+    id: job.id,
+    createdAt: job.createdAt.toISOString(),
+    status: job.status,
+    attempts: job.attempts,
+    origin: job.origin,
+    hookText: job.hookText,
+    fileTitle: job.fileTitle,
+    requestedVia: job.requestedVia,
+    driveUrl: job.driveUrl,
+    driveFileName: job.driveFileName,
+    lastError: job.lastError,
+    scenes: (job.scenes as unknown as ComposedScene[]).map((s) => ({
+      clipName: clipNameById.get(s.clipId) ?? "(gelöscht)",
+      seconds: s.seconds,
+    })),
+  }));
 
-  return (
-    <table>
-      <thead>
-        <tr>
-          <th>Erzeugt am</th>
-          <th>Status</th>
-          <th>Text im Video</th>
-          <th>Verwendete Clips</th>
-          <th>Ergebnis</th>
-        </tr>
-      </thead>
-      <tbody>
-        {data.jobs.map((job) => {
-          const scenes = job.scenes as unknown as ComposedScene[];
-          return (
-            <tr key={job.id}>
-              <td>{formatDate(job.createdAt)}</td>
-              <td>
-                <span className={`status status-${job.status}`}>
-                  {STATUS_LABEL[job.status] ?? job.status}
-                </span>
-                {job.attempts > 1 && <div className="clip-list">Versuch {job.attempts}</div>}
-              </td>
-              <td className="hook-text">
-                {job.hookText}
-                {job.fileTitle && (
-                  <div className="clip-list">Dateiname: {job.fileTitle}</div>
-                )}
-                {job.requestedVia && (
-                  <div className="clip-list">auf Zuruf: „{job.requestedVia}"</div>
-                )}
-              </td>
-              <td>
-                <ul className="clip-list">
-                  {scenes.map((s, i) => (
-                    <li key={i}>
-                      {data.clipNameById.get(s.clipId) ?? "(gelöscht)"} ({s.seconds.toFixed(1)}s)
-                    </li>
-                  ))}
-                </ul>
-              </td>
-              <td>
-                {job.status === "done" && job.driveUrl && (
-                  <a className="drive-link" href={job.driveUrl} target="_blank" rel="noreferrer">
-                    In Drive öffnen
-                  </a>
-                )}
-                {job.status === "failed" && job.lastError && (
-                  <span className="error-text">{job.lastError}</span>
-                )}
-              </td>
-            </tr>
-          );
-        })}
-      </tbody>
-    </table>
-  );
+  return {
+    zeilen,
+    fertig: jobs.filter((j) => j.status === "done").length,
+    total,
+    analyzed,
+    usable,
+  };
 }
 
 function Kennzahlen({ data, track }: { data: TrackData; track: Track }) {
@@ -140,7 +86,7 @@ function Kennzahlen({ data, track }: { data: TrackData; track: Track }) {
         </div>
       </div>
       <div className="stat-card">
-        <div className="value">{data.jobs.filter((j) => j.status === "done").length}</div>
+        <div className="value">{data.fertig}</div>
         <div className="label">Videos erzeugt</div>
       </div>
     </div>
@@ -174,7 +120,7 @@ export default async function DashboardPage() {
             <ClipLibrary track="promo" />
 
             <h2>Erzeugte Promo-Videos</h2>
-            <Videoliste data={promo} track="promo" />
+            <VideoGruppen zeilen={promo.zeilen} track="promo" />
           </>
         }
         viral={
@@ -194,7 +140,7 @@ export default async function DashboardPage() {
             <ClipLibrary track="viral" />
 
             <h2>Erzeugte Edits</h2>
-            <Videoliste data={viral} track="viral" />
+            <VideoGruppen zeilen={viral.zeilen} track="viral" />
           </>
         }
       />
