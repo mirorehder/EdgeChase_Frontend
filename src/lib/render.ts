@@ -18,16 +18,37 @@ export interface RenderScene {
 
 const POLL_INTERVAL_MS = 3000;
 
-// Remotion verteilt einen Render auf mehrere gleichzeitige Lambda-Aufrufe.
-// Frische AWS-Konten haben aber nur ein sehr kleines Kontingent an
-// gleichzeitigen Ausführungen (oft 10 statt 1000), und Remotion braucht
-// zusätzlich einen Aufruf für die Steuerung - ohne Drosselung scheitert der
-// Render mit "Concurrency limit reached".
-//
-// Bei unseren kurzen Videos (300 Bilder) ergeben sich damit vier Teilstücke.
-// Wer sein Kontingent bei AWS erhöhen lässt, kann den Wert senken und so
-// schneller rendern.
-const FRAMES_PER_LAMBDA = Number(process.env.REMOTION_FRAMES_PER_LAMBDA ?? 80);
+/** Bildrate der Komposition, siehe src/remotion/Root.tsx. */
+const COMPOSITION_FPS = 30;
+
+/**
+ * Wie viele Bilder ein einzelnes Teilstück umfasst - Remotion verteilt den
+ * Render danach auf mehrere gleichzeitige Lambda-Aufrufe.
+ *
+ * Beide Richtungen sind gefährlich, deshalb wird der Wert aus der Länge des
+ * Videos berechnet statt fest vorgegeben:
+ *
+ * Zu gross, und eine einzelne Lambda muss die Rohclips mehrerer Szenen
+ * gleichzeitig öffnen. Bei 4K-Material (2160x3840 - die vierfache Pixelmenge
+ * des fertigen Videos) reicht der Speicher dafür nicht, und die Funktion
+ * bricht mit "Runtime.TruncatedResponse" ab. An echten Parkour-Clips
+ * gemessen: bis zu zwei 4K-Szenen liefen durch, bei vieren brach es ab.
+ *
+ * Zu klein, und der Render zerfällt in mehr Teilstücke, als das
+ * AWS-Kontingent an gleichzeitigen Ausführungen hergibt (bei frischen Konten
+ * oft nur zehn) - dann scheitert er an "Concurrency limit reached".
+ *
+ * Die Rechnung deckelt deshalb die Anzahl der Teilstücke und macht sie so
+ * klein, wie dieser Deckel erlaubt.
+ */
+const MAX_CHUNKS = 8;
+const MIN_FRAMES_PER_LAMBDA = 25;
+
+function framesPerLambdaFor(totalFrames: number): number {
+  const override = process.env.REMOTION_FRAMES_PER_LAMBDA;
+  if (override) return Number(override);
+  return Math.max(MIN_FRAMES_PER_LAMBDA, Math.ceil(totalFrames / MAX_CHUNKS));
+}
 
 // Vercel bricht die Funktion nach 300 s ab. Wird vorher aufgegeben, endet der
 // Job mit einer verwertbaren Fehlermeldung und wird beim nächsten Versuch
@@ -67,6 +88,13 @@ export async function renderPromoVideo(
     });
   }
 
+  // Muss zur Bildrate der Komposition passen (src/remotion/Root.tsx) - daraus
+  // ergibt sich, in wie viele Teilstücke der Render zerfällt.
+  const totalFrames = Math.max(
+    1,
+    Math.round((props.scenes.reduce((sum, s) => sum + s.durationMs, 0) / 1000) * COMPOSITION_FPS),
+  );
+
   const { renderId, bucketName } = await renderMediaOnLambda({
     region: env.remotionAwsRegion as any,
     functionName: env.remotionLambdaFunctionName,
@@ -74,7 +102,7 @@ export async function renderPromoVideo(
     composition: "PromoVideo",
     inputProps: props,
     codec: "h264",
-    framesPerLambda: FRAMES_PER_LAMBDA,
+    framesPerLambda: framesPerLambdaFor(totalFrames),
     // CRF bewusst nicht gesetzt - Remotions Standard (18) bleibt erhalten,
     // der Nutzer legt Wert auf diese Qualität.
   });
