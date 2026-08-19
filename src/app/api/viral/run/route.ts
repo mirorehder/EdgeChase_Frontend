@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { nextQueuedJobId, planViralRun } from "@/lib/pipeline";
-import { baseUrlFromRequest, dispatchJob } from "@/lib/dispatch";
+import { planViralRun } from "@/lib/pipeline";
+import { baseUrlFromRequest, starteWartende } from "@/lib/dispatch";
 import { istBerechtigt } from "@/lib/ingestAuth";
 
 // Planen heisst: Clips auswählen und Aufträge anlegen. Gerendert wird danach
@@ -26,8 +26,9 @@ export async function POST(request: NextRequest) {
   try {
     const geplant = nurWartende ? { jobIds: [] as string[], hinweis: undefined } : await planViralRun(true);
 
-    const zuerst = geplant.jobIds[0] ?? (await nextQueuedJobId("viral"));
-    if (zuerst) await dispatchJob(zuerst, baseUrlFromRequest(request));
+    // Angestossen wird der älteste wartende Auftrag - und nur, wenn gerade
+    // nichts rendert. Läuft schon einer, holt dessen Kette den Rest nach.
+    const zuerst = await starteWartende(baseUrlFromRequest(request));
 
     return NextResponse.json({
       angelegt: geplant.jobIds.length,

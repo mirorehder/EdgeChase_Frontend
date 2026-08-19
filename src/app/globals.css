@@ -165,6 +165,11 @@ tr:last-child td {
   font-size: 12px;
 }
 
+.hinweis-text {
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .empty-state {
   color: var(--muted);
   font-size: 14px;

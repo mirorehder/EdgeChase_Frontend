@@ -100,6 +100,15 @@ function VideoEintrag({ zeile }: { zeile: VideoZeile }) {
             </div>
           )}
 
+          {/* Sonst bleibt offen, ob "wartet" ein Zustand oder ein Fehler ist. */}
+          {zeile.status === "queued" && (
+            <p className="hinweis-text">
+              Wartet auf einen freien Render. Es rendert immer nur ein Video zur Zeit; sobald
+              das laufende fertig ist, kommt dieses dran. Bleibt es hängen, geht es spätestens
+              eine Minute nach dem Öffnen dieser Seite von selbst wieder los.
+            </p>
+          )}
+
           {zeile.lastError && <p className="error-text">{zeile.lastError}</p>}
 
           {zeile.driveUrl && (

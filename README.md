@@ -8,13 +8,29 @@ Cloud - kein lokaler Rechner, kein Eingreifen des Nutzers.
 
 ```
 Vercel Cron (1x/Tag)
-  -> /api/cron (geschützt per CRON_SECRET)
+  -> /api/cron (geschützt per CRON_SECRET) - plant nur, rendert nicht
        -> Clip-Bibliothek mit Drive abgleichen (neue Clips aufnehmen)
        -> Neue Clips per Gemini analysieren (Beschreibung, apparelScore, bester Ausschnitt)
-       -> Gemini wählt 3-4 Clips + formuliert Hook-Text-Variante
-       -> Rendern über Remotion Lambda (AWS)
-       -> Fertiges Video nach Google Drive hochladen (mit Retry + Duplikatschutz)
+       -> Werbevideo: Gemini wählt 3-4 Clips + formuliert Hook-Text-Variante
+       -> Virale Edits: je Konzept ein Auftrag laut Zeitplan
+       -> ersten wartenden Auftrag anstossen
+
+/api/jobs/<id>/process - eine Ausführung je Video, eigene 300 Sekunden
+  -> Rendern über Remotion Lambda (AWS)
+  -> Fertiges Video nach Google Drive hochladen (mit Retry + Duplikatschutz)
+  -> nächsten wartenden Auftrag anstossen (Kette, über beide Sparten hinweg)
 ```
+
+Warum das Planen vom Rendern getrennt ist: Vercel bricht jede Ausführung nach
+300 Sekunden ab. Solange der Zeitplan das Werbevideo noch selbst rendete, war
+das Zeitfenster oft schon verbraucht, bevor die viralen Edits angestossen
+werden konnten - sie blieben dann bis zum Folgetag auf "wartet" stehen.
+
+Gerendert wird bewusst eins nach dem anderen: ein einzelner Render schöpft das
+AWS-Kontingent an gleichzeitigen Lambdas fast aus. Geht ein Anstoss der Kette
+verloren, holt ihn ein Wächter nach - er läuft beim Zeitplan und bei jedem
+Abruf der Live-Anzeige im Dashboard (höchstens einmal pro Minute) und stösst
+den ältesten wartenden Auftrag an, sofern gerade nichts rendert.
 
 - **Web-App/API:** Next.js (App Router) auf Vercel
 - **Datenbank:** PostgreSQL (Neon) über Prisma

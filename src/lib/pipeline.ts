@@ -1168,10 +1168,17 @@ export async function planViralRun(force = false): Promise<ViralRunResult> {
   return { jobIds, hinweis: jobIds.length === 0 && letzterFehler ? letzterFehler : undefined };
 }
 
-/** Der nächste Auftrag der Sparte, der noch auf seinen Render wartet. */
-export async function nextQueuedJobId(track: Track): Promise<string | null> {
+/**
+ * Der nächste Auftrag, der noch auf seinen Render wartet - der älteste zuerst.
+ *
+ * Ohne Sparte gilt die Frage für beide zusammen. Das ist der Normalfall: die
+ * Kette rendert einen Auftrag nach dem anderen, und sie darf dabei nicht an
+ * der Spartengrenze abreissen. Sonst bleibt ein wartender Parkour-Edit liegen,
+ * nur weil zuletzt ein Werbevideo fertig geworden ist.
+ */
+export async function nextQueuedJobId(track?: Track): Promise<string | null> {
   const job = await prisma.promoVideo.findFirst({
-    where: { track, status: "queued" },
+    where: { status: "queued", ...(track ? { track } : {}) },
     orderBy: { createdAt: "asc" },
     select: { id: true },
   });
@@ -1243,8 +1250,15 @@ export async function createViralJobFromConcept(
 // abgearbeitet, wo kein Render hinterherkommt.
 const DAILY_ANALYZE_LIMIT = 2;
 
-/** Kompletter Tageslauf: Bibliothek abgleichen, analysieren, zusammenstellen, rendern, hochladen. */
-export async function runDailyJob(): Promise<string | null> {
+/**
+ * Tageslauf bis zum fertigen Auftrag: abgleichen, analysieren, zusammenstellen,
+ * Auftrag anlegen - aber noch nicht rendern.
+ *
+ * Der Render bleibt bewusst draussen. Er dauert ein bis zweieinhalb Minuten
+ * und würde im Zeitplan das ganze Zeitfenster verbrauchen, bevor die virale
+ * Sparte überhaupt an die Reihe kommt.
+ */
+export async function planDailyJob(): Promise<string | null> {
   const settings = await getDailySettings();
 
   if (!settings.enabled) {
@@ -1293,6 +1307,17 @@ export async function runDailyJob(): Promise<string | null> {
     },
   });
 
-  await processJob(job.id);
   return job.id;
+}
+
+/**
+ * Wie planDailyJob, rendert aber gleich mit.
+ *
+ * Das ist der Weg für den Knopf im Dashboard: dort wartet jemand auf das
+ * Ergebnis und soll es am Ende derselben Anfrage sehen.
+ */
+export async function runDailyJob(): Promise<string | null> {
+  const jobId = await planDailyJob();
+  if (jobId) await processJob(jobId);
+  return jobId;
 }
