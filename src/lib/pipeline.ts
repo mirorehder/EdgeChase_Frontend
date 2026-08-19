@@ -946,6 +946,60 @@ function verteilePhasen(
   return ergebnis;
 }
 
+/**
+ * Erkennt, dass AWS den Render nur wegen seines Kontingents abgewiesen hat.
+ *
+ * Der Unterschied ist wichtig: an einem solchen Fehler ist nichts kaputt, er
+ * geht von selbst weg, sobald die laufenden Lambdas fertig sind. Sofort
+ * dreimal hintereinander nachzusetzen - so lief es vorher - läuft dagegen
+ * dreimal in dieselbe Wand und verbrennt den Auftrag.
+ */
+export function istKontingentFehler(message: string): boolean {
+  return /concurrency limit|rate exceeded|toomanyrequests|throttl/i.test(message);
+}
+
+/** Wartezeit vor dem nächsten Versuch, wenn das Kontingent voll war. */
+const KONTINGENT_WARTE_MS = [30_000, 60_000];
+
+/**
+ * So lange wird ein Auftrag am Kontingent noch weiter versucht.
+ *
+ * Danach ist es kein Gedränge mehr, sondern ein Zustand - und ein Auftrag, der
+ * für immer im Kreis läuft, ist schlechter als eine ehrliche Fehlermeldung.
+ */
+const KONTINGENT_GEDULD_MS = 2 * 60 * 60 * 1000;
+
+export interface KontingentEntscheidung {
+  /** Wie lange vor dem nächsten Versuch gewartet wird - null heisst: Schluss. */
+  warteMs: number | null;
+  /** Der Status, den der Auftrag danach trägt. */
+  status: "queued" | "failed";
+}
+
+/**
+ * Was mit einem Auftrag geschieht, den AWS wegen seines Kontingents abgewiesen
+ * hat.
+ *
+ * Als eigene Funktion, weil sich hier alles entscheidet und die Render-
+ * Schleife drumherum ohne echte AWS-Zugangsdaten nicht durchlaufen kann.
+ */
+export function kontingentEntscheidung(
+  versuch: number,
+  angelegtAm: Date,
+  jetzt = Date.now(),
+): KontingentEntscheidung {
+  if (versuch < MAX_RENDER_ATTEMPTS) {
+    return { warteMs: KONTINGENT_WARTE_MS[versuch - 1] ?? 60_000, status: "queued" };
+  }
+
+  // Alle Versuche verbraucht: zurück in die Warteschlange statt aufgeben - der
+  // Wächter nimmt den Auftrag Minuten später wieder auf, und bis dahin ist das
+  // Gedränge meist vorbei. Nur wer seit Stunden nicht durchkommt, gilt als
+  // gescheitert.
+  const nochGeduld = jetzt - angelegtAm.getTime() < KONTINGENT_GEDULD_MS;
+  return { warteMs: null, status: nochGeduld ? "queued" : "failed" };
+}
+
 /** Rendert, lädt hoch und aktualisiert den Job - mit bis zu 3 Versuchen (Auftrag 5.5). */
 export async function processJob(jobId: string): Promise<void> {
   for (let attempt = 1; attempt <= MAX_RENDER_ATTEMPTS; attempt++) {
@@ -1013,6 +1067,35 @@ export async function processJob(jobId: string): Promise<void> {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       const isLastAttempt = attempt === MAX_RENDER_ATTEMPTS;
+
+      // Am Kontingent gescheitert: nicht sofort nachsetzen, sondern den
+      // laufenden Lambdas Zeit geben, fertig zu werden.
+      if (istKontingentFehler(message)) {
+        const entscheidung = kontingentEntscheidung(attempt, job.createdAt);
+
+        await logActivity(
+          entscheidung.warteMs !== null
+            ? `AWS hat den Render abgewiesen, weil zu viele Lambdas gleichzeitig ` +
+                `laufen. Neuer Versuch in ${Math.round(entscheidung.warteMs / 1000)}s.`
+            : entscheidung.status === "queued"
+              ? `AWS-Kontingent weiterhin voll. Der Auftrag wartet und wird später ` +
+                `erneut angestossen.`
+              : `AWS-Kontingent seit zwei Stunden voll - aufgegeben. Das Kontingent ` +
+                `an gleichzeitigen Lambda-Ausführungen muss erhöht werden.`,
+          { level: "error", videoId: jobId, track },
+        );
+
+        await prisma.promoVideo.update({
+          where: { id: jobId },
+          data: { lastError: message, status: entscheidung.status },
+        });
+
+        const warte = entscheidung.warteMs;
+        if (warte === null) return;
+        await new Promise((r) => setTimeout(r, warte));
+        continue;
+      }
+
       await logActivity(
         isLastAttempt
           ? `Endgültig fehlgeschlagen: ${message}`

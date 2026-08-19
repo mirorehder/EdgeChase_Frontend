@@ -28,7 +28,7 @@ export function TriggerButtons({ track }: { track: Track }) {
       setMessage({
         text:
           kind === "trigger"
-            ? `Video-Job gestartet (${data.jobId}).`
+            ? data.hinweis ?? `Video-Job gestartet (${data.jobId}).`
             : `Abgleich fertig: ${data.syncResult.newlyAdded} neue Clips, ${data.analyzed.length} analysiert.` +
               (data.syncResult.removed > 0
                 ? ` ${data.syncResult.removed} nicht mehr im Ordner, entfernt.`

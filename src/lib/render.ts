@@ -41,7 +41,7 @@ const COMPOSITION_FPS = 30;
  * Die Rechnung deckelt deshalb die Anzahl der Teilstücke und macht sie so
  * klein, wie dieser Deckel erlaubt.
  */
-const MAX_CHUNKS = 8;
+const MAX_CHUNKS = Number(process.env.REMOTION_MAX_CHUNKS ?? 8);
 const MIN_FRAMES_PER_LAMBDA = 25;
 
 function framesPerLambdaFor(totalFrames: number): number {
