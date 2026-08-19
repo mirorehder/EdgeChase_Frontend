@@ -206,8 +206,8 @@ export function ViralSchedule() {
             >
               „Not posted yet"
             </a>
-            . Was du hier unten von Hand nach einem Konzept erzeugst, geht weiterhin in den
-            Arbeitsordner - damit die Postliste sauber bleibt.
+            - und zwar alle: der Zeitplan wie auch das, was du unten von Hand nach einem
+            Konzept erzeugst.
           </p>
 
           <div className="actions">

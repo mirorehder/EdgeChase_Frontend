@@ -28,7 +28,7 @@ import { env } from "./env";
 import { hookTextToFileName } from "./filename";
 import { logActivity } from "./activity";
 import { getDailySettings } from "./dailyConfig";
-import { getViralSchedule, scheduledOutputFolderId, viralTextStyle } from "./viralSchedule";
+import { getViralSchedule, viralOutputFolderId, viralTextStyle } from "./viralSchedule";
 
 // Hochzählen, wenn sich Analyse-Felder oder der Analyse-Prompt ändern -
 // Clips mit älterer Version werten sich dann automatisch neu aus.
@@ -1145,7 +1145,7 @@ export async function planViralRun(force = false): Promise<ViralRunResult> {
     try {
       const jobId = await createViralJobFromConcept(konzept.id, {
         excludeClipIds: verbrauchteClips,
-        driveFolderId: scheduledOutputFolderId(),
+        driveFolderId: viralOutputFolderId(),
         origin: "scheduled",
       });
       jobIds.push(jobId);
@@ -1224,7 +1224,11 @@ export async function createViralJobFromConcept(
       // für alle Parkour-Edits dieselbe.
       textStyle: viralTextStyle(),
       requestedVia: `Konzept: ${concept.title}`,
-      driveFolderId: options.driveFolderId ?? null,
+      // Alle Parkour-Edits landen in "Not posted yet" - der Zeitplan wie der
+      // Knopf im Dashboard. Der Ordner wird beim Anlegen festgehalten, damit
+      // ein Auftrag auch dann dort landet, wenn die Einstellung sich zwischen
+      // Anlegen und Render ändert.
+      driveFolderId: options.driveFolderId ?? viralOutputFolderId(),
     },
   });
 

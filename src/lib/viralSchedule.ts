@@ -64,18 +64,20 @@ export async function saveViralSchedule(
 }
 
 /**
- * Zielordner für die vom Zeitplan erzeugten Edits.
+ * Zielordner aller Parkour-Edits - "Not posted yet".
  *
- * Bewusst ein anderer als der Arbeitsordner der Sparte: hier liegt, was noch
- * gepostet werden soll. Handversuche aus dem Dashboard sollen diese Liste
- * nicht vollschreiben.
+ * Gilt für den Zeitplan wie für den Knopf im Dashboard. Anfangs bekamen die
+ * beiden getrennte Ordner, mit dem Gedanken, dass Handversuche die Liste des
+ * noch zu Postenden nicht vollschreiben sollen. In der Praxis ist ein von Hand
+ * erzeugter Edit aber genauso ein Kandidat fürs Posten wie ein geplanter - und
+ * zwei Ordner durchsuchen zu müssen ist lästiger, als eine Datei zu löschen.
  *
  * Der Ordner stammt vom Nutzer, nicht von der Anwendung. Mit dem Bereich
  * drive.file kann die Anwendung ihn zwar nicht lesen - files.get antwortet mit
  * 404 -, aber sehr wohl Dateien darin anlegen und die eigenen darin
  * wiederfinden. Beides an der echten Ablage geprüft.
  */
-export function scheduledOutputFolderId(): string {
+export function viralOutputFolderId(): string {
   return process.env.DRIVE_VIRAL_POST_FOLDER_ID || "1gCQ-WHW1qKW3_nLgLxjT3Ty3askP2mIQ";
 }
 

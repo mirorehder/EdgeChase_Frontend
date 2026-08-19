@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   getViralSchedule,
   saveViralSchedule,
-  scheduledOutputFolderId,
+  viralOutputFolderId,
   scheduleTimeLabel,
   type ViralScheduleSettings,
 } from "@/lib/viralSchedule";
@@ -14,7 +14,7 @@ export async function GET() {
   return NextResponse.json({
     ...(await getViralSchedule()),
     zeitpunkt: scheduleTimeLabel(),
-    zielordnerId: scheduledOutputFolderId(),
+    zielordnerId: viralOutputFolderId(),
   });
 }
 
@@ -34,7 +34,7 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({
       ...saved,
       zeitpunkt: scheduleTimeLabel(),
-      zielordnerId: scheduledOutputFolderId(),
+      zielordnerId: viralOutputFolderId(),
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

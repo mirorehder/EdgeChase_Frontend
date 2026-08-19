@@ -15,7 +15,7 @@ import {
   syncClipLibrary,
   type ComposedScene,
 } from "../src/lib/pipeline";
-import { saveViralSchedule, scheduledOutputFolderId } from "../src/lib/viralSchedule";
+import { saveViralSchedule, viralOutputFolderId } from "../src/lib/viralSchedule";
 import { bucketFromServeUrl, isClipMirrored } from "../src/lib/renderStage";
 import { env } from "../src/lib/env";
 
@@ -99,12 +99,17 @@ async function main() {
 
   console.log("\n--- Zielordner ---");
   const auftraege = await prisma.promoVideo.findMany({ where: { track: "viral" } });
-  const inPostordner = auftraege.filter((j) => j.driveFolderId === scheduledOutputFolderId());
+  const inPostordner = auftraege.filter((j) => j.driveFolderId === viralOutputFolderId());
   console.log(`   ${inPostordner.length} von ${auftraege.length} Aufträgen zeigen auf "Not posted yet"`);
 
+  // Von Hand erzeugte Edits gehen in denselben Ordner wie die geplanten.
   const vonHand = await createViralJobFromConcept(c.id);
   const handJob = await prisma.promoVideo.findUniqueOrThrow({ where: { id: vonHand } });
-  console.log(`   Von Hand erzeugter Auftrag: Zielordner ${handJob.driveFolderId ?? "(Arbeitsordner)"}`);
+  const stimmt = handJob.driveFolderId === viralOutputFolderId();
+  console.log(
+    `   ${stimmt ? "OK  " : "FEHL"} Von Hand erzeugter Auftrag: Zielordner ` +
+      `${handJob.driveFolderId ?? "(Arbeitsordner)"}`,
+  );
 
   if (process.argv.includes("--render")) {
     console.log("\n--- Einen geplanten Auftrag wirklich rendern und hochladen ---");

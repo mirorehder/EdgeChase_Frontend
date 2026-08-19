@@ -12,7 +12,7 @@ import {
   findFileInOutputFolder,
   uploadToOutputFolderWithRetry,
 } from "../src/lib/drive";
-import { scheduledOutputFolderId } from "../src/lib/viralSchedule";
+import { viralOutputFolderId } from "../src/lib/viralSchedule";
 
 const BEISPIELE = [
   "Backflip off a bridge because why not",
@@ -37,7 +37,7 @@ async function main() {
   if (!process.argv.includes("--drive")) return;
 
   console.log("\n--- Echter Upload in den Zielordner ---");
-  const ordner = scheduledOutputFolderId();
+  const ordner = viralOutputFolderId();
   const name = hookTextToFileName(BEISPIELE[0]);
   const gestartet = new Date();
 
