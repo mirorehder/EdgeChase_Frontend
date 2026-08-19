@@ -103,7 +103,10 @@ async function main() {
 
   console.log("\n4. Der Render hängt seit 11 Minuten (Ausführung längst tot)");
   empfangen.length = 0;
-  pruefe("Wächter macht weiter", await weckeWartende(baseUrl), edit.id);
+  // Der Hänger selbst kommt dran, nicht der Wartende hinter ihm: er ist der
+  // ältere Auftrag, und sein Status stimmt nicht mehr mit der Wirklichkeit
+  // überein.
+  pruefe("Wächter belebt den Hänger", await weckeWartende(baseUrl), promo.id);
 
   // 5. Ein frischer Auftrag wird nicht sofort doppelt angestossen ---------
   await prisma.promoVideo.deleteMany({});
@@ -114,6 +117,35 @@ async function main() {
   pruefe("Wächter wartet ab", await weckeWartende(baseUrl), null);
   pruefe("Zeitplan stösst ihn sofort an", await starteWartende(baseUrl), frisch.id);
   pruefe("Anstoss ist angekommen", empfangen[0], frisch.id);
+
+  // 6. Ein Render, dessen Ausführung mitten drin abgeschnitten wurde -------
+  // Das war die Lücke: der Auftrag steht auf "rendert", niemand rendert ihn,
+  // und weil der Wächter nur nach "wartet" suchte, blieb er für immer so.
+  await prisma.promoVideo.deleteMany({});
+  const abgeschnitten = await auftrag("Abgeschnitten", "viral", "rendering", 30, 12);
+  const dahinter = await auftrag("Wartet dahinter", "promo", "queued", 20);
+
+  console.log("\n6. Ein Render hängt seit 12 Minuten, ein weiterer Auftrag wartet");
+  empfangen.length = 0;
+  pruefe("der Hänger kommt zuerst dran", await weckeWartende(baseUrl), abgeschnitten.id);
+  pruefe("Anstoss ist angekommen", empfangen[0], abgeschnitten.id);
+
+  // 7. Aussichtslose Fälle werden nicht ewig wiederholt --------------------
+  await prisma.promoVideo.update({
+    where: { id: abgeschnitten.id },
+    data: { createdAt: new Date(Date.now() - 150 * MINUTE) },
+  });
+
+  console.log("\n7. Derselbe Hänger, aber seit zweieinhalb Stunden");
+  empfangen.length = 0;
+  pruefe("stattdessen kommt der Wartende dran", await weckeWartende(baseUrl), dahinter.id);
+  const aufgegeben = await prisma.promoVideo.findUnique({ where: { id: abgeschnitten.id } });
+  pruefe("der Hänger ist als fehlgeschlagen vermerkt", aufgegeben?.status, "failed");
+  pruefe(
+    "mit einer Begründung",
+    (aufgegeben?.lastError ?? "").includes("300-Sekunden-Grenze"),
+    true,
+  );
 
   server.close();
   await prisma.$disconnect();
