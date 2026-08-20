@@ -192,8 +192,15 @@ einer Umgebungsvariablen. Je Ordner gibt es:
   weil sich ein fertig ausgewerteter Ordner so stilllegen lässt, ohne die
   Auswertung wegzuwerfen.
 
-Einzelne Clips lassen sich ebenso stilllegen, und innerhalb ihres Ordners
-sortieren: kurz gedrückt halten, dann verschieben. Bewusst nicht über das
+Voreingestellt stehen die Clips nach der Bewertung der Auswertung - in der
+viralen Sparte die Krassheit des Tricks, in der Promo-Sparte die Erkennbarkeit
+der Kleidung -, die beste oben, noch nicht Ausgewertetes zuletzt. So zeigt die
+Liste von sich aus, was die Auswertung für stark hält; wer sortiert, korrigiert
+eine Rangfolge, statt erst eine alphabetische Liste in eine sinnvolle bringen
+zu müssen.
+
+Einzelne Clips lassen sich stilllegen, und innerhalb ihres Ordners
+umsortieren: kurz gedrückt halten, dann verschieben. Bewusst nicht über das
 eingebaute Drag-and-Drop des Browsers - das gibt es auf Touch-Geräten nicht,
 Safari auf dem iPhone löst `dragstart` nie aus. Stattdessen Pointer-Events,
 die Maus und Finger gleich behandeln; am Griff links geht es ohne Halten

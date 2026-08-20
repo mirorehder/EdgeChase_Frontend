@@ -62,6 +62,29 @@ function felder(clip: Clip, track: Track) {
     : { score: clip.apparelScore, startMs: clip.startMs, endMs: clip.endMs };
 }
 
+/**
+ * Dieselbe Reihenfolge, die auch der Server liefert: erst das von Hand
+ * Gezogene, dann die Bewertung, dann alphabetisch.
+ *
+ * Sie wird hier noch einmal gebraucht, weil die Liste dem Finger sofort folgen
+ * soll, ohne auf die Antwort des Servers zu warten. Wichen die beiden
+ * voneinander ab, sprängen beim Sortieren in einem Ordner die Clips aller
+ * anderen Ordner um.
+ */
+function vergleiche(a: Clip, b: Clip, track: Track): number {
+  const ra = a.manualRank ?? Number.MAX_SAFE_INTEGER;
+  const rb = b.manualRank ?? Number.MAX_SAFE_INTEGER;
+  if (ra !== rb) return ra - rb;
+
+  // Ohne Bewertung ganz nach hinten - ein nicht ausgewerteter Clip soll nicht
+  // vor einem stehen, von dem wir wissen, dass er stark ist.
+  const sa = felder(a, track).score ?? -1;
+  const sb = felder(b, track).score ?? -1;
+  if (sa !== sb) return sb - sa;
+
+  return a.name.localeCompare(b.name);
+}
+
 export function ClipLibrary({ track }: { track: Track }) {
   const [clips, setClips] = useState<Clip[]>([]);
   const [folders, setFolders] = useState<Folder[]>([]);
@@ -289,11 +312,7 @@ export function ClipLibrary({ track }: { track: Track }) {
     setClips((alle) =>
       [...alle]
         .map((c) => (raenge.has(c.id) ? { ...c, manualRank: raenge.get(c.id)! } : c))
-        .sort((a, b) => {
-          const ra = a.manualRank ?? Number.MAX_SAFE_INTEGER;
-          const rb = b.manualRank ?? Number.MAX_SAFE_INTEGER;
-          return ra === rb ? a.name.localeCompare(b.name) : ra - rb;
-        }),
+        .sort((a, b) => vergleiche(a, b, track)),
     );
   }
 
@@ -659,10 +678,11 @@ export function ClipLibrary({ track }: { track: Track }) {
 
       {folders.length > 0 && (
         <p className="chat-hint">
-          Clips lassen sich innerhalb ihres Ordners sortieren: kurz gedrückt halten, bis der
-          Clip sich hebt, dann verschieben. Was oben steht, kommt häufiger in Videos vor - als
-          Zuschlag auf die Krassheits-Bewertung, nicht als Vorfahrt: ein herausragender Trick
-          weiter unten setzt sich weiterhin durch.
+          Voreingestellt stehen die Clips nach der Bewertung der Auswertung - der krasseste
+          oben, noch nicht Ausgewertetes zuletzt. Umsortieren geht innerhalb des Ordners: kurz
+          gedrückt halten, bis der Clip sich hebt, dann verschieben. Was du nach oben ziehst,
+          kommt häufiger in Videos vor - als Zuschlag auf die Bewertung, nicht als Vorfahrt:
+          ein herausragender Trick weiter unten setzt sich weiterhin durch.
         </p>
       )}
     </section>

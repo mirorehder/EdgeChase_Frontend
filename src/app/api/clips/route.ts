@@ -24,15 +24,31 @@ export async function GET(request: NextRequest) {
     prisma.clip.count({ where: usableWhere }),
   ]);
 
-  // Die von Hand gezogene Reihenfolge zuerst, dann der Rest alphabetisch.
-  // Nulls last, damit ein unsortierter Clip nicht vor den Lieblingen steht.
+  // Reihenfolge in der Bibliothek:
+  //
+  // 1. was von Hand gezogen wurde, in genau dieser Reihenfolge;
+  // 2. alles Übrige nach der Bewertung, die beste zuerst - in der viralen
+  //    Sparte die Krassheit des Tricks, in der Promo-Sparte die Erkennbarkeit
+  //    der Kleidung;
+  // 3. noch nicht Ausgewertetes zuletzt, dort alphabetisch.
+  //
+  // Der Sinn: die Liste zeigt von sich aus, was die Auswertung für stark hält.
+  // Wer sortiert, korrigiert damit eine Rangfolge, statt eine alphabetische
+  // Liste erst einmal in eine sinnvolle bringen zu müssen.
   const clips = await prisma.clip.findMany({
     where: { track },
-    orderBy: [
-      { manualRank: { sort: "asc", nulls: "last" } },
-      { sourceFolderName: "asc" },
-      { name: "asc" },
-    ],
+    orderBy:
+      track === "viral"
+        ? [
+            { manualRank: { sort: "asc", nulls: "last" } },
+            { stuntScore: { sort: "desc", nulls: "last" } },
+            { name: "asc" },
+          ]
+        : [
+            { manualRank: { sort: "asc", nulls: "last" } },
+            { apparelScore: { sort: "desc", nulls: "last" } },
+            { name: "asc" },
+          ],
     take: 500,
   });
 
