@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Track } from "@/lib/trackClient";
 
 interface Clip {
@@ -45,6 +45,12 @@ interface Folder {
  */
 type Draft = { description: string; score: string; startMs: string; endMs: string };
 
+/** So lange muss gedrückt bleiben, bis der Clip am Finger hängt. */
+const HALTEDAUER_MS = 350;
+
+/** Bewegt sich der Finger vorher weiter als das, war es ein Scrollversuch. */
+const SCROLL_SCHWELLE_PX = 12;
+
 function seconds(ms: number | null): string {
   return ms === null ? "?" : (ms / 1000).toFixed(1);
 }
@@ -70,8 +76,17 @@ export function ClipLibrary({ track }: { track: Track }) {
   // öffnet, will meistens die Clips sehen.
   const [zu, setZu] = useState<Set<string>>(new Set());
   const [beschreibungen, setBeschreibungen] = useState<Record<string, string>>({});
-  const [gezogen, setGezogen] = useState<string | null>(null);
-  const [ueber, setUeber] = useState<string | null>(null);
+
+  // Der Clip, der gerade am Finger hängt.
+  //
+  // Bewusst nicht das eingebaute Drag-and-Drop des Browsers: das gibt es auf
+  // Touch-Geräten schlicht nicht - Safari auf dem iPhone löst dragstart nie
+  // aus. Deshalb Pointer-Events, die Maus und Finger gleich behandeln.
+  const [zieht, setZieht] = useState<string | null>(null);
+  const druckTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const startY = useRef(0);
+  const zeilen = useRef(new Map<string, HTMLLIElement>());
+  const geradeGezogen = useRef(false);
 
   async function load() {
     const res = await fetch(`/api/clips?track=${track}`, { cache: "no-store" });
@@ -90,6 +105,21 @@ export function ClipLibrary({ track }: { track: Track }) {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [track]);
+
+  /**
+   * Solange ein Clip am Finger hängt, darf die Seite nicht mitscrollen.
+   *
+   * Der Weg über einen eigenen Zuhörer statt über onTouchMove: React hängt
+   * seine Touch-Zuhörer als "passive" ein, und aus einem passiven Zuhörer
+   * heraus wirkt preventDefault nicht. Am Handy würde die Liste sonst unter
+   * dem Finger davonlaufen.
+   */
+  useEffect(() => {
+    if (!zieht) return;
+    const halten = (e: TouchEvent) => e.preventDefault();
+    document.addEventListener("touchmove", halten, { passive: false });
+    return () => document.removeEventListener("touchmove", halten);
+  }, [zieht]);
 
   const passend = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -126,6 +156,13 @@ export function ClipLibrary({ track }: { track: Track }) {
   }, [folders, passend]);
 
   function openEditor(clip: Clip) {
+    // Nach dem Loslassen schickt der Browser noch einen Klick hinterher. Ohne
+    // diese Sperre klappt sich nach jedem Sortieren der Editor des verschobenen
+    // Clips auf.
+    if (geradeGezogen.current) {
+      geradeGezogen.current = false;
+      return;
+    }
     if (openId === clip.id) {
       setOpenId(null);
       return;
@@ -237,19 +274,17 @@ export function ClipLibrary({ track }: { track: Track }) {
     }).catch(() => {});
   }
 
-  function ablegen(gruppeClips: Clip[], zielId: string) {
-    if (!gezogen || gezogen === zielId) return;
-
-    const von = gruppeClips.findIndex((c) => c.id === gezogen);
-    const nach = gruppeClips.findIndex((c) => c.id === zielId);
-    if (von < 0 || nach < 0) return;
+  /** Einen Clip innerhalb seines Ordners an eine andere Stelle setzen. */
+  function verschiebe(gruppeClips: Clip[], clipId: string, nachIndex: number) {
+    const von = gruppeClips.findIndex((c) => c.id === clipId);
+    if (von < 0 || von === nachIndex) return;
 
     const neu = [...gruppeClips];
     const [bewegt] = neu.splice(von, 1);
-    neu.splice(nach, 0, bewegt);
+    neu.splice(nachIndex, 0, bewegt);
 
-    // Die Ränge sofort im Zustand setzen, damit die Liste nicht zurückspringt,
-    // während der Server noch antwortet.
+    // Die Ränge sofort im Zustand setzen, damit die Liste dem Finger folgt und
+    // nicht erst, wenn der Server geantwortet hat.
     const raenge = new Map(neu.map((c, i) => [c.id, i]));
     setClips((alle) =>
       [...alle]
@@ -260,8 +295,62 @@ export function ClipLibrary({ track }: { track: Track }) {
           return ra === rb ? a.name.localeCompare(b.name) : ra - rb;
         }),
     );
+  }
 
-    void reihenfolgeSpeichern(neu);
+  /**
+   * Beim Ziehen: an welche Stelle gehört der Finger gerade?
+   *
+   * Gemessen wird an der Mitte jeder Zeile - sobald der Finger die Mitte des
+   * Nachbarn überschreitet, tauschen die beiden. Das ist dasselbe Verhalten
+   * wie in den Listen von iOS.
+   */
+  function zielIndex(gruppeClips: Clip[], y: number): number {
+    for (let i = 0; i < gruppeClips.length; i++) {
+      const el = zeilen.current.get(gruppeClips[i].id);
+      if (!el) continue;
+      const kasten = el.getBoundingClientRect();
+      if (y < kasten.top + kasten.height / 2) return i;
+    }
+    return gruppeClips.length - 1;
+  }
+
+  function druckStarten(clip: Clip, e: React.PointerEvent, sofort: boolean) {
+    // Nur die linke Maustaste; am Finger gibt es keine Tasten.
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+
+    startY.current = e.clientY;
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+
+    if (sofort) {
+      setZieht(clip.id);
+      return;
+    }
+
+    // Gedrückt halten statt sofort ziehen: sonst liesse sich die Seite am
+    // Handy nicht mehr scrollen, ohne versehentlich zu sortieren.
+    druckTimer.current = setTimeout(() => setZieht(clip.id), HALTEDAUER_MS);
+  }
+
+  function druckBewegen(gruppeClips: Clip[], clip: Clip, e: React.PointerEvent) {
+    if (zieht !== clip.id) {
+      // Noch nicht am Ziehen: eine grössere Bewegung ist ein Scrollversuch.
+      if (Math.abs(e.clientY - startY.current) > SCROLL_SCHWELLE_PX) druckAbbrechen();
+      return;
+    }
+    verschiebe(gruppeClips, clip.id, zielIndex(gruppeClips, e.clientY));
+  }
+
+  function druckAbbrechen() {
+    if (druckTimer.current) clearTimeout(druckTimer.current);
+    druckTimer.current = null;
+  }
+
+  function druckBeenden(gruppeClips: Clip[]) {
+    druckAbbrechen();
+    if (!zieht) return;
+    geradeGezogen.current = true;
+    setZieht(null);
+    void reihenfolgeSpeichern(gruppeClips);
   }
 
   return (
@@ -383,7 +472,7 @@ export function ClipLibrary({ track }: { track: Track }) {
                         "clip",
                         open ? "open" : "",
                         clip.disabled ? "still" : "",
-                        ueber === clip.id ? "ziel" : "",
+                        zieht === clip.id ? "zieht" : "",
                       ]
                         .filter(Boolean)
                         .join(" ");
@@ -392,24 +481,34 @@ export function ClipLibrary({ track }: { track: Track }) {
                         <li
                           key={clip.id}
                           className={klassen}
-                          draggable
-                          onDragStart={() => setGezogen(clip.id)}
-                          onDragEnd={() => {
-                            setGezogen(null);
-                            setUeber(null);
+                          ref={(el) => {
+                            if (el) zeilen.current.set(clip.id, el);
+                            else zeilen.current.delete(clip.id);
                           }}
-                          onDragOver={(e) => {
-                            e.preventDefault();
-                            if (ueber !== clip.id) setUeber(clip.id);
+                          onPointerDown={(e) => druckStarten(clip, e, false)}
+                          onPointerMove={(e) => druckBewegen(gruppeClips, clip, e)}
+                          onPointerUp={() => druckBeenden(gruppeClips)}
+                          onPointerCancel={() => {
+                            druckAbbrechen();
+                            setZieht(null);
                           }}
-                          onDrop={(e) => {
-                            e.preventDefault();
-                            ablegen(gruppeClips, clip.id);
-                            setUeber(null);
-                          }}
+                          // Ohne das fängt der Browser die Geste selbst ab und
+                          // scrollt, bevor das Gedrückthalten durch ist.
+                          style={zieht === clip.id ? { touchAction: "none" } : undefined}
                         >
                           <div className="clip-zeile">
-                            <span className="clip-griff" title="Zum Sortieren ziehen">
+                            <span
+                              className="clip-griff"
+                              title="Ziehen zum Sortieren"
+                              // Am Griff geht es sofort los, ohne Halten - am
+                              // Rechner ist das der gewohnte Weg.
+                              onPointerDown={(e) => {
+                                e.stopPropagation();
+                                druckStarten(clip, e, true);
+                              }}
+                              onPointerMove={(e) => druckBewegen(gruppeClips, clip, e)}
+                              onPointerUp={() => druckBeenden(gruppeClips)}
+                            >
                               ⠿
                             </span>
 
@@ -560,9 +659,10 @@ export function ClipLibrary({ track }: { track: Track }) {
 
       {folders.length > 0 && (
         <p className="chat-hint">
-          Clips lassen sich innerhalb ihres Ordners per Ziehen sortieren. Was oben steht, kommt
-          häufiger in Videos vor - als Zuschlag auf die Krassheits-Bewertung, nicht als
-          Vorfahrt: ein herausragender Trick weiter unten setzt sich weiterhin durch.
+          Clips lassen sich innerhalb ihres Ordners sortieren: kurz gedrückt halten, bis der
+          Clip sich hebt, dann verschieben. Was oben steht, kommt häufiger in Videos vor - als
+          Zuschlag auf die Krassheits-Bewertung, nicht als Vorfahrt: ein herausragender Trick
+          weiter unten setzt sich weiterhin durch.
         </p>
       )}
     </section>

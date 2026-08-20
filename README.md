@@ -192,8 +192,12 @@ einer Umgebungsvariablen. Je Ordner gibt es:
   weil sich ein fertig ausgewerteter Ordner so stilllegen lässt, ohne die
   Auswertung wegzuwerfen.
 
-Einzelne Clips lassen sich ebenso stilllegen, und innerhalb ihres Ordners per
-Ziehen sortieren. Die Reihenfolge wirkt als **Zuschlag** auf die
+Einzelne Clips lassen sich ebenso stilllegen, und innerhalb ihres Ordners
+sortieren: kurz gedrückt halten, dann verschieben. Bewusst nicht über das
+eingebaute Drag-and-Drop des Browsers - das gibt es auf Touch-Geräten nicht,
+Safari auf dem iPhone löst `dragstart` nie aus. Stattdessen Pointer-Events,
+die Maus und Finger gleich behandeln; am Griff links geht es ohne Halten
+sofort los. Die Reihenfolge wirkt als **Zuschlag** auf die
 Krassheits-Bewertung, nicht als Vorfahrt: höchstens ±0,15 auf einer Skala von
 0 bis 1. Ein Liebling überholt damit einen ähnlich bewerteten Clip, ein
 wirklich herausragender Trick weiter unten setzt sich weiterhin durch. Ein

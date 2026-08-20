@@ -36,6 +36,7 @@ export function ConceptLibrary({ track }: { track: Track }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [fehler, setFehler] = useState(false);
+  const [auf, setAuf] = useState(false);
   const [offenId, setOffenId] = useState<string | null>(null);
   const [entwurf, setEntwurf] = useState<{ title: string; phases: TextPhase[] } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -184,7 +185,15 @@ export function ConceptLibrary({ track }: { track: Track }) {
   return (
     <section className="library">
       <div className="live-head">
-        <h2>{track === "viral" ? "Konzepte (Vorlage für Edits)" : "Konzepte"}</h2>
+        {/* Der ganze Bereich klappt zu. Am Handy nimmt die Konzeptliste sonst
+            den halben Bildschirm ein, bevor die Clips überhaupt kommen. */}
+        <h2>
+          <button className="abschnitt-titel" onClick={() => setAuf(!auf)} aria-expanded={auf}>
+            <span className="video-pfeil">{auf ? "▾" : "▸"}</span>
+            {track === "viral" ? "Konzepte (Vorlage für Edits)" : "Konzepte"}
+            <span className="ordner-zahl">{concepts.length}</span>
+          </button>
+        </h2>
         <button
           className="secondary"
           onClick={() => fileRef.current?.click()}
@@ -194,11 +203,13 @@ export function ConceptLibrary({ track }: { track: Track }) {
         </button>
       </div>
 
-      <p className="chat-hint">
-        {track === "viral"
-          ? "Ein Referenz-Reel hochladen — daraus werden Text, Textgestaltung, Anzahl Einstellungen und Länge übernommen. Der Text des Konzepts ist der Text des Edits. Das hochgeladene Video selbst wird nach der Auswertung wieder gelöscht."
-          : "Ein fremdes Video hochladen — Hook-Text, Textgestaltung, Anzahl Einstellungen und Länge werden daraus abgeleitet und als Vorlage gespeichert. Das Video selbst wird nach der Auswertung wieder gelöscht."}
-      </p>
+      {auf && (
+        <p className="chat-hint">
+          {track === "viral"
+            ? "Ein Referenz-Reel hochladen — daraus werden Text, Textgestaltung, Anzahl Einstellungen und Länge übernommen. Der Text des Konzepts ist der Text des Edits. Das hochgeladene Video selbst wird nach der Auswertung wieder gelöscht."
+            : "Ein fremdes Video hochladen — Hook-Text, Textgestaltung, Anzahl Einstellungen und Länge werden daraus abgeleitet und als Vorlage gespeichert. Das Video selbst wird nach der Auswertung wieder gelöscht."}
+        </p>
+      )}
 
       {/* Nicht per display:none versteckt: Safari auf dem iPhone öffnet die
           Auswahl bei so einem Feld nicht zuverlässig, wenn der Klick aus dem
@@ -214,9 +225,11 @@ export function ConceptLibrary({ track }: { track: Track }) {
         }}
       />
 
+      {/* Die Meldung bleibt auch im zugeklappten Zustand stehen: sie sagt, wie
+          es dem gerade laufenden Hochladen geht. */}
       {note && <p className={fehler ? "action-message error" : "action-message"}>{note}</p>}
 
-      {concepts.length === 0 ? (
+      {!auf ? null : concepts.length === 0 ? (
         <p className="empty-state">
           {track === "viral"
             ? "Noch kein Konzept. Ohne Konzept gibt es keinen Text für den Edit - lade ein Referenz-Reel hoch."
