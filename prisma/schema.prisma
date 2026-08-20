@@ -38,6 +38,22 @@ model Clip {
   sourceFolderId   String?
   sourceFolderName String?
 
+  /// Der im Dashboard verwaltete Wurzelordner, unter dem dieser Clip gefunden
+  /// wurde - die Zuordnung, nach der die Bibliothek gruppiert.
+  ///
+  /// Getrennt von sourceFolderId: der steht für den unmittelbaren Ordner, in
+  /// dem die Datei liegt, und der kann ein Unterordner sein. Gruppiert wird
+  /// aber nach dem, was im Dashboard als Ordner auftaucht.
+  rootFolderId String?
+
+  /// Von Hand vergebener Rang innerhalb des Wurzelordners, 0 ist ganz oben.
+  /// Ohne Wert gilt der Clip als unsortiert und zählt hinter allen sortierten.
+  manualRank Int?
+
+  /// Von Hand stillgelegt: bleibt in der Bibliothek sichtbar, kommt aber in
+  /// keinem Video mehr vor.
+  disabled Boolean @default(false)
+
   /// Was auf dem Clip zu sehen ist - Grundlage für die Auswahl.
   description String?
 
@@ -91,6 +107,7 @@ model Clip {
   @@index([apparelScore])
   @@index([lastUsedAt])
   @@index([track])
+  @@index([rootFolderId])
 }
 
 /// Laufendes Protokoll dessen, was die Pipeline gerade tut.
@@ -279,6 +296,47 @@ model Concept {
 ///
 /// Genau eine Zeile mit fester ID, wie bei DailyConfig - so lassen sich die
 /// Vorgaben im Dashboard ändern, ohne eine neue Fassung auszurollen.
+/// Ein Quellordner in Drive, wie ihn das Dashboard verwaltet.
+///
+/// Bis hierher hatte jede Sparte genau einen Wurzelordner, fest in einer
+/// Umgebungsvariablen. Für die Parkour-Edits sind es jetzt mehrere, und welche
+/// davon mitlaufen, entscheidet sich zur Laufzeit - deshalb stehen sie in der
+/// Datenbank und nicht mehr in der Umgebung.
+model SourceFolder {
+  id String @id @default(cuid())
+
+  /// Die Ordner-ID aus der Drive-Adresse. Ordner-IDs sind keine Geheimnisse.
+  driveFolderId String @unique
+
+  /// Wie der Ordner in Drive heisst. Wird beim Abgleich nachgeführt, damit ein
+  /// Umbenennen in Drive im Dashboard ankommt.
+  name String
+
+  /// "promo" oder "viral".
+  track String @default("viral")
+
+  /// Was für Clips hier liegen und wofür sie taugen - in eigenen Worten.
+  /// Geht als Kontext sowohl in die Clip-Analyse als auch in die Auswahl ein.
+  description String @default("")
+
+  /// Wird der Ordner eingelesen und ausgewertet? Aus heisst: kein Abgleich,
+  /// keine Analyse, keine Gemini-Kosten. Bereits eingelesene Clips bleiben
+  /// erhalten und werden beim Aufräumen nicht angefasst.
+  autoAnalyze Boolean @default(true)
+
+  /// Dürfen seine Clips in Videos vorkommen? Getrennt vom Auswerten, damit
+  /// sich ein fertig analysierter Ordner vorübergehend stilllegen lässt, ohne
+  /// die Analyse wegzuwerfen.
+  useInVideos Boolean @default(true)
+
+  /// Reihenfolge in der Übersicht.
+  sortIndex Int @default(0)
+
+  createdAt DateTime @default(now())
+
+  @@index([track])
+}
+
 model ViralSchedule {
   id String @id @default("default")
 

@@ -13,6 +13,8 @@ interface Patch {
   startMs?: number;
   endMs?: number;
   track?: string;
+  /** Stilllegen oder wieder zulassen. */
+  disabled?: boolean;
 }
 
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
@@ -21,6 +23,24 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     const clip = await prisma.clip.findUnique({ where: { id: params.id } });
     if (!clip) {
       return NextResponse.json({ error: "Clip nicht gefunden." }, { status: 404 });
+    }
+
+    // Stilllegen ist keine Korrektur der Auswertung.
+    //
+    // Ginge es den Weg weiter unten, bekäme der Clip ein editedAt gesetzt und
+    // wäre damit für immer von der automatischen Neuanalyse ausgenommen - für
+    // einen Schalter, der nur sagt "gerade nicht verwenden", wäre das eine
+    // absurde Nebenwirkung.
+    if (patch.disabled !== undefined && patch.description === undefined) {
+      const geaendert = await prisma.clip.update({
+        where: { id: params.id },
+        data: { disabled: patch.disabled },
+      });
+      await logActivity(
+        `${clip.name} ${patch.disabled ? "stillgelegt" : "wieder zugelassen"}.`,
+        { track: trackFromValue(clip.track) },
+      );
+      return NextResponse.json(geaendert);
     }
 
     // Die Sparte des Clips zählt, nicht die mitgeschickte - sonst liesse sich

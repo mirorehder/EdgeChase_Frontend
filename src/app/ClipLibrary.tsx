@@ -7,6 +7,9 @@ interface Clip {
   id: string;
   name: string;
   sourceFolderName: string | null;
+  rootFolderId: string | null;
+  manualRank: number | null;
+  disabled: boolean;
   description: string | null;
   apparelScore: number | null;
   stuntScore: number | null;
@@ -21,6 +24,17 @@ interface Clip {
   analysisVersion: number | null;
   analysisFailures: number;
   analysisError: string | null;
+}
+
+interface Folder {
+  id: string;
+  driveFolderId: string;
+  name: string;
+  description: string;
+  autoAnalyze: boolean;
+  useInVideos: boolean;
+  clipCount: number;
+  disabledCount: number;
 }
 
 /**
@@ -44,6 +58,7 @@ function felder(clip: Clip, track: Track) {
 
 export function ClipLibrary({ track }: { track: Track }) {
   const [clips, setClips] = useState<Clip[]>([]);
+  const [folders, setFolders] = useState<Folder[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
@@ -51,10 +66,23 @@ export function ClipLibrary({ track }: { track: Track }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
 
+  // Zugeklappte Ordner. Offen ist die Voreinstellung - wer die Bibliothek
+  // öffnet, will meistens die Clips sehen.
+  const [zu, setZu] = useState<Set<string>>(new Set());
+  const [beschreibungen, setBeschreibungen] = useState<Record<string, string>>({});
+  const [gezogen, setGezogen] = useState<string | null>(null);
+  const [ueber, setUeber] = useState<string | null>(null);
+
   async function load() {
     const res = await fetch(`/api/clips?track=${track}`, { cache: "no-store" });
     const data = await res.json();
     setClips(data.clips);
+    setFolders(data.folders ?? []);
+    setBeschreibungen(
+      Object.fromEntries(
+        ((data.folders ?? []) as Folder[]).map((f) => [f.id, f.description]),
+      ),
+    );
     setLoading(false);
   }
 
@@ -63,13 +91,39 @@ export function ClipLibrary({ track }: { track: Track }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [track]);
 
-  const filtered = useMemo(() => {
+  const passend = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return clips;
     return clips.filter((c) =>
       [c.name, c.sourceFolderName ?? "", c.description ?? ""].join(" ").toLowerCase().includes(q),
     );
   }, [clips, query]);
+
+  /**
+   * Clips ihrem Ordner zuordnen.
+   *
+   * Ohne eingetragene Ordner - so steht die Promo-Sparte da - bleibt es eine
+   * einzige Gruppe ohne Kopfzeile, also die Ansicht von vorher.
+   */
+  const gruppen = useMemo(() => {
+    if (!folders.length) {
+      return [{ folder: null as Folder | null, clips: passend }];
+    }
+
+    const zugeordnet: { folder: Folder | null; clips: Clip[] }[] = folders.map((f) => ({
+      folder: f,
+      clips: passend.filter((c) => c.rootFolderId === f.driveFolderId),
+    }));
+
+    // Clips ohne bekannten Ordner - etwa aus einem Ordner, der inzwischen aus
+    // der Liste genommen wurde. Sie sollen nicht unsichtbar werden.
+    const heimatlos = passend.filter(
+      (c) => !folders.some((f) => f.driveFolderId === c.rootFolderId),
+    );
+    if (heimatlos.length) zugeordnet.push({ folder: null as Folder | null, clips: heimatlos });
+
+    return zugeordnet;
+  }, [folders, passend]);
 
   function openEditor(clip: Clip) {
     if (openId === clip.id) {
@@ -136,6 +190,80 @@ export function ClipLibrary({ track }: { track: Track }) {
     }
   }
 
+  async function clipUmschalten(clip: Clip) {
+    // Sofort umschalten, damit der Schalter nicht hängt; kommt ein Fehler,
+    // richtet das Neuladen es wieder.
+    setClips((alle) =>
+      alle.map((c) => (c.id === clip.id ? { ...c, disabled: !c.disabled } : c)),
+    );
+    await fetch(`/api/clips/${clip.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ disabled: !clip.disabled }),
+    }).catch(() => {});
+    await load();
+  }
+
+  async function ordnerSpeichern(folder: Folder, patch: Partial<Folder>) {
+    // Sofort umschalten, nicht erst wenn der Server antwortet: sonst hängt der
+    // Haken einen Moment lang in der alten Stellung und der Klick wirkt, als
+    // wäre er nicht angekommen. Die Antwort setzt gleich darauf den echten
+    // Stand - auch im Fehlerfall.
+    setFolders((alle) => alle.map((f) => (f.id === folder.id ? { ...f, ...patch } : f)));
+
+    setBusy(folder.id);
+    try {
+      const res = await fetch(`/api/folders?track=${track}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: folder.id, ...patch }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setFolders(data.folders);
+    } catch (err) {
+      setNote(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  /** Neue Reihenfolge eines Ordners festhalten. */
+  async function reihenfolgeSpeichern(ordnerClips: Clip[]) {
+    await fetch("/api/clips/order", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ clipIds: ordnerClips.map((c) => c.id) }),
+    }).catch(() => {});
+  }
+
+  function ablegen(gruppeClips: Clip[], zielId: string) {
+    if (!gezogen || gezogen === zielId) return;
+
+    const von = gruppeClips.findIndex((c) => c.id === gezogen);
+    const nach = gruppeClips.findIndex((c) => c.id === zielId);
+    if (von < 0 || nach < 0) return;
+
+    const neu = [...gruppeClips];
+    const [bewegt] = neu.splice(von, 1);
+    neu.splice(nach, 0, bewegt);
+
+    // Die Ränge sofort im Zustand setzen, damit die Liste nicht zurückspringt,
+    // während der Server noch antwortet.
+    const raenge = new Map(neu.map((c, i) => [c.id, i]));
+    setClips((alle) =>
+      [...alle]
+        .map((c) => (raenge.has(c.id) ? { ...c, manualRank: raenge.get(c.id)! } : c))
+        .sort((a, b) => {
+          const ra = a.manualRank ?? Number.MAX_SAFE_INTEGER;
+          const rb = b.manualRank ?? Number.MAX_SAFE_INTEGER;
+          return ra === rb ? a.name.localeCompare(b.name) : ra - rb;
+        }),
+    );
+
+    void reihenfolgeSpeichern(neu);
+  }
+
   return (
     <section className="library">
       <div className="live-head">
@@ -150,122 +278,292 @@ export function ClipLibrary({ track }: { track: Track }) {
 
       {loading ? (
         <p className="empty-state">Wird geladen …</p>
-      ) : filtered.length === 0 ? (
+      ) : passend.length === 0 && !folders.length ? (
         <p className="empty-state">
           {clips.length === 0
             ? "Noch keine Clips. Löse oben einen Abgleich aus."
             : "Kein Clip passt zur Suche."}
         </p>
       ) : (
-        <ul className="clips">
-          {filtered.map((clip) => {
-            const open = openId === clip.id;
-            return (
-              <li key={clip.id} className={open ? "clip open" : "clip"}>
-                <button className="clip-row" onClick={() => openEditor(clip)}>
-                  <span className="clip-name">
-                    {clip.name}
-                    {clip.editedAt && <span className="tag">bearbeitet</span>}
-                    {clip.analysisVersion === null && <span className="tag warn">nicht analysiert</span>}
-                  </span>
-                  {clip.analysisFailures > 0 && (
-                    <span className="clip-meta error-text">
-                      Auswertung gescheitert ({clip.analysisFailures}×)
-                      {clip.analysisFailures >= 3 ? ", wird übersprungen" : ""}:{" "}
-                      {clip.analysisError}
-                    </span>
-                  )}
-                  <span className="clip-meta">
-                    {clip.sourceFolderName ?? "—"} ·{" "}
-                    {track === "viral" ? (
-                      <>
-                        Stunt {clip.stuntScore === null ? "—" : clip.stuntScore.toFixed(2)} ·
-                        Höhepunkt {seconds(clip.highlightStartMs)}–{seconds(clip.highlightEndMs)}s
-                      </>
-                    ) : (
-                      <>
-                        Kleidung{" "}
-                        {clip.apparelScore === null ? "—" : clip.apparelScore.toFixed(2)} ·{" "}
-                        {seconds(clip.startMs)}–{seconds(clip.endMs)}s
-                      </>
-                    )}
-                  </span>
-                  <span className="clip-desc">{clip.description ?? "Keine Beschreibung"}</span>
-                </button>
+        <div className="ordner-liste">
+          {gruppen.map(({ folder, clips: gruppeClips }) => {
+            const schluessel = folder?.id ?? "ohne-ordner";
+            const offen = !zu.has(schluessel);
 
-                {open && draft && (
-                  <div className="clip-editor">
+            return (
+              <div key={schluessel} className="ordner">
+                {folder ? (
+                  <div className="ordner-kopf">
+                    <button
+                      className="ordner-titel"
+                      onClick={() =>
+                        setZu((s) => {
+                          const neu = new Set(s);
+                          if (neu.has(schluessel)) neu.delete(schluessel);
+                          else neu.add(schluessel);
+                          return neu;
+                        })
+                      }
+                      aria-expanded={offen}
+                    >
+                      <span className="video-pfeil">{offen ? "▾" : "▸"}</span>
+                      <span>{folder.name || "(Name folgt beim Abgleich)"}</span>
+                      <span className="ordner-zahl">
+                        {folder.clipCount} Clips
+                        {folder.disabledCount > 0 && `, ${folder.disabledCount} still`}
+                      </span>
+                    </button>
+
+                    <div className="ordner-schalter">
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={folder.autoAnalyze}
+                          disabled={busy === folder.id}
+                          onChange={(e) =>
+                            ordnerSpeichern(folder, { autoAnalyze: e.target.checked })
+                          }
+                        />
+                        analysieren
+                      </label>
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={folder.useInVideos}
+                          disabled={busy === folder.id}
+                          onChange={(e) =>
+                            ordnerSpeichern(folder, { useInVideos: e.target.checked })
+                          }
+                        />
+                        verwenden
+                      </label>
+                    </div>
+                  </div>
+                ) : (
+                  folders.length > 0 && (
+                    <div className="ordner-kopf">
+                      <span className="ordner-titel">Ohne Ordner</span>
+                    </div>
+                  )
+                )}
+
+                {folder && offen && (
+                  <div className="ordner-beschreibung">
                     <label>
-                      Beschreibung
+                      Was liegt hier und wofür ist es gedacht?
                       <textarea
-                        rows={4}
-                        value={draft.description}
-                        onChange={(e) => setDraft({ ...draft, description: e.target.value })}
+                        rows={2}
+                        value={beschreibungen[folder.id] ?? ""}
+                        placeholder="z.B. Rooftop-Sprünge bei Nacht, für riskante Hooks"
+                        onChange={(e) =>
+                          setBeschreibungen({ ...beschreibungen, [folder.id]: e.target.value })
+                        }
+                        onBlur={() =>
+                          beschreibungen[folder.id] !== folder.description &&
+                          ordnerSpeichern(folder, { description: beschreibungen[folder.id] })
+                        }
                       />
                     </label>
-
-                    <div className="field-row">
-                      <label>
-                        {track === "viral" ? "Stunt (0–1)" : "Kleidung (0–1)"}
-                        <input
-                          value={draft.score}
-                          onChange={(e) => setDraft({ ...draft, score: e.target.value })}
-                        />
-                      </label>
-                      <label>
-                        {track === "viral" ? "Absprung (ms)" : "Ausschnitt ab (ms)"}
-                        <input
-                          value={draft.startMs}
-                          onChange={(e) => setDraft({ ...draft, startMs: e.target.value })}
-                        />
-                      </label>
-                      <label>
-                        {track === "viral" ? "Landung (ms)" : "Ausschnitt bis (ms)"}
-                        <input
-                          value={draft.endMs}
-                          onChange={(e) => setDraft({ ...draft, endMs: e.target.value })}
-                        />
-                      </label>
-                    </div>
-
                     <p className="chat-hint">
-                      {track === "viral" &&
-                        "Absprung und Landung bestimmen den Schnitt: das fertige Video zeigt genau dieses Fenster, mit etwas Vorlauf und Nachlauf. "}
-                      Clip ist {seconds(clip.durationMs)}s lang.
-                      {clip.lastUsedAt
-                        ? ` Zuletzt verwendet am ${new Date(clip.lastUsedAt).toLocaleDateString("de-DE")}.`
-                        : " Noch nie verwendet."}{" "}
-                      Eine Handkorrektur wird bei automatischen Neuanalysen nicht überschrieben.
+                      Der Text geht als Einordnung in die Auswertung der Clips und in die
+                      Auswahl fürs Video.
                     </p>
-
-                    <div className="actions">
-                      <button onClick={() => save(clip)} disabled={busy === clip.id}>
-                        Speichern
-                      </button>
-                      <button
-                        className="secondary"
-                        onClick={() => reanalyze(clip)}
-                        disabled={busy === clip.id}
-                      >
-                        Neu analysieren
-                      </button>
-                      <a
-                        className="drive-link"
-                        href={`https://drive.google.com/file/d/${clip.driveFileId}/view`}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        Clip ansehen
-                      </a>
-                    </div>
-
-                    {note && <p className="action-message">{note}</p>}
                   </div>
                 )}
-              </li>
+
+                {offen && gruppeClips.length === 0 && (
+                  <p className="empty-state">Noch keine Clips in diesem Ordner.</p>
+                )}
+
+                {offen && gruppeClips.length > 0 && (
+                  <ul className="clips">
+                    {gruppeClips.map((clip) => {
+                      const open = openId === clip.id;
+                      const klassen = [
+                        "clip",
+                        open ? "open" : "",
+                        clip.disabled ? "still" : "",
+                        ueber === clip.id ? "ziel" : "",
+                      ]
+                        .filter(Boolean)
+                        .join(" ");
+
+                      return (
+                        <li
+                          key={clip.id}
+                          className={klassen}
+                          draggable
+                          onDragStart={() => setGezogen(clip.id)}
+                          onDragEnd={() => {
+                            setGezogen(null);
+                            setUeber(null);
+                          }}
+                          onDragOver={(e) => {
+                            e.preventDefault();
+                            if (ueber !== clip.id) setUeber(clip.id);
+                          }}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            ablegen(gruppeClips, clip.id);
+                            setUeber(null);
+                          }}
+                        >
+                          <div className="clip-zeile">
+                            <span className="clip-griff" title="Zum Sortieren ziehen">
+                              ⠿
+                            </span>
+
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              className="clip-bild"
+                              src={`/api/clips/${clip.id}/thumbnail`}
+                              alt=""
+                              loading="lazy"
+                              onError={(e) => {
+                                e.currentTarget.style.visibility = "hidden";
+                              }}
+                            />
+
+                            <button className="clip-row" onClick={() => openEditor(clip)}>
+                              <span className="clip-name">
+                                {clip.name}
+                                {clip.disabled && <span className="tag">stillgelegt</span>}
+                                {clip.editedAt && <span className="tag">bearbeitet</span>}
+                                {clip.analysisVersion === null && (
+                                  <span className="tag warn">nicht analysiert</span>
+                                )}
+                              </span>
+                              {clip.analysisFailures > 0 && (
+                                <span className="clip-meta error-text">
+                                  Auswertung gescheitert ({clip.analysisFailures}×)
+                                  {clip.analysisFailures >= 3 ? ", wird übersprungen" : ""}:{" "}
+                                  {clip.analysisError}
+                                </span>
+                              )}
+                              <span className="clip-meta">
+                                {clip.sourceFolderName ?? "—"} ·{" "}
+                                {track === "viral" ? (
+                                  <>
+                                    Stunt{" "}
+                                    {clip.stuntScore === null ? "—" : clip.stuntScore.toFixed(2)} ·
+                                    Höhepunkt {seconds(clip.highlightStartMs)}–
+                                    {seconds(clip.highlightEndMs)}s
+                                  </>
+                                ) : (
+                                  <>
+                                    Kleidung{" "}
+                                    {clip.apparelScore === null
+                                      ? "—"
+                                      : clip.apparelScore.toFixed(2)}{" "}
+                                    · {seconds(clip.startMs)}–{seconds(clip.endMs)}s
+                                  </>
+                                )}
+                              </span>
+                              <span className="clip-desc">
+                                {clip.description ?? "Keine Beschreibung"}
+                              </span>
+                            </button>
+
+                            <label className="clip-schalter" title="In Videos verwenden">
+                              <input
+                                type="checkbox"
+                                checked={!clip.disabled}
+                                onChange={() => clipUmschalten(clip)}
+                              />
+                            </label>
+                          </div>
+
+                          {open && draft && (
+                            <div className="clip-editor">
+                              <label>
+                                Beschreibung
+                                <textarea
+                                  rows={4}
+                                  value={draft.description}
+                                  onChange={(e) =>
+                                    setDraft({ ...draft, description: e.target.value })
+                                  }
+                                />
+                              </label>
+
+                              <div className="field-row">
+                                <label>
+                                  {track === "viral" ? "Stunt (0–1)" : "Kleidung (0–1)"}
+                                  <input
+                                    value={draft.score}
+                                    onChange={(e) => setDraft({ ...draft, score: e.target.value })}
+                                  />
+                                </label>
+                                <label>
+                                  {track === "viral" ? "Absprung (ms)" : "Ausschnitt ab (ms)"}
+                                  <input
+                                    value={draft.startMs}
+                                    onChange={(e) =>
+                                      setDraft({ ...draft, startMs: e.target.value })
+                                    }
+                                  />
+                                </label>
+                                <label>
+                                  {track === "viral" ? "Landung (ms)" : "Ausschnitt bis (ms)"}
+                                  <input
+                                    value={draft.endMs}
+                                    onChange={(e) => setDraft({ ...draft, endMs: e.target.value })}
+                                  />
+                                </label>
+                              </div>
+
+                              <p className="chat-hint">
+                                {track === "viral" &&
+                                  "Absprung und Landung bestimmen den Schnitt: das fertige Video zeigt genau dieses Fenster, mit etwas Vorlauf und Nachlauf. "}
+                                Clip ist {seconds(clip.durationMs)}s lang.
+                                {clip.lastUsedAt
+                                  ? ` Zuletzt verwendet am ${new Date(clip.lastUsedAt).toLocaleDateString("de-DE")}.`
+                                  : " Noch nie verwendet."}{" "}
+                                Eine Handkorrektur wird bei automatischen Neuanalysen nicht
+                                überschrieben.
+                              </p>
+
+                              <div className="actions">
+                                <button onClick={() => save(clip)} disabled={busy === clip.id}>
+                                  Speichern
+                                </button>
+                                <button
+                                  className="secondary"
+                                  onClick={() => reanalyze(clip)}
+                                  disabled={busy === clip.id}
+                                >
+                                  Neu analysieren
+                                </button>
+                                <a
+                                  className="drive-link"
+                                  href={`https://drive.google.com/file/d/${clip.driveFileId}/view`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                >
+                                  Clip ansehen
+                                </a>
+                              </div>
+
+                              {note && <p className="action-message">{note}</p>}
+                            </div>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
             );
           })}
-        </ul>
+        </div>
+      )}
+
+      {folders.length > 0 && (
+        <p className="chat-hint">
+          Clips lassen sich innerhalb ihres Ordners per Ziehen sortieren. Was oben steht, kommt
+          häufiger in Videos vor - als Zuschlag auf die Krassheits-Bewertung, nicht als
+          Vorfahrt: ein herausragender Trick weiter unten setzt sich weiterhin durch.
+        </p>
       )}
     </section>
   );

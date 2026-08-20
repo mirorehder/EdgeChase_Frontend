@@ -91,8 +91,11 @@ export async function analyzeClip(
   mimeType: string,
   durationMs: number | null,
   track: Track = "promo",
+  /** Was im Dashboard ueber den Quellordner steht - hilft dem Modell
+   *  einzuordnen, was es sieht. Leer, wenn nichts hinterlegt ist. */
+  folderContext = "",
 ): Promise<ClipAnalysis> {
-  if (track === "viral") return analyzeViralClip(quelle, mimeType, durationMs);
+  if (track === "viral") return analyzeViralClip(quelle, mimeType, durationMs, folderContext);
 
   const ai = client();
 
@@ -231,12 +234,20 @@ async function analyzeViralClip(
   quelle: Buffer | string,
   mimeType: string,
   durationMs: number | null,
+  folderContext = "",
 ): Promise<ClipAnalysis> {
   const ai = client();
 
   const durationHint = durationMs
     ? `Der Clip ist ${(durationMs / 1000).toFixed(1)} Sekunden lang.`
     : "Die genaue Länge des Clips ist unbekannt.";
+
+  // Der Ordner sagt, was fuer Material das ist. Bewusst als Einordnung
+  // formuliert und nicht als Erwartung: sonst beschreibt das Modell, was laut
+  // Ordner dort liegen sollte, statt was wirklich im Clip zu sehen ist.
+  const ordnerHinweis = folderContext
+    ? `\n\nZur Einordnung - der Ordner, aus dem der Clip stammt, ist so beschrieben: "${folderContext}". Das ist Hintergrundwissen, keine Vorgabe: beschreibe und bewerte ausschliesslich, was tatsaechlich im Clip zu sehen ist.`
+    : "";
 
   // Bewusst ergebnisoffen formuliert: nicht "wann ist der Sprung", sondern "ob
   // überhaupt einer vorkommt". Sonst legt das Modell auch in einem Clip ohne
@@ -260,7 +271,7 @@ Bestimme dann die zwei entscheidenden Zeitpunkte in Millisekunden ab Clipbeginn:
 
 Diese beiden Zeitpunkte sind das Wichtigste an dieser Aufgabe. Aus ihnen wird geschnitten - liegen sie falsch, zeigt das fertige Video den Anlauf statt den Sprung. Der Anlauf davor gehört NICHT dazu, das Weglaufen danach auch nicht.
 
-Kommt kein Trick vor, setze stuntScore auf 0 und beide Zeitpunkte auf die auffälligste Bewegung im Clip.`;
+Kommt kein Trick vor, setze stuntScore auf 0 und beide Zeitpunkte auf die auffälligste Bewegung im Clip.${ordnerHinweis}`;
 
   const uploaded = await uploadForAnalysis(ai, quelle, mimeType);
 
@@ -525,6 +536,9 @@ export interface ViralCandidate {
   stuntScore: number;
   /** Wie lang der Trick dauert - kurze Tricks schneiden sich knackiger. */
   trickMs: number;
+  /** Was im Dashboard ueber den Quellordner steht: was fuer Clips dort liegen
+   *  und wofuer sie gedacht sind. Leer, wenn nichts hinterlegt ist. */
+  folderContext?: string;
 }
 
 /**
@@ -573,7 +587,9 @@ async function selectViralScenesMitModell(
   const candidateList = candidates
     .map(
       (c) =>
-        `- id: ${c.id} | stuntScore: ${c.stuntScore.toFixed(2)} | Trickdauer: ${(c.trickMs / 1000).toFixed(1)}s | ${c.description}`,
+        `- id: ${c.id} | stuntScore: ${c.stuntScore.toFixed(2)} | Trickdauer: ${(c.trickMs / 1000).toFixed(1)}s` +
+        (c.folderContext ? ` | Ordner: ${c.folderContext}` : "") +
+        ` | ${c.description}`,
     )
     .join("\n");
 
@@ -630,6 +646,8 @@ export interface SetupCandidate {
   description: string;
   stuntScore: number;
   seconds: number;
+  /** Beschreibung des Quellordners aus dem Dashboard. */
+  folderContext?: string;
 }
 
 /**
@@ -652,7 +670,9 @@ export async function selectSetupClip(
     const liste = candidates
       .map(
         (c) =>
-          `- id: ${c.id} | Trick-Bewertung: ${c.stuntScore.toFixed(2)} | Laenge: ${c.seconds.toFixed(1)}s | ${c.description}`,
+          `- id: ${c.id} | Trick-Bewertung: ${c.stuntScore.toFixed(2)} | Laenge: ${c.seconds.toFixed(1)}s` +
+          (c.folderContext ? ` | Ordner: ${c.folderContext}` : "") +
+          ` | ${c.description}`,
       )
       .join("\n");
 

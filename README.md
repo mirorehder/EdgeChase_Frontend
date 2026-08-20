@@ -173,6 +173,32 @@ und Drive-Link, sowie zwei Aktionen:
 - **Clip-Bibliothek abgleichen** - gleicht neue Clips aus dem Drive-Ordner ab
   und analysiert sie, ohne ein Video zu erzeugen.
 
+### Quellordner der Parkour-Sparte
+
+Die Parkour-Clips verteilen sich auf mehrere Drive-Ordner. Sie stehen in der
+Tabelle `SourceFolder` und werden in der Bibliothek verwaltet, nicht mehr in
+einer Umgebungsvariablen. Je Ordner gibt es:
+
+- den **Namen aus Drive** - er wird bei jedem Abgleich nachgezogen, ein
+  Umbenennen in Drive kommt also im Dashboard an;
+- eine **Beschreibung**, was dort liegt und wofür es gedacht ist. Sie geht als
+  Einordnung sowohl in die Auswertung der einzelnen Clips als auch in die
+  Auswahl fürs Video - ausdrücklich als Hintergrundwissen formuliert, damit
+  das Modell beschreibt, was wirklich im Clip ist, und nicht, was laut Ordner
+  dort liegen sollte;
+- zwei Schalter: **analysieren** (wird abgeglichen und ausgewertet - aus heisst
+  keine Gemini-Kosten mehr, die bereits eingelesenen Clips bleiben aber
+  stehen) und **verwenden** (dürfen seine Clips in Videos vorkommen). Getrennt,
+  weil sich ein fertig ausgewerteter Ordner so stilllegen lässt, ohne die
+  Auswertung wegzuwerfen.
+
+Einzelne Clips lassen sich ebenso stilllegen, und innerhalb ihres Ordners per
+Ziehen sortieren. Die Reihenfolge wirkt als **Zuschlag** auf die
+Krassheits-Bewertung, nicht als Vorfahrt: höchstens ±0,15 auf einer Skala von
+0 bis 1. Ein Liebling überholt damit einen ähnlich bewerteten Clip, ein
+wirklich herausragender Trick weiter unten setzt sich weiterhin durch. Ein
+Ordner, in dem noch nichts gezogen wurde, bleibt neutral.
+
 ## Stand der Umsetzung
 
 Ohne produktive Zugangsdaten (Neon, Gemini, Google-Service-Account, AWS)

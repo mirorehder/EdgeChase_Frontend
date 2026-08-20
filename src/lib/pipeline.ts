@@ -29,6 +29,12 @@ import { hookTextToFileName } from "./filename";
 import { logActivity } from "./activity";
 import { getDailySettings } from "./dailyConfig";
 import { getViralSchedule, viralOutputFolderId, viralTextStyle } from "./viralSchedule";
+import {
+  fillMissingFolderNames,
+  folderDescriptions,
+  foldersToScan,
+  usableFolderIds,
+} from "./sourceFolders";
 
 // Hochzählen, wenn sich Analyse-Felder oder der Analyse-Prompt ändern -
 // Clips mit älterer Version werten sich dann automatisch neu aus.
@@ -107,9 +113,32 @@ const TRACK_LABEL: Record<Track, string> = {
   viral: "Virale Edits",
 };
 
-/** Gleicht den Drive-Quellordner der Sparte mit ihrer Clip-Bibliothek ab; neue Clips werden angelegt, bestehende bleiben unangetastet. */
+/** Gleicht die Drive-Quellordner der Sparte mit ihrer Clip-Bibliothek ab; neue Clips werden angelegt, bestehende bleiben unangetastet. */
 export async function syncClipLibrary(track: Track = "promo"): Promise<SyncResult> {
-  const driveFiles = await listSourceClips(track);
+  // Nur die Ordner, die eingelesen werden sollen. Ist für die Sparte keiner
+  // eingetragen, gilt der Ordner aus der Umgebung - so bleibt die Promo-Sparte
+  // unverändert.
+  await fillMissingFolderNames(track);
+  const wurzeln = await foldersToScan(track);
+
+  const driveFiles = await listSourceClips(track, wurzeln);
+
+  // Ordnernamen nachziehen: wird ein Ordner in Drive umbenannt, soll das im
+  // Dashboard ankommen, statt dort den alten Namen stehen zu lassen.
+  for (const wurzel of wurzeln) {
+    const gefunden = driveFiles.find((f) => f.rootFolderId === wurzel.driveFolderId);
+    if (gefunden && gefunden.rootFolderName !== wurzel.name) {
+      await prisma.sourceFolder
+        .update({
+          where: { driveFolderId: wurzel.driveFolderId },
+          data: { name: gefunden.rootFolderName },
+        })
+        .catch(() => {
+          // Der Ordner kann zwischenzeitlich gelöscht worden sein.
+        });
+    }
+  }
+
   const existing = await prisma.clip.findMany({ select: { driveFileId: true } });
   const existingIds = new Set(existing.map((c) => c.driveFileId));
 
@@ -124,6 +153,7 @@ export async function syncClipLibrary(track: Track = "promo"): Promise<SyncResul
         durationMs: file.durationMs,
         sourceFolderId: file.folderId,
         sourceFolderName: file.folderName,
+        rootFolderId: file.rootFolderId,
       },
     });
   }
@@ -138,8 +168,17 @@ export async function syncClipLibrary(track: Track = "promo"): Promise<SyncResul
   let removed = 0;
 
   if (driveFiles.length >= MIN_LISTING_FOR_PRUNE) {
+    // Nur aufräumen, was aus einem tatsächlich durchsuchten Ordner stammt.
+    // Ohne diese Einschränkung würde ein auf "nicht analysieren" gestellter
+    // Ordner seine gesamte Bibliothek verlieren: seine Clips kommen in der
+    // Auflistung nicht vor und sähen deshalb aus wie gelöscht.
+    const durchsucht = wurzeln.map((w) => w.driveFolderId);
     const veraltet = await prisma.clip.findMany({
-      where: { track, editedAt: null },
+      where: {
+        track,
+        editedAt: null,
+        ...(durchsucht.length ? { rootFolderId: { in: durchsucht } } : {}),
+      },
       select: { id: true, driveFileId: true },
     });
     const zuEntfernen = veraltet.filter((c) => !driveIds.has(c.driveFileId));
@@ -165,6 +204,8 @@ export async function countUnanalyzedClips(track: Track = "promo"): Promise<numb
   return prisma.clip.count({
     where: {
       track,
+      ...(await analysierbareOrdnerFilter(track)),
+      disabled: false,
       editedAt: null,
       analysisFailures: { lt: MAX_ANALYSIS_FAILURES },
       OR: [{ analysisVersion: null }, { analysisVersion: { not: CURRENT_ANALYSIS_VERSION } }],
@@ -250,6 +291,18 @@ function analysisSummary(analysis: ClipAnalysis, track: Track): string {
   return `Kleidung ${analysis.apparelScore.toFixed(2)}, ${cut}. ${analysis.description}`;
 }
 
+/**
+ * Einschränkung auf Ordner, die ausgewertet werden sollen.
+ *
+ * Leer, wenn für die Sparte gar keine Ordner eingetragen sind - dann gilt der
+ * Ordner aus der Umgebung, und die Promo-Sparte verhält sich wie bisher.
+ */
+async function analysierbareOrdnerFilter(track: Track) {
+  const wurzeln = await foldersToScan(track);
+  if (!wurzeln.length) return {};
+  return { rootFolderId: { in: wurzeln.map((w) => w.driveFolderId) } };
+}
+
 /** Analysiert alle noch nicht (oder mit alter Prompt-Version) ausgewerteten Clips - siehe Auftrag 5.1. */
 export async function analyzeUnanalyzedClips(
   limit = ANALYZE_BATCH_LIMIT,
@@ -258,6 +311,10 @@ export async function analyzeUnanalyzedClips(
   const pending = await prisma.clip.findMany({
     where: {
       track,
+      ...(await analysierbareOrdnerFilter(track)),
+      // Stillgelegte Clips kommen in keinem Video vor - sie auszuwerten wäre
+      // vergeudete Gemini-Zeit.
+      disabled: false,
       // Von Hand korrigierte Clips bleiben unangetastet, auch wenn die
       // Analyse-Version hochgezählt wird.
       editedAt: null,
@@ -333,7 +390,13 @@ export async function analyzeUnanalyzedClips(
  * 2,1 GB, weit mehr als eine Serverless-Funktion hat.
  */
 async function analysiereEinenClip(
-  clip: { id: string; name: string; driveFileId: string; durationMs: number | null },
+  clip: {
+    id: string;
+    name: string;
+    driveFileId: string;
+    durationMs: number | null;
+    rootFolderId: string | null;
+  },
   track: Track,
 ): Promise<ClipAnalysis> {
   const { mkdtemp, rm } = await import("node:fs/promises");
@@ -373,7 +436,11 @@ async function analysiereEinenClip(
       }
     }
 
-    return await analyzeClip(pfad, guessMimeType(clip.name), clip.durationMs, track);
+    // Die Ordner-Beschreibung aus dem Dashboard als Einordnung mitgeben.
+    const beschreibungen = await folderDescriptions(track);
+    const kontext = clip.rootFolderId ? (beschreibungen.get(clip.rootFolderId) ?? "") : "";
+
+    return await analyzeClip(pfad, guessMimeType(clip.name), clip.durationMs, track, kontext);
   } finally {
     await rm(verzeichnis, { recursive: true, force: true }).catch(() => {});
   }
@@ -570,6 +637,112 @@ export async function composeVideo(options: ComposeOptions = {}): Promise<Compos
 /** Unterhalb davon ist kein Trick zu sehen, den ein Edit zeigen könnte. */
 const STUNT_SCORE_THRESHOLD = 0.25;
 
+/**
+ * Wie schwer die von Hand gezogene Reihenfolge wiegt.
+ *
+ * Die Krassheits-Bewertung läuft von 0 bis 1. Der Bonus verschiebt sie um
+ * höchstens ±0,15 - genug, damit ein Liebling einen ähnlich bewerteten Clip
+ * überholt, zu wenig, um einen wirklich herausragenden Trick zu verdrängen.
+ * Ausdrücklich so gewollt: die Reihenfolge ist ein Hinweis, keine Anweisung.
+ */
+const RANG_BONUS = 0.3;
+
+/**
+ * Die Gunst je Clip: 1 ganz oben im Ordner, 0 ganz unten, 0,5 unsortiert.
+ *
+ * Innerhalb des Ordners sortiert, aber ordnerübergreifend vergleichbar
+ * gemacht: ein Ordner mit 40 Clips und einer mit 5 sollen gleich stark
+ * mitreden. Ein Ordner, in dem noch niemand etwas gezogen hat, bleibt mit 0,5
+ * neutral - sonst würde er allein dadurch benachteiligt, dass er unangetastet
+ * ist.
+ */
+async function rangGunst(track: Track): Promise<Map<string, number>> {
+  const clips = await prisma.clip.findMany({
+    where: { track, manualRank: { not: null } },
+    select: { id: true, rootFolderId: true, manualRank: true },
+  });
+
+  const proOrdner = new Map<string, typeof clips>();
+  for (const c of clips) {
+    const schluessel = c.rootFolderId ?? "";
+    const liste = proOrdner.get(schluessel) ?? [];
+    liste.push(c);
+    proOrdner.set(schluessel, liste);
+  }
+
+  const gunst = new Map<string, number>();
+  for (const liste of proOrdner.values()) {
+    // Nach dem gespeicherten Rang, nicht nach der Abfragereihenfolge - Lücken
+    // in der Nummerierung (ein gelöschter Clip) sollen nichts verschieben.
+    const sortiert = [...liste].sort((a, b) => (a.manualRank ?? 0) - (b.manualRank ?? 0));
+    const letzter = Math.max(1, sortiert.length - 1);
+    sortiert.forEach((c, i) => gunst.set(c.id, 1 - i / letzter));
+  }
+
+  return gunst;
+}
+
+/** Krassheit plus Gunst - die Zahl, nach der der Kandidatenkreis entsteht. */
+function effektiveBewertung(
+  clip: { id: string; stuntScore: number | null },
+  gunst: Map<string, number>,
+): number {
+  return (clip.stuntScore ?? 0) + RANG_BONUS * ((gunst.get(clip.id) ?? 0.5) - 0.5);
+}
+
+/**
+ * Der Kandidatenkreis für einen viralen Edit, in der Reihenfolge, in der er
+ * entsteht.
+ *
+ * Hier zählt die Bewertung, nicht die Rotation. In der Promo-Sparte ist es
+ * andersherum: dort werden die am längsten nicht verwendeten Clips bevorzugt,
+ * damit die täglichen Videos sich abwechseln. Ein viraler Edit hat aber genau
+ * eine Aufgabe - beeindrucken -, und ein mittelmässiger Trick nur deshalb,
+ * weil er lange nicht dran war, macht das Video schwächer. Die Rotation
+ * entscheidet deshalb nur noch zwischen gleich bewerteten Clips.
+ *
+ * Als eigene Funktion, weil sich hier alles entscheidet, was die Ordner und
+ * die Rangfolge von Hand bewirken - und weil sich das ohne Gemini prüfen lässt.
+ */
+export async function viraleKandidaten(
+  wantedCount: number,
+  ausgeschlossen: string[],
+) {
+  const verwendbar = await usableFolderIds("viral");
+  const gunst = await rangGunst("viral");
+
+  const grundfilter = {
+    track: "viral",
+    analysisVersion: CURRENT_ANALYSIS_VERSION,
+    stuntScore: { gte: STUNT_SCORE_THRESHOLD },
+    // Von Hand stillgelegte Clips und Ordner kommen in keinem Video vor.
+    disabled: false,
+    ...(verwendbar ? { rootFolderId: { in: verwendbar } } : {}),
+  } as const;
+
+  // Die Datenbank holt weiter als der Kandidatenkreis am Ende breit ist: die
+  // Rangfolge von Hand verschiebt die Reihenfolge noch, und würde schon hier
+  // auf die Wunschanzahl gekürzt, käme ein hochgezogener Clip nie hinein.
+  //
+  // Der Kreis selbst bleibt bewusst eng (die Gewünschten plus ein paar
+  // Ersatzleute): bei einem grossen Kreis könnte die Auswahl einen der
+  // stärksten Tricks zugunsten von Abwechslung übergehen.
+  const kreisGroesse = wantedCount + VIRAL_POOL_SPARE;
+
+  const roh = await prisma.clip.findMany({
+    where: ausgeschlossen.length ? { ...grundfilter, id: { notIn: ausgeschlossen } } : grundfilter,
+    orderBy: [
+      { stuntScore: "desc" },
+      { lastUsedAt: { sort: "asc", nulls: "first" } },
+    ],
+    take: kreisGroesse * 3,
+  });
+
+  return [...roh]
+    .sort((a, b) => effektiveBewertung(b, gunst) - effektiveBewertung(a, gunst))
+    .slice(0, kreisGroesse);
+}
+
 /** Nach dem Vorbild der Referenz: rund eine Sekunde je Einstellung. */
 const VIRAL_TARGET_SECONDS_PER_SCENE = 1.0;
 
@@ -687,10 +860,13 @@ async function waehleAufbauSzene(
 ): Promise<ComposedScene | null> {
   // Bewusst ohne Mindestbewertung: der Aufbau darf ausdrücklich ein ruhiger
   // Clip sein, und genau die sind sonst aussortiert.
+  const verwendbar = await usableFolderIds("viral");
   const kandidaten = await prisma.clip.findMany({
     where: {
       track: "viral",
       analysisVersion: CURRENT_ANALYSIS_VERSION,
+      disabled: false,
+      ...(verwendbar ? { rootFolderId: { in: verwendbar } } : {}),
       ...(ausgeschlossen.length ? { id: { notIn: ausgeschlossen } } : {}),
     },
     orderBy: { lastUsedAt: { sort: "asc", nulls: "first" } },
@@ -698,12 +874,14 @@ async function waehleAufbauSzene(
   });
   if (!kandidaten.length) return null;
 
+  const beschreibungen = await folderDescriptions("viral");
   const gewaehlt = await selectSetupClip(
     kandidaten.map((c) => ({
       id: c.id,
       description: c.description ?? "",
       stuntScore: c.stuntScore ?? 0,
       seconds: (c.durationMs ?? 0) / 1000,
+      folderContext: c.rootFolderId ? beschreibungen.get(c.rootFolderId) : undefined,
     })),
     phase.sceneHint,
     phase.text,
@@ -773,21 +951,7 @@ export async function composeViralVideo(options: ViralComposeOptions): Promise<C
     ...(options.excludeClipIds ?? []),
     ...(aufbau ? [aufbau.clipId] : []),
   ];
-  const grundfilter = {
-    track: "viral",
-    analysisVersion: CURRENT_ANALYSIS_VERSION,
-    stuntScore: { gte: STUNT_SCORE_THRESHOLD },
-  } as const;
-  const sortierung = [
-    { stuntScore: "desc" as const },
-    { lastUsedAt: { sort: "asc" as const, nulls: "first" as const } },
-  ];
-
-  let candidates = await prisma.clip.findMany({
-    where: ausgeschlossen.length ? { ...grundfilter, id: { notIn: ausgeschlossen } } : grundfilter,
-    orderBy: sortierung,
-    take: wantedCount + VIRAL_POOL_SPARE,
-  });
+  let candidates = await viraleKandidaten(wantedCount, ausgeschlossen);
 
   // Reichen die übrigen Clips nicht für ein Video, ist ein zweites Video mit
   // wiederverwendeten Clips immer noch besser als gar keines - aber es soll im
@@ -797,11 +961,7 @@ export async function composeViralVideo(options: ViralComposeOptions): Promise<C
       `Zu wenige unverbrauchte Höhepunkte (${candidates.length}) - für dieses Video werden Clips erneut verwendet.`,
       { level: "error", track: "viral" },
     );
-    candidates = await prisma.clip.findMany({
-      where: grundfilter,
-      orderBy: sortierung,
-      take: wantedCount + VIRAL_POOL_SPARE,
-    });
+    candidates = await viraleKandidaten(wantedCount, []);
   }
 
   if (candidates.length < 3) {
@@ -810,11 +970,13 @@ export async function composeViralVideo(options: ViralComposeOptions): Promise<C
     );
   }
 
+  const beschreibungen = await folderDescriptions("viral");
   const payload: ViralCandidate[] = candidates.map((c) => ({
     id: c.id,
     description: c.description ?? "",
     stuntScore: c.stuntScore ?? 0,
     trickMs: (c.highlightEndMs ?? 0) - (c.highlightStartMs ?? 0),
+    folderContext: c.rootFolderId ? beschreibungen.get(c.rootFolderId) : undefined,
   }));
 
   const orderedIds = await selectViralScenes(payload, Math.min(wantedCount, candidates.length));

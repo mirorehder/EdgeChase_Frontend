@@ -61,6 +61,18 @@ export interface DriveClipFile {
    *  ("Parkour-Bangers" vs. "Trainings-Clips") und geht in die Auswahl ein. */
   folderId: string;
   folderName: string;
+  /** Der im Dashboard verwaltete Wurzelordner, unter dem die Datei gefunden
+   *  wurde. Danach gruppiert die Bibliothek - der unmittelbare Ordner darüber
+   *  kann ein Unterordner sein, der im Dashboard gar nicht auftaucht. */
+  rootFolderId: string;
+  rootFolderName: string;
+}
+
+/** Ein Quellordner, so wie ihn der Abgleich braucht. */
+export interface SourceRoot {
+  driveFolderId: string;
+  /** Leer heisst: Namen aus Drive holen. */
+  name?: string;
 }
 
 /** Schutz gegen Endlosschleifen durch Verknüpfungen und gegen versehentlich
@@ -108,80 +120,139 @@ async function listFolderEntries(
 }
 
 /**
- * Listet alle Video-Dateien unterhalb des Quellordners - rekursiv über alle
+ * Das Vorschaubild einer Datei, wie Drive es selbst erzeugt.
+ *
+ * Der Umweg über den Server ist nötig: Drive liefert zwar zu jedem Video einen
+ * thumbnailLink, aber der ist ohne Zugangstoken nicht abrufbar. Ein
+ * <img src="..."> direkt auf diese Adresse bekäme im Browser eine 403 - das
+ * Bild muss hier mit den Rechten des Dienstkontos geholt und weitergereicht
+ * werden.
+ *
+ * Null, wenn Drive für die Datei kein Vorschaubild hat: bei frisch
+ * hochgeladenen Videos dauert das eine Weile.
+ */
+export async function fileThumbnail(
+  fileId: string,
+): Promise<{ body: ArrayBuffer; contentType: string } | null> {
+  const drive = getDriveClient();
+
+  const meta = await drive.files.get({ fileId, fields: "thumbnailLink" });
+  const link = meta.data.thumbnailLink;
+  if (!link) return null;
+
+  // Drive liefert standardmässig ein sehr kleines Bild. Die Grösse steckt als
+  // "=s220" am Ende der Adresse und lässt sich hochsetzen.
+  const grosse = link.replace(/=s\d+(-c)?$/, "=s480");
+
+  const token = await getAuth().getAccessToken();
+  const res = await fetch(grosse, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) return null;
+
+  return {
+    body: await res.arrayBuffer(),
+    contentType: res.headers.get("content-type") ?? "image/jpeg",
+  };
+}
+
+/** Der Name eines Ordners in Drive. Leer, wenn er sich nicht lesen lässt. */
+export async function folderName(folderId: string): Promise<string> {
+  try {
+    const meta = await getDriveClient().files.get({ fileId: folderId, fields: "name" });
+    return meta.data.name ?? "";
+  } catch {
+    // Ein unlesbarer Ordner - falsche ID, fehlende Freigabe - darf den
+    // Abgleich nicht zu Fall bringen.
+    return "";
+  }
+}
+
+/**
+ * Listet alle Video-Dateien unterhalb der Quellordner - rekursiv über alle
  * Unterordner, damit das gesamte Material zur Verfügung steht und die Auswahl
  * anhand des Ordnernamens den passenden Kontext wählen kann.
  *
- * Der Zielordner wird dabei übersprungen: er liegt selbst unterhalb des
- * Quellbaums, und die dort abgelegten fertigen Videos dürfen nicht als
- * Rohmaterial für das nächste Video wieder eingelesen werden.
+ * Mehrere Wurzelordner statt einem: die Parkour-Sparte verteilt sich auf
+ * mehrere Ordner in Drive, und welche davon mitlaufen, steht im Dashboard.
+ * Ohne Angabe gilt der Ordner aus der Umgebung - so bleibt die Promo-Sparte,
+ * wie sie war.
+ *
+ * Die Zielordner werden dabei übersprungen: sie könnten von Hand in den
+ * Quellbaum verschoben werden, und die dort abgelegten fertigen Videos dürfen
+ * nicht als Rohmaterial für das nächste Video wieder eingelesen werden.
  */
-export async function listSourceClips(track: Track = "promo"): Promise<DriveClipFile[]> {
+export async function listSourceClips(
+  track: Track = "promo",
+  roots?: SourceRoot[],
+): Promise<DriveClipFile[]> {
   const drive = getDriveClient();
   const excluded = excludedFolderNames();
 
-  // Die Wurzelordner der beiden Sparten liegen heute nebeneinander, keiner
-  // unter dem anderen. Sollte das jemand in Drive umhängen, dürfen die Sparten
-  // trotzdem nicht ineinanderlaufen - deshalb wird der jeweils andere
-  // Wurzelordner beim Absteigen ausgelassen.
-  const otherRootId = sourceFolderId(track === "viral" ? "promo" : "viral");
-  // Der Zielordner liegt zwar ausserhalb des Quellbaums (die Anwendung legt
-  // ihn selbst an), könnte aber von Hand dorthin verschoben werden. Wird er
-  // über den Namen ausgeschlossen, kämen fertige Videos nicht als Rohmaterial
-  // für das nächste Video zurück.
+  const wurzeln: SourceRoot[] = roots?.length
+    ? roots
+    : [{ driveFolderId: sourceFolderId(track) }];
+
+  // Beim Absteigen wird jeder andere Wurzelordner ausgelassen: der der anderen
+  // Sparte, damit Werbe- und Parkour-Material nie ineinanderlaufen, und die
+  // übrigen Ordner dieser Sparte, damit ein Clip nicht doppelt auftaucht, wenn
+  // jemand die Ordner in Drive ineinanderschiebt.
+  const andereWurzeln = new Set<string>([sourceFolderId(track === "viral" ? "promo" : "viral")]);
+  for (const w of wurzeln) andereWurzeln.add(w.driveFolderId);
+
   const outputFolderNames = new Set(
     [env.driveOutputFolderName, env.driveViralOutputFolderName].map((n) => n.toLowerCase()),
   );
 
-  // Den echten Namen des Wurzelordners holen. Clips, die direkt darin liegen,
-  // stünden sonst in der Bibliothek unter "(Quellordner)" - der Ordnername ist
-  // aber genau das Themensignal, das die Auswahl und die Übersicht brauchen.
-  const rootId = sourceFolderId(track);
-  let rootName = "(Quellordner)";
-  try {
-    const meta = await drive.files.get({ fileId: rootId, fields: "name" });
-    if (meta.data.name) rootName = meta.data.name;
-  } catch {
-    // Kommt der Name nicht, bleibt der Platzhalter - dafür soll der Abgleich
-    // nicht scheitern.
-  }
-
   const files: DriveClipFile[] = [];
+  // Über alle Wurzeln hinweg: ein Ordner, der unter zwei Wurzeln hängt, wird
+  // nur einmal eingelesen.
   const visited = new Set<string>();
-  const queue: Array<{ id: string; name: string; depth: number }> = [
-    { id: rootId, name: rootName, depth: 0 },
-  ];
 
-  while (queue.length) {
-    const folder = queue.shift()!;
-    if (visited.has(folder.id)) continue;
-    visited.add(folder.id);
+  for (const wurzel of wurzeln) {
+    // Den echten Namen holen, falls das Dashboard noch keinen hat. Clips, die
+    // direkt in der Wurzel liegen, stünden sonst unter "(Quellordner)" - der
+    // Ordnername ist aber genau das Themensignal, das die Auswahl braucht.
+    const rootName =
+      wurzel.name || (await folderName(wurzel.driveFolderId)) || "(Quellordner)";
 
-    const { videos, subfolders } = await listFolderEntries(drive, folder.id);
+    const queue: Array<{ id: string; name: string; depth: number }> = [
+      { id: wurzel.driveFolderId, name: rootName, depth: 0 },
+    ];
 
-    for (const f of videos) {
-      if (f.name!.startsWith(APPLE_DOUBLE_PREFIX)) continue;
-      if (f.size && Number(f.size) < MIN_VIDEO_BYTES) continue;
-      files.push({
-        id: f.id!,
-        name: f.name!,
-        mimeType: f.mimeType!,
-        sizeBytes: f.size ? Number(f.size) : null,
-        createdTime: f.createdTime ?? null,
-        durationMs: f.videoMediaMetadata?.durationMillis
-          ? Number(f.videoMediaMetadata.durationMillis)
-          : null,
-        folderId: folder.id,
-        folderName: folder.name,
-      });
-    }
+    while (queue.length) {
+      const folder = queue.shift()!;
+      if (visited.has(folder.id)) continue;
+      visited.add(folder.id);
 
-    if (folder.depth >= MAX_FOLDER_DEPTH) continue;
-    for (const sub of subfolders) {
-      if (sub.id === otherRootId) continue;
-      if (outputFolderNames.has(sub.name!.toLowerCase())) continue;
-      if (excluded.has(sub.name!.toLowerCase())) continue;
-      queue.push({ id: sub.id!, name: sub.name!, depth: folder.depth + 1 });
+      const { videos, subfolders } = await listFolderEntries(drive, folder.id);
+
+      for (const f of videos) {
+        if (f.name!.startsWith(APPLE_DOUBLE_PREFIX)) continue;
+        if (f.size && Number(f.size) < MIN_VIDEO_BYTES) continue;
+        files.push({
+          id: f.id!,
+          name: f.name!,
+          mimeType: f.mimeType!,
+          sizeBytes: f.size ? Number(f.size) : null,
+          createdTime: f.createdTime ?? null,
+          durationMs: f.videoMediaMetadata?.durationMillis
+            ? Number(f.videoMediaMetadata.durationMillis)
+            : null,
+          folderId: folder.id,
+          folderName: folder.name,
+          rootFolderId: wurzel.driveFolderId,
+          rootFolderName: rootName,
+        });
+      }
+
+      if (folder.depth >= MAX_FOLDER_DEPTH) continue;
+      for (const sub of subfolders) {
+        if (andereWurzeln.has(sub.id!)) continue;
+        if (outputFolderNames.has(sub.name!.toLowerCase())) continue;
+        if (excluded.has(sub.name!.toLowerCase())) continue;
+        queue.push({ id: sub.id!, name: sub.name!, depth: folder.depth + 1 });
+      }
     }
   }
 

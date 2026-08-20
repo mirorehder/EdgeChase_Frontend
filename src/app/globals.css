@@ -460,7 +460,8 @@ tr:last-child td {
   gap: 12px;
 }
 
-.clip-editor label {
+.clip-editor label,
+.ordner-beschreibung label {
   display: grid;
   gap: 5px;
   font-size: 12px;
@@ -468,7 +469,8 @@ tr:last-child td {
 }
 
 .clip-editor textarea,
-.clip-editor input {
+.clip-editor input,
+.ordner-beschreibung textarea {
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -480,7 +482,8 @@ tr:last-child td {
 }
 
 .clip-editor textarea:focus,
-.clip-editor input:focus {
+.clip-editor input:focus,
+.ordner-beschreibung textarea:focus {
   outline: none;
   border-color: var(--accent);
 }
@@ -801,4 +804,128 @@ tr:last-child td {
     width: 100%;
     padding-left: 22px;
   }
+}
+
+/* --- Quellordner und Clips darunter ------------------------------------ */
+
+.ordner-liste {
+  display: grid;
+  gap: 14px;
+}
+
+.ordner {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.ordner-kopf {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid var(--border);
+}
+
+.ordner-titel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ordner-zahl {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.ordner-schalter {
+  display: flex;
+  gap: 14px;
+}
+
+.ordner-schalter label,
+.clip-schalter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ordner-beschreibung {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.ordner-beschreibung .chat-hint {
+  margin: 4px 0 0;
+}
+
+/* Die Ordnerkarte bringt ihren eigenen Rahmen mit - der der Liste darin
+   waere ein zweiter, doppelt gezeichneter. */
+.ordner .clips {
+  border: none;
+  border-radius: 0;
+}
+
+.clip-zeile {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding-right: 12px;
+}
+
+.clip-griff {
+  padding: 12px 0 12px 12px;
+  color: var(--muted);
+  font-size: 14px;
+  cursor: grab;
+  user-select: none;
+}
+
+.clip-bild {
+  width: 64px;
+  height: 64px;
+  object-fit: cover;
+  border-radius: 6px;
+  margin-top: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  flex-shrink: 0;
+}
+
+.clip-zeile .clip-row {
+  flex: 1;
+  min-width: 0;
+  /* Der Griff bringt seinen eigenen linken Abstand mit. */
+  padding-left: 0;
+}
+
+/* Stillgelegt: sichtbar, aber erkennbar aus dem Spiel. */
+.clip.still .clip-bild,
+.clip.still .clip-row {
+  opacity: 0.45;
+}
+
+/* Zielmarke beim Ziehen. */
+.clip.ziel {
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+
+.clip-schalter {
+  padding-top: 14px;
 }
