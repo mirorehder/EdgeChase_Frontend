@@ -37,7 +37,7 @@ async function main() {
   if (!process.argv.includes("--drive")) return;
 
   console.log("\n--- Echter Upload in den Zielordner ---");
-  const ordner = viralOutputFolderId();
+  const ordner = viralOutputFolderId("viral");
   const name = hookTextToFileName(BEISPIELE[0]);
   const gestartet = new Date();
 

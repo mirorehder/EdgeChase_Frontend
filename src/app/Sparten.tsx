@@ -1,44 +1,42 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { TRACK_TITLE, type Track } from "@/lib/trackClient";
+import { TRACK_LISTE, type Track } from "@/lib/trackClient";
 
 /**
- * Umschalter zwischen den beiden Sparten.
+ * Umschalter zwischen den Sparten.
  *
- * Es wird immer nur eine Sparte gezeigt, nie beide untereinander: die beiden
- * erzeugen verschiedene Videos aus verschiedenen Ordnern, und beim
- * Nebeneinander wäre nach zwei Bildschirmhöhen nicht mehr klar, welcher Knopf
- * wozu gehört. Die inaktive Sparte wird gar nicht erst eingehängt, damit ihre
- * Abfragen im Hintergrund nicht mitlaufen.
+ * Es wird immer nur eine gezeigt, nie mehrere untereinander: sie erzeugen
+ * verschiedene Videos aus verschiedenen Ordnern, und beim Nebeneinander wäre
+ * nach zwei Bildschirmhöhen nicht mehr klar, welcher Knopf wozu gehört. Die
+ * inaktiven Sparten werden gar nicht erst eingehängt, damit ihre Abfragen im
+ * Hintergrund nicht mitlaufen.
  */
-export function Sparten({ promo, viral }: { promo: ReactNode; viral: ReactNode }) {
+export function Sparten({ inhalte }: { inhalte: Record<Track, ReactNode> }) {
   const [aktiv, setAktiv] = useState<Track>("promo");
 
   return (
     <>
       <nav className="sparten" role="tablist">
-        {(["promo", "viral"] as Track[]).map((track) => (
+        {TRACK_LISTE.map((sparte) => (
           <button
-            key={track}
+            key={sparte.key}
             role="tab"
-            aria-selected={aktiv === track}
-            className={aktiv === track ? `sparte sparte-${track} aktiv` : `sparte sparte-${track}`}
-            onClick={() => setAktiv(track)}
+            aria-selected={aktiv === sparte.key}
+            className={
+              aktiv === sparte.key
+                ? `sparte sparte-${sparte.key} aktiv`
+                : `sparte sparte-${sparte.key}`
+            }
+            onClick={() => setAktiv(sparte.key)}
           >
-            <span className="sparte-titel">{TRACK_TITLE[track]}</span>
-            <span className="sparte-unter">
-              {track === "promo"
-                ? "Werbevideos aus dem Shooting-Material"
-                : "Parkour-Höhepunkte nach Konzept"}
-            </span>
+            <span className="sparte-titel">{sparte.label}</span>
+            <span className="sparte-unter">{sparte.untertitel}</span>
           </button>
         ))}
       </nav>
 
-      <div className={`sparte-inhalt sparte-inhalt-${aktiv}`}>
-        {aktiv === "promo" ? promo : viral}
-      </div>
+      <div className={`sparte-inhalt sparte-inhalt-${aktiv}`}>{inhalte[aktiv]}</div>
     </>
   );
 }

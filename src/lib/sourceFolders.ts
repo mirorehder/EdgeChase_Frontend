@@ -107,6 +107,83 @@ export async function folderDescriptions(track: Track): Promise<Map<string, stri
   return new Map(folders.filter((f) => f.description).map((f) => [f.driveFolderId, f.description]));
 }
 
+/**
+ * Zieht die Ordner-ID aus dem, was jemand einfügt.
+ *
+ * Erlaubt ist die Adresse aus der Adresszeile ebenso wie die nackte ID - beim
+ * Kopieren aus Drive kommt mal das eine, mal das andere heraus, und beides zu
+ * akzeptieren ist billiger, als es dem Nutzer zu erklären.
+ */
+export function ordnerIdAus(eingabe: string): string | null {
+  const text = eingabe.trim();
+  if (!text) return null;
+
+  const ausAdresse = /\/folders\/([A-Za-z0-9_-]+)/.exec(text);
+  if (ausAdresse) return ausAdresse[1];
+
+  // Eine nackte ID: Drive-IDs sind lang und bestehen nur aus diesen Zeichen.
+  if (/^[A-Za-z0-9_-]{15,}$/.test(text)) return text;
+
+  return null;
+}
+
+/**
+ * Nimmt einen weiteren Quellordner in die Sparte auf.
+ *
+ * Der Name kommt aus Drive. Kommt er nicht, wird der Ordner trotzdem
+ * angelegt - er ist dann im Dashboard ohne Namen sichtbar, und das ist der
+ * richtige Hinweis darauf, dass die Freigabe für das Dienstkonto fehlt.
+ */
+export async function addFolder(
+  track: Track,
+  eingabe: string,
+): Promise<{ id: string; name: string }> {
+  const driveFolderId = ordnerIdAus(eingabe);
+  if (!driveFolderId) {
+    throw new Error("Das sieht nicht nach einem Drive-Ordner aus. Adresse oder Ordner-ID einfügen.");
+  }
+
+  const schonDa = await prisma.sourceFolder.findUnique({ where: { driveFolderId } });
+  if (schonDa) {
+    throw new Error(
+      schonDa.track === track
+        ? "Dieser Ordner ist in dieser Sparte schon eingetragen."
+        : `Dieser Ordner gehört bereits zur Sparte "${schonDa.track}".`,
+    );
+  }
+
+  const letzter = await prisma.sourceFolder.findFirst({
+    where: { track },
+    orderBy: { sortIndex: "desc" },
+    select: { sortIndex: true },
+  });
+
+  const name = await folderName(driveFolderId).catch(() => "");
+
+  const angelegt = await prisma.sourceFolder.create({
+    data: {
+      driveFolderId,
+      track,
+      name,
+      sortIndex: (letzter?.sortIndex ?? -1) + 1,
+    },
+  });
+
+  return { id: angelegt.id, name: angelegt.name };
+}
+
+/**
+ * Nimmt einen Ordner wieder aus der Sparte.
+ *
+ * Die bereits eingelesenen Clips bleiben stehen. Sie mitzulöschen wäre eine
+ * stille Nebenwirkung, die eine Fehlbedienung teuer macht - die Auswertung
+ * jedes Clips hat Gemini-Zeit gekostet. In der Bibliothek stehen sie danach
+ * unter "Ohne Ordner" und lassen sich dort einzeln entfernen.
+ */
+export async function removeFolder(id: string): Promise<void> {
+  await prisma.sourceFolder.delete({ where: { id } });
+}
+
 export async function saveFolder(
   id: string,
   patch: { description?: string; autoAnalyze?: boolean; useInVideos?: boolean },

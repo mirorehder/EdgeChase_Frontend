@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { trackFromRequest } from "@/lib/trackParam";
+import { bewertungsart } from "@/lib/trackClient";
 import { prisma } from "@/lib/db";
 import { interpretChatRequest, type ChatTurn } from "@/lib/gemini";
 import { createJobFromSpec, CURRENT_ANALYSIS_VERSION } from "@/lib/pipeline";
@@ -9,18 +11,28 @@ export const maxDuration = 120;
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
+  const track = trackFromRequest(request);
+
   try {
     const { turns } = (await request.json()) as { turns: ChatTurn[] };
     if (!turns?.length) {
       return NextResponse.json({ error: "Keine Anweisung erhalten." }, { status: 400 });
     }
 
+    // Der Dialog gibt es nur in den Sparten, die nach der Kleidung auswählen:
+    // er arbeitet mit der Kleidungsbewertung, und die Reels-Clips haben statt
+    // dessen eine Trick-Bewertung.
+    if (bewertungsart(track) !== "kleidung") {
+      return NextResponse.json(
+        { error: "In dieser Sparte entstehen Videos nach Konzept, nicht im Dialog." },
+        { status: 400 },
+      );
+    }
+
     const [clips, recentVideos] = await Promise.all([
-      // Der Dialog gehört zur Promo-Sparte: die Parkour-Clips haben weder
-      // eine Kleidungsbewertung noch etwas mit der Rabattcode-Aktion zu tun.
       prisma.clip.findMany({
         where: {
-          track: "promo",
+          track,
           analysisVersion: CURRENT_ANALYSIS_VERSION,
           apparelScore: { gte: 0.5 },
         },
@@ -28,7 +40,7 @@ export async function POST(request: NextRequest) {
         take: 40,
       }),
       prisma.promoVideo.findMany({
-        where: { track: "promo" },
+        where: { track },
         orderBy: { createdAt: "desc" },
         take: 10,
         select: { hookText: true },
@@ -59,7 +71,7 @@ export async function POST(request: NextRequest) {
     }
 
     const lastUserTurn = [...turns].reverse().find((t) => t.role === "user");
-    const jobId = await createJobFromSpec(result.spec, lastUserTurn?.content ?? "");
+    const jobId = await createJobFromSpec(track, result.spec, lastUserTurn?.content ?? "");
 
     return NextResponse.json({
       status: "ready",

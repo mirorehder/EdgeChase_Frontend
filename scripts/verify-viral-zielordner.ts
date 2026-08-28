@@ -55,7 +55,7 @@ async function main() {
   const jobId = await createViralJobFromConcept(konzept.id);
   const job = await prisma.promoVideo.findUniqueOrThrow({ where: { id: jobId } });
 
-  const soll = viralOutputFolderId();
+  const soll = viralOutputFolderId("viral");
   const ok = job.driveFolderId === soll;
 
   console.log(`Herkunft:   ${job.origin}`);

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { Track } from "@/lib/trackClient";
+import { bewertungsart, type Track } from "@/lib/trackClient";
 
 interface Clip {
   id: string;
@@ -55,9 +55,15 @@ function seconds(ms: number | null): string {
   return ms === null ? "?" : (ms / 1000).toFixed(1);
 }
 
-/** Welche Felder eines Clips die Sparte bearbeitet. */
+/**
+ * Welche Felder eines Clips die Sparte bearbeitet.
+ *
+ * Nicht an der Sparte selbst festgemacht, sondern an ihrer Bewertungsart: die
+ * Reels-Sparten arbeiten mit dem Trickfenster, die Kleidungs-Sparten mit dem
+ * besten Ausschnitt.
+ */
 function felder(clip: Clip, track: Track) {
-  return track === "viral"
+  return bewertungsart(track) === "krassheit"
     ? { score: clip.stuntScore, startMs: clip.highlightStartMs, endMs: clip.highlightEndMs }
     : { score: clip.apparelScore, startMs: clip.startMs, endMs: clip.endMs };
 }
@@ -99,6 +105,7 @@ export function ClipLibrary({ track }: { track: Track }) {
   // öffnet, will meistens die Clips sehen.
   const [zu, setZu] = useState<Set<string>>(new Set());
   const [beschreibungen, setBeschreibungen] = useState<Record<string, string>>({});
+  const [neuerOrdner, setNeuerOrdner] = useState("");
 
   // Der Clip, der gerade am Finger hängt.
   //
@@ -239,9 +246,9 @@ export function ClipLibrary({ track }: { track: Track }) {
       await load();
       setDraft({
         description: data.description,
-        score: (track === "viral" ? (data.stuntScore ?? 0) : data.apparelScore).toFixed(2),
-        startMs: String(track === "viral" ? (data.highlightStartMs ?? 0) : data.startMs),
-        endMs: String(track === "viral" ? (data.highlightEndMs ?? 0) : data.endMs),
+        score: (bewertungsart(track) === "krassheit" ? (data.stuntScore ?? 0) : data.apparelScore).toFixed(2),
+        startMs: String(bewertungsart(track) === "krassheit" ? (data.highlightStartMs ?? 0) : data.startMs),
+        endMs: String(bewertungsart(track) === "krassheit" ? (data.highlightEndMs ?? 0) : data.endMs),
       });
     } catch (err) {
       setNote(err instanceof Error ? err.message : String(err));
@@ -281,6 +288,53 @@ export function ClipLibrary({ track }: { track: Track }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       setFolders(data.folders);
+    } catch (err) {
+      setNote(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function ordnerHinzufuegen() {
+    const eingabe = neuerOrdner.trim();
+    if (!eingabe) return;
+
+    setBusy("neuer-ordner");
+    setNote(null);
+    try {
+      const res = await fetch(`/api/folders?track=${track}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ eingabe }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setFolders(data.folders);
+      setNeuerOrdner("");
+      setNote(
+        data.angelegt.name
+          ? `Ordner "${data.angelegt.name}" aufgenommen. Jetzt einen Abgleich auslösen.`
+          : "Ordner aufgenommen - sein Name kam nicht aus Drive. Meistens fehlt die " +
+            "Freigabe für die Dienstkonto-Adresse.",
+      );
+    } catch (err) {
+      setNote(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function ordnerEntfernen(folder: Folder) {
+    setBusy(folder.id);
+    setNote(null);
+    try {
+      const res = await fetch(`/api/folders?track=${track}&id=${folder.id}`, {
+        method: "DELETE",
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setFolders(data.folders);
+      await load();
     } catch (err) {
       setNote(err instanceof Error ? err.message : String(err));
     } finally {
@@ -375,7 +429,7 @@ export function ClipLibrary({ track }: { track: Track }) {
   return (
     <section className="library">
       <div className="live-head">
-        <h2>{track === "viral" ? "Parkour-Clips" : "Clip-Bibliothek"}</h2>
+        <h2>{bewertungsart(track) === "krassheit" ? "Clips für Reels" : "Clip-Bibliothek"}</h2>
         <input
           className="search"
           value={query}
@@ -445,6 +499,14 @@ export function ClipLibrary({ track }: { track: Track }) {
                         />
                         verwenden
                       </label>
+                      <button
+                        className="ordner-weg"
+                        title="Ordner aus dieser Sparte nehmen - die Clips bleiben"
+                        disabled={busy === folder.id}
+                        onClick={() => ordnerEntfernen(folder)}
+                      >
+                        entfernen
+                      </button>
                     </div>
                   </div>
                 ) : (
@@ -560,7 +622,7 @@ export function ClipLibrary({ track }: { track: Track }) {
                               )}
                               <span className="clip-meta">
                                 {clip.sourceFolderName ?? "—"} ·{" "}
-                                {track === "viral" ? (
+                                {bewertungsart(track) === "krassheit" ? (
                                   <>
                                     Stunt{" "}
                                     {clip.stuntScore === null ? "—" : clip.stuntScore.toFixed(2)} ·
@@ -606,14 +668,14 @@ export function ClipLibrary({ track }: { track: Track }) {
 
                               <div className="field-row">
                                 <label>
-                                  {track === "viral" ? "Stunt (0–1)" : "Kleidung (0–1)"}
+                                  {bewertungsart(track) === "krassheit" ? "Stunt (0–1)" : "Kleidung (0–1)"}
                                   <input
                                     value={draft.score}
                                     onChange={(e) => setDraft({ ...draft, score: e.target.value })}
                                   />
                                 </label>
                                 <label>
-                                  {track === "viral" ? "Absprung (ms)" : "Ausschnitt ab (ms)"}
+                                  {bewertungsart(track) === "krassheit" ? "Absprung (ms)" : "Ausschnitt ab (ms)"}
                                   <input
                                     value={draft.startMs}
                                     onChange={(e) =>
@@ -622,7 +684,7 @@ export function ClipLibrary({ track }: { track: Track }) {
                                   />
                                 </label>
                                 <label>
-                                  {track === "viral" ? "Landung (ms)" : "Ausschnitt bis (ms)"}
+                                  {bewertungsart(track) === "krassheit" ? "Landung (ms)" : "Ausschnitt bis (ms)"}
                                   <input
                                     value={draft.endMs}
                                     onChange={(e) => setDraft({ ...draft, endMs: e.target.value })}
@@ -631,7 +693,7 @@ export function ClipLibrary({ track }: { track: Track }) {
                               </div>
 
                               <p className="chat-hint">
-                                {track === "viral" &&
+                                {bewertungsart(track) === "krassheit" &&
                                   "Absprung und Landung bestimmen den Schnitt: das fertige Video zeigt genau dieses Fenster, mit etwas Vorlauf und Nachlauf. "}
                                 Clip ist {seconds(clip.durationMs)}s lang.
                                 {clip.lastUsedAt
@@ -675,6 +737,29 @@ export function ClipLibrary({ track }: { track: Track }) {
           })}
         </div>
       )}
+
+      {/* Ordner aufnehmen. Steht auch dann da, wenn die Sparte noch gar keinen
+          hat - sonst gäbe es für eine neue Sparte keinen Weg hinein. */}
+      {!loading && (
+        <div className="ordner-neu">
+          <input
+            className="search"
+            value={neuerOrdner}
+            placeholder="Drive-Adresse oder Ordner-ID einfügen …"
+            onChange={(e) => setNeuerOrdner(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && ordnerHinzufuegen()}
+          />
+          <button
+            className="secondary"
+            onClick={ordnerHinzufuegen}
+            disabled={busy === "neuer-ordner" || !neuerOrdner.trim()}
+          >
+            {busy === "neuer-ordner" ? "Wird geprüft …" : "Ordner aufnehmen"}
+          </button>
+        </div>
+      )}
+
+      {note && !openId && <p className="action-message">{note}</p>}
 
       {folders.length > 0 && (
         <p className="chat-hint">

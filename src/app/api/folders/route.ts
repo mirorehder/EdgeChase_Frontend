@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { fillMissingFolderNames, listFolders, saveFolder } from "@/lib/sourceFolders";
+import {
+  addFolder,
+  fillMissingFolderNames,
+  listFolders,
+  removeFolder,
+  saveFolder,
+} from "@/lib/sourceFolders";
 import { trackFromRequest } from "@/lib/trackParam";
 import { istBerechtigt } from "@/lib/ingestAuth";
 
@@ -20,6 +26,47 @@ export async function GET(request: NextRequest) {
       // trotzdem stehen.
     });
 
+    return NextResponse.json({ folders: await listFolders(track) });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+/** Einen weiteren Quellordner aufnehmen - Drive-Adresse oder Ordner-ID. */
+export async function POST(request: NextRequest) {
+  if (!istBerechtigt(request)) {
+    return NextResponse.json({ error: "Nicht berechtigt." }, { status: 401 });
+  }
+
+  const track = trackFromRequest(request);
+
+  try {
+    const body = await request.json();
+    const angelegt = await addFolder(track, String(body.eingabe ?? ""));
+    return NextResponse.json({ angelegt, folders: await listFolders(track) });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    // Eine unbrauchbare Eingabe ist kein Serverfehler - die Oberfläche soll
+    // den Satz einfach anzeigen können.
+    return NextResponse.json({ error: message }, { status: 400 });
+  }
+}
+
+/** Einen Ordner wieder aus der Sparte nehmen. Die Clips bleiben. */
+export async function DELETE(request: NextRequest) {
+  if (!istBerechtigt(request)) {
+    return NextResponse.json({ error: "Nicht berechtigt." }, { status: 401 });
+  }
+
+  const track = trackFromRequest(request);
+  const id = new URL(request.url).searchParams.get("id");
+  if (!id) {
+    return NextResponse.json({ error: "Ordner fehlt." }, { status: 400 });
+  }
+
+  try {
+    await removeFolder(id);
     return NextResponse.json({ folders: await listFolders(track) });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

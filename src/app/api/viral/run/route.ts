@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { planViralRun } from "@/lib/pipeline";
+import { trackFromRequest } from "@/lib/trackParam";
 import { baseUrlFromRequest, starteWartende } from "@/lib/dispatch";
 import { istBerechtigt } from "@/lib/ingestAuth";
 
@@ -21,10 +22,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Nicht berechtigt." }, { status: 401 });
   }
 
+  const track = trackFromRequest(request);
   const nurWartende = new URL(request.url).searchParams.get("nurWartende") === "1";
 
   try {
-    const geplant = nurWartende ? { jobIds: [] as string[], hinweis: undefined } : await planViralRun(true);
+    const geplant = nurWartende ? { jobIds: [] as string[], hinweis: undefined } : await planViralRun(track, true);
 
     // Angestossen wird der älteste wartende Auftrag - und nur, wenn gerade
     // nichts rendert. Läuft schon einer, holt dessen Kette den Rest nach.

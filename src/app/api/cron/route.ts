@@ -3,6 +3,7 @@ import { env } from "@/lib/env";
 import { planDailyJob, planViralRun } from "@/lib/pipeline";
 import { baseUrlFromRequest, starteWartende, weckeWartende } from "@/lib/dispatch";
 import { logActivity } from "@/lib/activity";
+import { ZEITPLAN_SPARTEN } from "@/lib/viralSchedule";
 
 // Abgleich, Analyse und Zusammenstellung brauchen mehr als den Vercel-
 // Standardwert von 10 Sekunden. Gerendert wird hier nicht mehr.
@@ -45,14 +46,22 @@ export async function GET(request: NextRequest) {
     await logActivity(`Tageslauf fehlgeschlagen: ${promoFehler}`, { level: "error" });
   }
 
-  // Sofort anstossen, nicht erst am Ende: die Planung der viralen Sparte ruft
+  // Sofort anstossen, nicht erst am Ende: die Planung der Reels-Sparten ruft
   // für jedes Konzept Gemini auf und kann selbst Minuten dauern.
   const zuerst = await starteWartende(baseUrl).catch(() => null);
 
-  const viral = await planViralRun().catch((err) => {
-    const message = err instanceof Error ? err.message : String(err);
-    return { jobIds: [] as string[], hinweis: message };
-  });
+  // Jede Sparte mit Zeitplan wird einzeln geplant. Eine abgeschaltete meldet
+  // das nur und kostet nichts; scheitert eine, laufen die anderen weiter -
+  // sonst risse ein Konzeptfehler in einer Sparte den ganzen Tag mit.
+  const viral = { jobIds: [] as string[], hinweis: undefined as string | undefined };
+  for (const sparte of ZEITPLAN_SPARTEN) {
+    const ergebnis = await planViralRun(sparte).catch((err) => ({
+      jobIds: [] as string[],
+      hinweis: err instanceof Error ? err.message : String(err),
+    }));
+    viral.jobIds.push(...ergebnis.jobIds);
+    if (!viral.hinweis && ergebnis.hinweis) viral.hinweis = ergebnis.hinweis;
+  }
 
   // Falls der Render des Werbevideos schneller fertig war als diese Planung,
   // ist die Kette ins Leere gelaufen - dann geht es hier weiter.
@@ -61,7 +70,7 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     jobId,
     promoFehler,
-    viraleAuftraege: viral.jobIds.length,
+    reelAuftraege: viral.jobIds.length,
     hinweis: viral.hinweis,
     gestartet: zuerst ?? danach ?? null,
   });

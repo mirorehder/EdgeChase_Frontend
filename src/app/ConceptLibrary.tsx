@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { Track } from "@/lib/trackClient";
+import { trackBeschreibung, type Track } from "@/lib/trackClient";
 
 interface TextPhase {
   text: string;
@@ -190,7 +190,7 @@ export function ConceptLibrary({ track }: { track: Track }) {
         <h2>
           <button className="abschnitt-titel" onClick={() => setAuf(!auf)} aria-expanded={auf}>
             <span className="video-pfeil">{auf ? "▾" : "▸"}</span>
-            {track === "viral" ? "Konzepte (Vorlage für Edits)" : "Konzepte"}
+            {trackBeschreibung(track).nachKonzept ? "Konzepte (Vorlage für Edits)" : "Konzepte"}
             <span className="ordner-zahl">{concepts.length}</span>
           </button>
         </h2>
@@ -205,7 +205,7 @@ export function ConceptLibrary({ track }: { track: Track }) {
 
       {auf && (
         <p className="chat-hint">
-          {track === "viral"
+          {trackBeschreibung(track).nachKonzept
             ? "Ein Referenz-Reel hochladen — daraus werden Text, Textgestaltung, Anzahl Einstellungen und Länge übernommen. Der Text des Konzepts ist der Text des Edits. Das hochgeladene Video selbst wird nach der Auswertung wieder gelöscht."
             : "Ein fremdes Video hochladen — Hook-Text, Textgestaltung, Anzahl Einstellungen und Länge werden daraus abgeleitet und als Vorlage gespeichert. Das Video selbst wird nach der Auswertung wieder gelöscht."}
         </p>
@@ -231,7 +231,7 @@ export function ConceptLibrary({ track }: { track: Track }) {
 
       {!auf ? null : concepts.length === 0 ? (
         <p className="empty-state">
-          {track === "viral"
+          {trackBeschreibung(track).nachKonzept
             ? "Noch kein Konzept. Ohne Konzept gibt es keinen Text für den Edit - lade ein Referenz-Reel hoch."
             : "Noch keine Konzepte. Lade ein Video hoch oder schick eins per Kurzbefehl vom Handy."}
         </p>
@@ -284,7 +284,7 @@ export function ConceptLibrary({ track }: { track: Track }) {
 
                 <div className="actions" style={{ marginTop: 8, marginBottom: 0 }}>
                   <button onClick={() => verwenden(concept)} disabled={busy !== null}>
-                    {track === "viral" ? "Edit nach diesem Konzept" : "Video nach diesem Konzept"}
+                    {trackBeschreibung(track).nachKonzept ? "Edit nach diesem Konzept" : "Video nach diesem Konzept"}
                   </button>
                   <button
                     className="secondary"

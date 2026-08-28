@@ -72,7 +72,7 @@ async function aufbau() {
 
 /** Namen des Kandidatenkreises in der Reihenfolge, in der er entsteht. */
 async function kreis(anzahl = 6): Promise<string[]> {
-  const clips = await viraleKandidaten(anzahl, []);
+  const clips = await viraleKandidaten("viral", anzahl, []);
   return clips.map((c) => c.name);
 }
 

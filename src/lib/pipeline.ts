@@ -29,6 +29,7 @@ import { hookTextToFileName } from "./filename";
 import { logActivity } from "./activity";
 import { getDailySettings } from "./dailyConfig";
 import { getViralSchedule, viralOutputFolderId, viralTextStyle } from "./viralSchedule";
+import { bewertungsart, trackBeschreibung } from "./trackClient";
 import {
   fillMissingFolderNames,
   folderDescriptions,
@@ -108,10 +109,10 @@ export interface SyncResult {
  */
 const MIN_LISTING_FOR_PRUNE = 5;
 
-const TRACK_LABEL: Record<Track, string> = {
-  promo: "Promo",
-  viral: "Virale Edits",
-};
+/** Kurzform der Sparte fuer das Protokoll. */
+function trackLabel(track: Track): string {
+  return trackBeschreibung(track).label;
+}
 
 /** Gleicht die Drive-Quellordner der Sparte mit ihrer Clip-Bibliothek ab; neue Clips werden angelegt, bestehende bleiben unangetastet. */
 export async function syncClipLibrary(track: Track = "promo"): Promise<SyncResult> {
@@ -190,7 +191,7 @@ export async function syncClipLibrary(track: Track = "promo"): Promise<SyncResul
   }
 
   await logActivity(
-    `${TRACK_LABEL[track]}: Ordner abgeglichen, ${driveFiles.length} Clips in Drive, ` +
+    `${trackLabel(track)}: Ordner abgeglichen, ${driveFiles.length} Clips in Drive, ` +
       `${newFiles.length} neu aufgenommen` +
       (removed ? `, ${removed} nicht mehr im Ordner und entfernt.` : "."),
     { track },
@@ -512,16 +513,22 @@ export interface ComposeOptions {
 }
 
 /** Wählt Clips aus und formuliert den Hook-Text - siehe Auftrag 5.2. */
-export async function composeVideo(options: ComposeOptions = {}): Promise<ComposedVideo> {
+export async function composeVideo(
+  track: Track,
+  options: ComposeOptions = {},
+): Promise<ComposedVideo> {
   const wantedCount = options.clipCount ?? 0;
 
   // Bei einer gewünschten Anzahl muss der Kandidatenkreis mitwachsen, sonst
   // kann die Auswahl sie gar nicht erfüllen.
   const poolSize = Math.max(CANDIDATE_POOL_SIZE, wantedCount * 3);
 
+  const verwendbar = await usableFolderIds(track);
   const candidates = await prisma.clip.findMany({
     where: {
-      track: "promo",
+      track,
+      disabled: false,
+      ...(verwendbar ? { rootFolderId: { in: verwendbar } } : {}),
       apparelScore: { gte: APPAREL_SCORE_THRESHOLD },
       analysisVersion: CURRENT_ANALYSIS_VERSION,
     },
@@ -536,7 +543,7 @@ export async function composeVideo(options: ComposeOptions = {}): Promise<Compos
   }
 
   const recentVideos = await prisma.promoVideo.findMany({
-    where: { track: "promo" },
+    where: { track },
     orderBy: { createdAt: "desc" },
     take: 10,
     select: { hookText: true },
@@ -554,7 +561,7 @@ export async function composeVideo(options: ComposeOptions = {}): Promise<Compos
   const namedClips = options.clipNames?.length
     ? await prisma.clip.findMany({
         where: {
-          track: "promo",
+          track,
           analysisVersion: CURRENT_ANALYSIS_VERSION,
           OR: options.clipNames.map((name) => ({ name: { contains: name } })),
         },
@@ -624,7 +631,7 @@ export async function composeVideo(options: ComposeOptions = {}): Promise<Compos
   const fileTitle = await erfindeVideoTitel({
     sceneDescriptions: selectedClips.map((c) => c.description || c.name),
     texts: [selection.hookText],
-    track: "promo",
+    track,
   });
 
   return { hookText: selection.hookText, scenes, fileTitle };
@@ -682,12 +689,27 @@ async function rangGunst(track: Track): Promise<Map<string, number>> {
   return gunst;
 }
 
-/** Krassheit plus Gunst - die Zahl, nach der der Kandidatenkreis entsteht. */
+/**
+ * Die Bewertung, auf die es in dieser Sparte ankommt.
+ *
+ * Bei den Reels die Krassheit des Tricks, bei allem, was die Ware zeigen soll,
+ * die Erkennbarkeit der Kleidung. Beide laufen von 0 bis 1 und sind deshalb
+ * ueberall austauschbar - nur das Feld ist ein anderes.
+ */
+function bewertungVon(
+  clip: { stuntScore: number | null; apparelScore: number | null },
+  track: Track,
+): number {
+  return (bewertungsart(track) === "krassheit" ? clip.stuntScore : clip.apparelScore) ?? 0;
+}
+
+/** Bewertung plus Gunst - die Zahl, nach der der Kandidatenkreis entsteht. */
 function effektiveBewertung(
-  clip: { id: string; stuntScore: number | null },
+  clip: { id: string; stuntScore: number | null; apparelScore: number | null },
+  track: Track,
   gunst: Map<string, number>,
 ): number {
-  return (clip.stuntScore ?? 0) + RANG_BONUS * ((gunst.get(clip.id) ?? 0.5) - 0.5);
+  return bewertungVon(clip, track) + RANG_BONUS * ((gunst.get(clip.id) ?? 0.5) - 0.5);
 }
 
 /**
@@ -705,16 +727,23 @@ function effektiveBewertung(
  * die Rangfolge von Hand bewirken - und weil sich das ohne Gemini prüfen lässt.
  */
 export async function viraleKandidaten(
+  track: Track,
   wantedCount: number,
   ausgeschlossen: string[],
 ) {
-  const verwendbar = await usableFolderIds("viral");
-  const gunst = await rangGunst("viral");
+  const verwendbar = await usableFolderIds(track);
+  const gunst = await rangGunst(track);
+  const nachKrassheit = bewertungsart(track) === "krassheit";
 
   const grundfilter = {
-    track: "viral",
+    track,
     analysisVersion: CURRENT_ANALYSIS_VERSION,
-    stuntScore: { gte: STUNT_SCORE_THRESHOLD },
+    // Die Mindestbewertung haelt fern, was der Sparte nichts bringt: einen
+    // Clip ohne Trick bei den Reels, einen ohne sichtbare Kleidung dort, wo
+    // die Ware gezeigt werden soll.
+    ...(nachKrassheit
+      ? { stuntScore: { gte: STUNT_SCORE_THRESHOLD } }
+      : { apparelScore: { gte: APPAREL_SCORE_THRESHOLD } }),
     // Von Hand stillgelegte Clips und Ordner kommen in keinem Video vor.
     disabled: false,
     ...(verwendbar ? { rootFolderId: { in: verwendbar } } : {}),
@@ -732,14 +761,16 @@ export async function viraleKandidaten(
   const roh = await prisma.clip.findMany({
     where: ausgeschlossen.length ? { ...grundfilter, id: { notIn: ausgeschlossen } } : grundfilter,
     orderBy: [
-      { stuntScore: "desc" },
-      { lastUsedAt: { sort: "asc", nulls: "first" } },
+      nachKrassheit
+        ? { stuntScore: "desc" as const }
+        : { apparelScore: "desc" as const },
+      { lastUsedAt: { sort: "asc" as const, nulls: "first" as const } },
     ],
     take: kreisGroesse * 3,
   });
 
   return [...roh]
-    .sort((a, b) => effektiveBewertung(b, gunst) - effektiveBewertung(a, gunst))
+    .sort((a, b) => effektiveBewertung(b, track, gunst) - effektiveBewertung(a, track, gunst))
     .slice(0, kreisGroesse);
 }
 
@@ -855,15 +886,16 @@ function setupSceneWindow(
 
 /** Sucht die Eröffnungseinstellung passend zum Bild der Vorlage. */
 async function waehleAufbauSzene(
+  track: Track,
   phase: ConceptTextPhase,
   ausgeschlossen: string[],
 ): Promise<ComposedScene | null> {
   // Bewusst ohne Mindestbewertung: der Aufbau darf ausdrücklich ein ruhiger
   // Clip sein, und genau die sind sonst aussortiert.
-  const verwendbar = await usableFolderIds("viral");
+  const verwendbar = await usableFolderIds(track);
   const kandidaten = await prisma.clip.findMany({
     where: {
-      track: "viral",
+      track,
       analysisVersion: CURRENT_ANALYSIS_VERSION,
       disabled: false,
       ...(verwendbar ? { rootFolderId: { in: verwendbar } } : {}),
@@ -874,7 +906,7 @@ async function waehleAufbauSzene(
   });
   if (!kandidaten.length) return null;
 
-  const beschreibungen = await folderDescriptions("viral");
+  const beschreibungen = await folderDescriptions(track);
   const gewaehlt = await selectSetupClip(
     kandidaten.map((c) => ({
       id: c.id,
@@ -900,7 +932,7 @@ async function waehleAufbauSzene(
   await logActivity(
     `Eröffnung gewählt: ${clip.name} (Trick-Bewertung ${(clip.stuntScore ?? 0).toFixed(2)}) ` +
       `über ${fenster.seconds.toFixed(1)}s. Gesucht war: ${phase.sceneHint || "(kein Hinweis)"}`,
-    { track: "viral" },
+    { track },
   );
 
   return {
@@ -913,7 +945,10 @@ async function waehleAufbauSzene(
 }
 
 /** Stellt einen viralen Edit aus den stärksten Höhepunkten zusammen. */
-export async function composeViralVideo(options: ViralComposeOptions): Promise<ComposedVideo> {
+export async function composeViralVideo(
+  track: Track,
+  options: ViralComposeOptions,
+): Promise<ComposedVideo> {
   const gesamtSoll = options.totalSeconds ?? VIRAL_DEFAULT_TOTAL_SECONDS;
   const phasen: ConceptTextPhase[] = options.textPhases?.length
     ? options.textPhases
@@ -923,7 +958,7 @@ export async function composeViralVideo(options: ViralComposeOptions): Promise<C
   // Eröffnungseinstellung. Die Montage teilt sich den Rest.
   const aufbau =
     phasen.length > 1
-      ? await waehleAufbauSzene(phasen[0], options.excludeClipIds ?? [])
+      ? await waehleAufbauSzene(track, phasen[0], options.excludeClipIds ?? [])
       : null;
 
   const totalSeconds = Math.max(3, gesamtSoll - (aufbau?.seconds ?? 0));
@@ -951,17 +986,17 @@ export async function composeViralVideo(options: ViralComposeOptions): Promise<C
     ...(options.excludeClipIds ?? []),
     ...(aufbau ? [aufbau.clipId] : []),
   ];
-  let candidates = await viraleKandidaten(wantedCount, ausgeschlossen);
+  let candidates = await viraleKandidaten(track, wantedCount, ausgeschlossen);
 
   // Reichen die übrigen Clips nicht für ein Video, ist ein zweites Video mit
   // wiederverwendeten Clips immer noch besser als gar keines - aber es soll im
   // Protokoll stehen.
   if (candidates.length < 3 && ausgeschlossen.length) {
     await logActivity(
-      `Zu wenige unverbrauchte Höhepunkte (${candidates.length}) - für dieses Video werden Clips erneut verwendet.`,
-      { level: "error", track: "viral" },
+      `Zu wenige unverbrauchte Clips (${candidates.length}) - für dieses Video werden Clips erneut verwendet.`,
+      { level: "error", track },
     );
-    candidates = await viraleKandidaten(wantedCount, []);
+    candidates = await viraleKandidaten(track, wantedCount, []);
   }
 
   if (candidates.length < 3) {
@@ -970,11 +1005,11 @@ export async function composeViralVideo(options: ViralComposeOptions): Promise<C
     );
   }
 
-  const beschreibungen = await folderDescriptions("viral");
+  const beschreibungen = await folderDescriptions(track);
   const payload: ViralCandidate[] = candidates.map((c) => ({
     id: c.id,
     description: c.description ?? "",
-    stuntScore: c.stuntScore ?? 0,
+    stuntScore: bewertungVon(c, track),
     trickMs: (c.highlightEndMs ?? 0) - (c.highlightStartMs ?? 0),
     folderContext: c.rootFolderId ? beschreibungen.get(c.rootFolderId) : undefined,
   }));
@@ -1021,10 +1056,10 @@ export async function composeViralVideo(options: ViralComposeOptions): Promise<C
   const textPhases = verteilePhasen(phasen, aufbau?.seconds ?? 0, used);
 
   await logActivity(
-    `Virale Edits: ${scenes.length} Höhepunkte zusammengestellt, ` +
+    `${trackLabel(track)}: ${scenes.length} Einstellungen zusammengestellt, ` +
       `${(used + (aufbau?.seconds ?? 0)).toFixed(1)}s. ` +
-      `Stunt-Bewertungen: ${bewertungen} (von ${candidates.length} Kandidaten).`,
-    { track: "viral" },
+      `Bewertungen: ${bewertungen} (von ${candidates.length} Kandidaten).`,
+    { track },
   );
 
   if (textPhases.length > 1) {
@@ -1037,7 +1072,7 @@ export async function composeViralVideo(options: ViralComposeOptions): Promise<C
               `${(p.startMs / 1000).toFixed(1)}-${((p.startMs + p.durationMs) / 1000).toFixed(1)}s`,
           )
           .join(" | "),
-      { track: "viral" },
+      { track },
     );
   }
 
@@ -1046,7 +1081,7 @@ export async function composeViralVideo(options: ViralComposeOptions): Promise<C
   const fileTitle = await erfindeVideoTitel({
     sceneDescriptions: await beschreibungenFuer(alleSzenen),
     texts: phasen.map((p) => p.text),
-    track: "viral",
+    track,
   });
 
   return { hookText: phasen[0].text, scenes: alleSzenen, textPhases, fileTitle };
@@ -1284,10 +1319,11 @@ export async function processJob(jobId: string): Promise<void> {
  * Aufruf, damit die Antwort an den Nutzer nicht minutenlang aussteht.
  */
 export async function createJobFromSpec(
+  track: Track,
   spec: VideoSpec,
   requestedVia: string,
 ): Promise<string> {
-  const composed = await composeVideo({
+  const composed = await composeVideo(track, {
     clipCount: spec.clipCount,
     maxSecondsPerScene: spec.maxSecondsPerScene,
     themeHint: spec.themeHint,
@@ -1297,6 +1333,7 @@ export async function createJobFromSpec(
 
   const job = await prisma.promoVideo.create({
     data: {
+      track,
       hookText: composed.hookText,
       scenes: composed.scenes as unknown as object,
       status: "queued",
@@ -1329,14 +1366,17 @@ export async function createJobFromSpec(
  * nur auf die gewählten. Ein eigener Zähler wäre störanfällig: er müsste beim
  * Hinzufügen und Löschen von Konzepten mitgeführt werden.
  */
-async function konzepteFuerLauf(anzahl: number): Promise<{ id: string; title: string }[]> {
-  const plan = await getViralSchedule();
+async function konzepteFuerLauf(
+  track: Track,
+  anzahl: number,
+): Promise<{ id: string; title: string }[]> {
+  const plan = await getViralSchedule(track);
 
   const auswahl = await prisma.concept.findMany({
     where:
       plan.conceptMode === "fixed"
-        ? { track: "viral", id: { in: plan.conceptIds } }
-        : { track: "viral" },
+        ? { track, id: { in: plan.conceptIds } }
+        : { track },
     orderBy: [{ lastUsedAt: { sort: "asc", nulls: "first" } }, { createdAt: "asc" }],
     select: { id: true, title: true },
   });
@@ -1355,23 +1395,23 @@ export interface ViralRunResult {
 }
 
 /**
- * Plant den Tageslauf der viralen Sparte: legt die Aufträge an, rendert aber
- * noch nichts.
+ * Plant den Tageslauf einer nach Konzepten arbeitenden Sparte: legt die
+ * Auftraege an, rendert aber noch nichts.
  */
-export async function planViralRun(force = false): Promise<ViralRunResult> {
-  const plan = await getViralSchedule();
+export async function planViralRun(track: Track, force = false): Promise<ViralRunResult> {
+  const plan = await getViralSchedule(track);
 
   if (!plan.enabled && !force) {
     return { jobIds: [], hinweis: "Zeitplan ist abgeschaltet." };
   }
 
-  const konzepte = await konzepteFuerLauf(plan.videosPerDay);
+  const konzepte = await konzepteFuerLauf(track, plan.videosPerDay);
   if (!konzepte.length) {
     const hinweis =
       plan.conceptMode === "fixed"
         ? "Keines der ausgewählten Konzepte existiert noch."
-        : "Noch kein Konzept in der viralen Sparte - ohne Konzept gibt es keinen Text.";
-    await logActivity(`Zeitplan übersprungen: ${hinweis}`, { level: "error", track: "viral" });
+        : `Noch kein Konzept in der Sparte "${trackLabel(track)}" - ohne Konzept gibt es keinen Text.`;
+    await logActivity(`Zeitplan übersprungen: ${hinweis}`, { level: "error", track });
     return { jobIds: [], hinweis };
   }
 
@@ -1379,7 +1419,7 @@ export async function planViralRun(force = false): Promise<ViralRunResult> {
     `Zeitplan gestartet: ${konzepte.length} Edit(s), Konzepte ` +
       konzepte.map((k) => `"${k.title}"`).join(", ") +
       ".",
-    { track: "viral" },
+    { track },
   );
 
   const jobIds: string[] = [];
@@ -1390,7 +1430,7 @@ export async function planViralRun(force = false): Promise<ViralRunResult> {
     try {
       const jobId = await createViralJobFromConcept(konzept.id, {
         excludeClipIds: verbrauchteClips,
-        driveFolderId: viralOutputFolderId(),
+        driveFolderId: viralOutputFolderId(track),
         origin: "scheduled",
       });
       jobIds.push(jobId);
@@ -1403,7 +1443,7 @@ export async function planViralRun(force = false): Promise<ViralRunResult> {
       letzterFehler = err instanceof Error ? err.message : String(err);
       await logActivity(
         `Edit nach "${konzept.title}" konnte nicht angelegt werden: ${letzterFehler}`,
-        { level: "error", track: "viral" },
+        { level: "error", track },
       );
     }
   }
@@ -1431,11 +1471,12 @@ export async function nextQueuedJobId(track?: Track): Promise<string | null> {
 }
 
 /**
- * Legt einen viralen Edit nach einem gespeicherten Konzept an.
+ * Legt einen Edit nach einem gespeicherten Konzept an.
  *
  * Aus dem Konzept kommen Text und Textgestaltung; Länge und Anzahl der
  * Einstellungen dienen als Richtwert, den die Höhepunkte selbst noch
- * verschieben dürfen.
+ * verschieben dürfen. Die Sparte kommt aus dem Konzept - ein Konzept gehört
+ * immer genau einer.
  */
 export async function createViralJobFromConcept(
   conceptId: string,
@@ -1448,7 +1489,9 @@ export async function createViralJobFromConcept(
   const concept = await prisma.concept.findUnique({ where: { id: conceptId } });
   if (!concept) throw new Error("Konzept nicht gefunden.");
 
-  const composed = await composeViralVideo({
+  const track = (concept.track as Track) ?? "viral";
+
+  const composed = await composeViralVideo(track, {
     hookText: concept.hookText,
     clipCount: concept.clipCount || undefined,
     totalSeconds: concept.totalSeconds || undefined,
@@ -1458,7 +1501,7 @@ export async function createViralJobFromConcept(
 
   const job = await prisma.promoVideo.create({
     data: {
-      track: "viral",
+      track,
       hookText: composed.hookText,
       scenes: composed.scenes as unknown as object,
       status: "queued",
@@ -1466,14 +1509,13 @@ export async function createViralJobFromConcept(
       fileTitle: composed.fileTitle || null,
       origin: options.origin ?? "manual",
       // Nicht concept.textStyle: die Gestaltung ist unsere Entscheidung und
-      // für alle Parkour-Edits dieselbe.
+      // für alle Reels dieselbe.
       textStyle: viralTextStyle(),
       requestedVia: `Konzept: ${concept.title}`,
-      // Alle Parkour-Edits landen in "Not posted yet" - der Zeitplan wie der
-      // Knopf im Dashboard. Der Ordner wird beim Anlegen festgehalten, damit
-      // ein Auftrag auch dann dort landet, wenn die Einstellung sich zwischen
-      // Anlegen und Render ändert.
-      driveFolderId: options.driveFolderId ?? viralOutputFolderId(),
+      // Zeitplan und Knopf im Dashboard landen im selben Ordner. Er wird beim
+      // Anlegen festgehalten, damit ein Auftrag auch dann dort landet, wenn
+      // die Einstellung sich zwischen Anlegen und Render ändert.
+      driveFolderId: options.driveFolderId ?? viralOutputFolderId(track),
     },
   });
 
@@ -1485,9 +1527,9 @@ export async function createViralJobFromConcept(
     data: { lastUsedAt: new Date() },
   });
 
-  await logActivity(`Viraler Edit nach Konzept "${concept.title}" angelegt.`, {
+  await logActivity(`Edit nach Konzept "${concept.title}" angelegt.`, {
     videoId: job.id,
-    track: "viral",
+    track,
   });
   return job.id;
 }
@@ -1537,7 +1579,7 @@ export async function planDailyJob(): Promise<string | null> {
     );
   }
 
-  const composed = await composeVideo({
+  const composed = await composeVideo("promo", {
     clipCount: settings.clipCount,
     maxSecondsPerScene: settings.maxSecondsPerScene,
     themeHint: settings.themeHint || undefined,

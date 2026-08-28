@@ -1,6 +1,6 @@
 import { FileState, GoogleGenAI, Type, type File as GenAIFile } from "@google/genai";
 import { env } from "./env";
-import type { Track } from "./drive";
+import { bewertungsart, type Track } from "./trackClient";
 
 const MODEL = "gemini-3.1-flash-lite";
 
@@ -95,7 +95,11 @@ export async function analyzeClip(
    *  einzuordnen, was es sieht. Leer, wenn nichts hinterlegt ist. */
   folderContext = "",
 ): Promise<ClipAnalysis> {
-  if (track === "viral") return analyzeViralClip(quelle, mimeType, durationMs, folderContext);
+  // Nicht an der Sparte selbst festgemacht, sondern an ihrer Bewertungsart:
+  // die Reels-Sparten wollen den Trick, die Kleidungs-Sparten die Ware.
+  if (bewertungsart(track) === "krassheit") {
+    return analyzeViralClip(quelle, mimeType, durationMs, folderContext);
+  }
 
   const ai = client();
 

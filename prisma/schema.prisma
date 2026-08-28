@@ -337,8 +337,14 @@ model SourceFolder {
   @@index([track])
 }
 
-model ViralSchedule {
-  id String @id @default("default")
+/// Der Zeitplan einer Sparte. Eine Zeile je Sparte, der Schlüssel ist die
+/// Sparte selbst ("viral", "sports", "clothing").
+///
+/// Die Promo-Sparte hat ihren eigenen Satz Einstellungen (DailySettings) und
+/// steht deshalb nicht hier.
+model TrackSchedule {
+  /// Die Sparte, zu der dieser Zeitplan gehört.
+  id String @id
 
   /// Steht das auf false, erzeugt der Zeitplan keine Edits.
   enabled Boolean @default(false)

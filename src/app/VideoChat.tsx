@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import type { Track } from "@/lib/trackClient";
 
 interface Turn {
   role: "user" | "assistant";
@@ -14,7 +15,7 @@ const BEISPIELE = [
   "6 Clips, 2 Sekunden pro Szene, Text: Comment your name for a code",
 ];
 
-export function VideoChat() {
+export function VideoChat({ track }: { track: Track }) {
   const router = useRouter();
   const [turns, setTurns] = useState<Turn[]>([]);
   const [input, setInput] = useState("");
@@ -37,7 +38,7 @@ export function VideoChat() {
     setBusy("denkt");
 
     try {
-      const res = await fetch("/api/chat", {
+      const res = await fetch(`/api/chat?track=${track}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ turns: nextTurns }),

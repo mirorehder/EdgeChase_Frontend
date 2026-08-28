@@ -9,8 +9,11 @@
   --ok: #3ecf8e;
   --warn: #f5a623;
   --err: #ef4444;
-  /* Leitfarbe der viralen Sparte - deutlich anders als das Promo-Blau. */
+  /* Leitfarbe je Sparte - deutlich verschieden, damit auf einen Blick klar
+     ist, in welcher man gerade arbeitet. */
   --viral: #f5643c;
+  --sports: #3ecf8e;
+  --clothing: #c084fc;
 }
 
 * {
@@ -597,10 +600,30 @@ tr:last-child td {
   background: color-mix(in srgb, var(--viral) 12%, var(--surface));
 }
 
+.sparte-sports.aktiv {
+  color: var(--text);
+  border-color: var(--sports);
+  background: color-mix(in srgb, var(--sports) 12%, var(--surface));
+}
+
+.sparte-clothing.aktiv {
+  color: var(--text);
+  border-color: var(--clothing);
+  background: color-mix(in srgb, var(--clothing) 12%, var(--surface));
+}
+
 /* Die Leitfarbe der Sparte gilt für alles darunter. Dadurch stimmen Knöpfe,
    Balken und Verweise ohne eigene Regeln je Bauteil. */
 .sparte-inhalt-viral {
   --accent: var(--viral);
+}
+
+.sparte-inhalt-sports {
+  --accent: var(--sports);
+}
+
+.sparte-inhalt-clothing {
+  --accent: var(--clothing);
 }
 
 .sparte-hinweis {
@@ -965,4 +988,31 @@ tr:last-child td {
 
 .clip-schalter {
   padding-top: 14px;
+}
+
+/* --- Ordner aufnehmen und entfernen ------------------------------------ */
+
+.ordner-neu {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+  flex-wrap: wrap;
+}
+
+.ordner-neu .search {
+  flex: 1;
+}
+
+.ordner-weg {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  border-radius: 8px;
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+.ordner-weg:hover:not(:disabled) {
+  color: var(--err);
+  border-color: var(--err);
 }

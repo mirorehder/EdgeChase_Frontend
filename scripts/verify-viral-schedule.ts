@@ -78,34 +78,34 @@ async function main() {
   }
 
   console.log("\n--- Lauf 1: zwei Edits pro Tag, Konzepte reihum ---");
-  await saveViralSchedule({
+  await saveViralSchedule("viral", {
     enabled: true,
     videosPerDay: 2,
     conceptMode: "rotation",
     conceptIds: [],
   });
-  const lauf1 = await planViralRun();
+  const lauf1 = await planViralRun("viral");
   await zeigeLauf(lauf1.jobIds);
 
   console.log("\n--- Lauf 2 am Folgetag: kommen die anderen Konzepte dran? ---");
-  const lauf2 = await planViralRun();
+  const lauf2 = await planViralRun("viral");
   await zeigeLauf(lauf2.jobIds);
 
   console.log("\n--- Lauf 3: feste Auswahl, nur Konzept C ---");
   const c = await prisma.concept.findFirstOrThrow({ where: { title: "Konzept C" } });
-  await saveViralSchedule({ conceptMode: "fixed", conceptIds: [c.id], videosPerDay: 1 });
-  const lauf3 = await planViralRun();
+  await saveViralSchedule("viral", { conceptMode: "fixed", conceptIds: [c.id], videosPerDay: 1 });
+  const lauf3 = await planViralRun("viral");
   await zeigeLauf(lauf3.jobIds);
 
   console.log("\n--- Zielordner ---");
   const auftraege = await prisma.promoVideo.findMany({ where: { track: "viral" } });
-  const inPostordner = auftraege.filter((j) => j.driveFolderId === viralOutputFolderId());
+  const inPostordner = auftraege.filter((j) => j.driveFolderId === viralOutputFolderId("viral"));
   console.log(`   ${inPostordner.length} von ${auftraege.length} Aufträgen zeigen auf "Not posted yet"`);
 
   // Von Hand erzeugte Edits gehen in denselben Ordner wie die geplanten.
   const vonHand = await createViralJobFromConcept(c.id);
   const handJob = await prisma.promoVideo.findUniqueOrThrow({ where: { id: vonHand } });
-  const stimmt = handJob.driveFolderId === viralOutputFolderId();
+  const stimmt = handJob.driveFolderId === viralOutputFolderId("viral");
   console.log(
     `   ${stimmt ? "OK  " : "FEHL"} Von Hand erzeugter Auftrag: Zielordner ` +
       `${handJob.driveFolderId ?? "(Arbeitsordner)"}`,

@@ -25,9 +25,18 @@ const MIN_VIDEO_BYTES = 100_000;
 export { isTrack, TRACKS, type Track } from "./trackClient";
 import type { Track } from "./trackClient";
 
-/** Wurzelordner der Sparte in Drive. */
+/**
+ * Wurzelordner der Sparte aus der Umgebung.
+ *
+ * Nur noch ein Rückfall: die Ordner stehen inzwischen in der Datenbank und
+ * werden im Dashboard verwaltet. Die beiden neuen Sparten haben gar keinen
+ * Eintrag in der Umgebung - für sie ist das hier leer, und ohne Ordner in der
+ * Datenbank lesen sie schlicht nichts ein.
+ */
 function sourceFolderId(track: Track): string {
-  return track === "viral" ? env.driveViralFolderId : env.driveSourceFolderId;
+  if (track === "viral") return env.driveViralFolderId;
+  if (track === "promo") return env.driveSourceFolderId;
+  return "";
 }
 
 let cachedAuth: GoogleAuth | null = null;
@@ -185,24 +194,39 @@ export async function folderName(folderId: string): Promise<string> {
 export async function listSourceClips(
   track: Track = "promo",
   roots?: SourceRoot[],
+  /** Wurzelordner der anderen Sparten - beim Absteigen ausgelassen, damit die
+   *  Sparten nie ineinanderlaufen, wenn jemand die Ordner in Drive
+   *  ineinanderschiebt. */
+  fremdeWurzeln: string[] = [],
 ): Promise<DriveClipFile[]> {
   const drive = getDriveClient();
   const excluded = excludedFolderNames();
 
+  const ausDerUmgebung = sourceFolderId(track);
   const wurzeln: SourceRoot[] = roots?.length
     ? roots
-    : [{ driveFolderId: sourceFolderId(track) }];
+    : ausDerUmgebung
+      ? [{ driveFolderId: ausDerUmgebung }]
+      : [];
+
+  // Keine Ordner eingetragen heisst: nichts einzulesen. Ohne diese Abkürzung
+  // liefe der Abgleich gegen eine leere Ordner-ID und Drive antwortete mit
+  // einem Fehler statt mit einer leeren Liste.
+  if (!wurzeln.length) return [];
 
   // Beim Absteigen wird jeder andere Wurzelordner ausgelassen: der der anderen
   // Sparte, damit Werbe- und Parkour-Material nie ineinanderlaufen, und die
   // übrigen Ordner dieser Sparte, damit ein Clip nicht doppelt auftaucht, wenn
   // jemand die Ordner in Drive ineinanderschiebt.
-  const andereWurzeln = new Set<string>([sourceFolderId(track === "viral" ? "promo" : "viral")]);
+  const andereWurzeln = new Set<string>(fremdeWurzeln);
   for (const w of wurzeln) andereWurzeln.add(w.driveFolderId);
+  // Der Ordner aus der Umgebung zählt weiterhin mit: die Promo-Sparte hat
+  // keine Einträge in der Ordnertabelle und stünde sonst ungeschützt da.
+  for (const t of ["promo", "viral", "sports", "clothing"] as Track[]) {
+    if (t !== track) andereWurzeln.add(sourceFolderId(t));
+  }
 
-  const outputFolderNames = new Set(
-    [env.driveOutputFolderName, env.driveViralOutputFolderName].map((n) => n.toLowerCase()),
-  );
+  const outputFolderNames = alleOutputFolderNames();
 
   const files: DriveClipFile[] = [];
   // Über alle Wurzeln hinweg: ein Ordner, der unter zwei Wurzeln hängt, wird
@@ -330,11 +354,39 @@ function getWriteClient(): drive_v3.Drive {
 
 const cachedOutputFolderIds = new Map<Track, string>();
 
-/** Name und ggf. festgenagelte ID des Zielordners je Sparte. */
+/**
+ * Name und ggf. festgenagelte ID des Zielordners je Sparte.
+ *
+ * Die beiden neuen Sparten haben keinen Ordner in Drive, den jemand von Hand
+ * angelegt hätte - die Anwendung legt ihn selbst an, sobald das erste Video
+ * fertig ist. Verschieben und umbenennen lässt er sich hinterher beliebig, die
+ * Zuordnung läuft über die gemerkte ID.
+ */
 function outputFolderSettings(track: Track): { name: string; pinned: string | null } {
-  return track === "viral"
-    ? { name: env.driveViralOutputFolderName, pinned: env.driveViralOutputFolderId }
-    : { name: env.driveOutputFolderName, pinned: env.driveOutputFolderId };
+  switch (track) {
+    case "viral":
+      return { name: env.driveViralOutputFolderName, pinned: env.driveViralOutputFolderId };
+    case "sports":
+      return {
+        name: process.env.DRIVE_SPORTS_OUTPUT_FOLDER_NAME || "EdgeChase Sports Reels",
+        pinned: process.env.DRIVE_SPORTS_OUTPUT_FOLDER_ID || null,
+      };
+    case "clothing":
+      return {
+        name: process.env.DRIVE_CLOTHING_OUTPUT_FOLDER_NAME || "EdgeChase Clothing Reels",
+        pinned: process.env.DRIVE_CLOTHING_OUTPUT_FOLDER_ID || null,
+      };
+    default:
+      return { name: env.driveOutputFolderName, pinned: env.driveOutputFolderId };
+  }
+}
+
+/** Alle Zielordnernamen - sie dürfen beim Einlesen nicht als Quelle auftauchen. */
+function alleOutputFolderNames(): Set<string> {
+  return new Set(
+    (["promo", "viral", "sports", "clothing"] as Track[])
+      .map((t) => outputFolderSettings(t).name.toLowerCase()),
+  );
 }
 
 /**

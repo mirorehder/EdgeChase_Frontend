@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { createJobFromSpec, createViralJobFromConcept } from "@/lib/pipeline";
+import type { Track } from "@/lib/trackClient";
 
 export const maxDuration = 120;
 export const dynamic = "force-dynamic";
@@ -14,11 +15,12 @@ export async function POST(_request: NextRequest, { params }: { params: { id: st
 
     // Virale Edits gehen einen anderen Weg: dort liefert das Konzept nur den
     // Text, die Auswahl richtet sich nach den Höhepunkten der Parkour-Clips.
-    if (concept.track === "viral") {
+    if (concept.track !== "promo") {
       return NextResponse.json({ jobId: await createViralJobFromConcept(concept.id) });
     }
 
     const jobId = await createJobFromSpec(
+      (concept.track as Track) ?? "promo",
       {
         hookText: concept.hookText,
         textStyle: concept.textStyle === "banner" ? "banner" : "reference",

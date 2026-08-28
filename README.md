@@ -162,6 +162,31 @@ Remotion-Studio zur Vorschau der Komposition:
 npm run remotion:studio
 ```
 
+## Die vier Sparten
+
+| Sparte | Auswahl nach | Text aus | Zeitplan |
+|---|---|---|---|
+| Promo-Video-Generator | Erkennbarkeit der Kleidung | Tageslauf-Vorgaben oder Dialog | fest, täglich |
+| Doc Meiro Reels | Krassheit des Tricks | Konzept | eigener, aus |
+| EdgeChase Sports Reels | Krassheit des Tricks | Konzept | eigener, aus |
+| EdgeChase Clothing Reels | Erkennbarkeit der Kleidung | Konzept oder Dialog | eigener, aus |
+
+Jede Sparte hat eigene Quellordner, eine eigene Clip-Bibliothek, einen eigenen
+Zielordner in Drive und einen eigenen Zeitplan. Ein Clip gehört immer genau
+einer Sparte - der, aus deren Ordner er stammt.
+
+Die Sparten unterscheiden sich technisch nur in einem Punkt, der
+**Bewertungsart** (`trackClient.ts`): "krassheit" wählt nach dem Trick und
+schneidet auf das Fenster von Absprung bis Landung, "kleidung" wählt nach der
+Erkennbarkeit der Ware und schneidet auf den besten Ausschnitt. Alles andere -
+Konzepte, Ordnerverwaltung, Rangfolge von Hand, Zeitplan, Warteschlange - ist
+für alle gleich.
+
+Der Schlüssel der Doc-Meiro-Sparte heisst in der Datenbank weiterhin `viral`,
+obwohl die Sparte inzwischen anders heisst. Ihn umzubenennen hiesse, in fünf
+Tabellen Zeilen umzuschreiben, für einen Namen, den ausser dem Code niemand
+sieht. Was der Nutzer liest, steht in `TRACK_LISTE[].label`.
+
 ## Kontroll-Oberfläche
 
 Die Startseite (`/`) zeigt die Clip-Bibliothek (Anzahl, analysiert,
@@ -173,11 +198,14 @@ und Drive-Link, sowie zwei Aktionen:
 - **Clip-Bibliothek abgleichen** - gleicht neue Clips aus dem Drive-Ordner ab
   und analysiert sie, ohne ein Video zu erzeugen.
 
-### Quellordner der Parkour-Sparte
+### Quellordner
 
-Die Parkour-Clips verteilen sich auf mehrere Drive-Ordner. Sie stehen in der
-Tabelle `SourceFolder` und werden in der Bibliothek verwaltet, nicht mehr in
-einer Umgebungsvariablen. Je Ordner gibt es:
+Die Clips einer Sparte verteilen sich auf mehrere Drive-Ordner. Sie stehen in
+der Tabelle `SourceFolder` und werden in der Bibliothek verwaltet, nicht in
+einer Umgebungsvariablen: Unten in der Bibliothek nimmt ein Feld eine
+Drive-Adresse oder eine nackte Ordner-ID entgegen und ordnet den Ordner der
+Sparte zu; "entfernen" nimmt ihn wieder heraus, ohne die bereits eingelesenen
+Clips zu löschen. Je Ordner gibt es:
 
 - den **Namen aus Drive** - er wird bei jedem Abgleich nachgezogen, ein
   Umbenennen in Drive kommt also im Dashboard an;

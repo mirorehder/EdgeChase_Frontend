@@ -1,5 +1,6 @@
 import { prisma } from "./db";
 import { env } from "./env";
+import type { Track } from "./trackClient";
 
 export interface ViralScheduleSettings {
   enabled: boolean;
@@ -11,8 +12,8 @@ export interface ViralScheduleSettings {
 
 /**
  * Aus bleibt die Voreinstellung: der Zeitplan soll erst laufen, wenn jemand
- * ihn bewusst einschaltet - sonst erzeugt die erste Fassung nach dem Ausrollen
- * ungefragt Videos.
+ * ihn bewusst einschaltet - sonst erzeugt eine neue Sparte gleich nach dem
+ * Ausrollen ungefragt Videos.
  */
 const DEFAULTS: ViralScheduleSettings = {
   enabled: false,
@@ -21,13 +22,17 @@ const DEFAULTS: ViralScheduleSettings = {
   conceptIds: [],
 };
 
-/** Obergrenze pro Tag. Jeder Edit belegt eine eigene Vercel-Ausführung und
- *  einen eigenen Lambda-Render; darüber hinaus wird der Tageslauf zur
- *  Dauerbeschäftigung, ohne dass mehr dabei herauskäme. */
+/** Obergrenze pro Tag und Sparte. Jeder Edit belegt eine eigene Vercel-
+ *  Ausführung und einen eigenen Lambda-Render; darüber hinaus wird der
+ *  Tageslauf zur Dauerbeschäftigung, ohne dass mehr dabei herauskäme. */
 export const MAX_VIDEOS_PER_DAY = 5;
 
-export async function getViralSchedule(): Promise<ViralScheduleSettings> {
-  const row = await prisma.viralSchedule.findUnique({ where: { id: "default" } });
+/** Die Sparten, die überhaupt einen Zeitplan haben. Die Promo-Sparte hat
+ *  ihren eigenen Satz Einstellungen. */
+export const ZEITPLAN_SPARTEN: Track[] = ["viral", "sports", "clothing"];
+
+export async function getViralSchedule(track: Track): Promise<ViralScheduleSettings> {
+  const row = await prisma.trackSchedule.findUnique({ where: { id: track } });
   if (!row) return DEFAULTS;
 
   return {
@@ -39,9 +44,10 @@ export async function getViralSchedule(): Promise<ViralScheduleSettings> {
 }
 
 export async function saveViralSchedule(
+  track: Track,
   patch: Partial<ViralScheduleSettings>,
 ): Promise<ViralScheduleSettings> {
-  const current = await getViralSchedule();
+  const current = await getViralSchedule(track);
   const next: ViralScheduleSettings = {
     enabled: patch.enabled ?? current.enabled,
     videosPerDay: Math.min(
@@ -54,9 +60,9 @@ export async function saveViralSchedule(
     ),
   };
 
-  await prisma.viralSchedule.upsert({
-    where: { id: "default" },
-    create: { id: "default", ...next },
+  await prisma.trackSchedule.upsert({
+    where: { id: track },
+    create: { id: track, ...next },
     update: next,
   });
 
@@ -64,25 +70,27 @@ export async function saveViralSchedule(
 }
 
 /**
- * Zielordner aller Parkour-Edits - "Not posted yet".
+ * Zielordner aller Videos einer Sparte - der Ort, an dem liegt, was noch
+ * gepostet werden soll. Gilt für den Zeitplan wie für die Handauslösung.
  *
- * Gilt für den Zeitplan wie für den Knopf im Dashboard. Anfangs bekamen die
- * beiden getrennte Ordner, mit dem Gedanken, dass Handversuche die Liste des
- * noch zu Postenden nicht vollschreiben sollen. In der Praxis ist ein von Hand
- * erzeugter Edit aber genauso ein Kandidat fürs Posten wie ein geplanter - und
- * zwei Ordner durchsuchen zu müssen ist lästiger, als eine Datei zu löschen.
+ * Null heisst: kein fester Ordner, die Anwendung legt sich einen an. So läuft
+ * es bei den beiden neuen Sparten - dort gibt es in Drive noch nichts, worauf
+ * man zeigen könnte.
  *
- * Der Ordner stammt vom Nutzer, nicht von der Anwendung. Mit dem Bereich
- * drive.file kann die Anwendung ihn zwar nicht lesen - files.get antwortet mit
- * 404 -, aber sehr wohl Dateien darin anlegen und die eigenen darin
- * wiederfinden. Beides an der echten Ablage geprüft.
+ * Die Doc-Meiro-Sparte zeigt auf einen Ordner des Nutzers ("Not posted yet").
+ * Mit dem Bereich drive.file kann die Anwendung ihn zwar nicht lesen -
+ * files.get antwortet mit 404 -, aber sehr wohl Dateien darin anlegen und die
+ * eigenen darin wiederfinden. Beides an der echten Ablage geprüft.
  */
-export function viralOutputFolderId(): string {
-  return process.env.DRIVE_VIRAL_POST_FOLDER_ID || "1gCQ-WHW1qKW3_nLgLxjT3Ty3askP2mIQ";
+export function viralOutputFolderId(track: Track): string | null {
+  if (track === "viral") {
+    return process.env.DRIVE_VIRAL_POST_FOLDER_ID || "1gCQ-WHW1qKW3_nLgLxjT3Ty3askP2mIQ";
+  }
+  return null;
 }
 
 /**
- * Textgestaltung aller Parkour-Edits.
+ * Textgestaltung der Reels.
  *
  * Bewusst nicht aus dem Konzept übernommen: das Konzept beschreibt ein fremdes
  * Video, und dessen Textgestaltung ist nicht unsere. Der Stil ist eine

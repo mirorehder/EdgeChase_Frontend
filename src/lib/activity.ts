@@ -1,3 +1,4 @@
+import type { Track } from "./trackClient";
 import { prisma } from "./db";
 
 /**
@@ -9,7 +10,7 @@ import { prisma } from "./db";
  */
 export async function logActivity(
   message: string,
-  options: { level?: "info" | "error"; videoId?: string; track?: "promo" | "viral" } = {},
+  options: { level?: "info" | "error"; videoId?: string; track?: Track } = {},
 ): Promise<void> {
   try {
     await prisma.activityLog.create({

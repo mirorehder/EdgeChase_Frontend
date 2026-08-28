@@ -53,7 +53,7 @@ async function main() {
   ];
 
   console.log("--- Mehrphasig ---");
-  const mehr = await composeViralVideo({
+  const mehr = await composeViralVideo("viral", {
     hookText: phasen[0].text,
     clipCount: 8,
     totalSeconds: 13,
@@ -62,7 +62,7 @@ async function main() {
   zeige(mehr.scenes, mehr.textPhases ?? [], clips, ruhigerClip.id);
 
   console.log("\n--- Einphasig (wie bisher) ---");
-  const eins = await composeViralVideo({
+  const eins = await composeViralVideo("viral", {
     hookText: "Nur ein Text",
     clipCount: 8,
     totalSeconds: 13,

@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/db";
 import { CURRENT_ANALYSIS_VERSION, type ComposedScene } from "@/lib/pipeline";
-import type { Track } from "@/lib/trackClient";
+import { TRACK_LISTE, bewertungsart, type Track } from "@/lib/trackClient";
 import { TriggerButtons } from "./TriggerButtons";
 import { LiveActivity } from "./LiveActivity";
 import { VideoChat } from "./VideoChat";
@@ -24,7 +24,7 @@ interface TrackData {
 /** Alles, was eine Sparte für ihre Ansicht braucht - streng auf sie begrenzt. */
 async function ladeSparte(track: Track): Promise<TrackData> {
   const usableWhere =
-    track === "viral"
+    bewertungsart(track) === "krassheit"
       ? { track, analysisVersion: CURRENT_ANALYSIS_VERSION, stuntScore: { gte: 0.25 } }
       : { track, analysisVersion: CURRENT_ANALYSIS_VERSION, apparelScore: { gte: 0.5 } };
 
@@ -69,11 +69,12 @@ async function ladeSparte(track: Track): Promise<TrackData> {
 }
 
 function Kennzahlen({ data, track }: { data: TrackData; track: Track }) {
+  const nachKrassheit = bewertungsart(track) === "krassheit";
   return (
     <div className="stats-row">
       <div className="stat-card">
         <div className="value">{data.total}</div>
-        <div className="label">{track === "viral" ? "Parkour-Clips" : "Clips in der Bibliothek"}</div>
+        <div className="label">Clips in der Bibliothek</div>
       </div>
       <div className="stat-card">
         <div className="value">{data.analyzed}</div>
@@ -82,7 +83,7 @@ function Kennzahlen({ data, track }: { data: TrackData; track: Track }) {
       <div className="stat-card">
         <div className="value">{data.usable}</div>
         <div className="label">
-          {track === "viral" ? "mit erkanntem Trick" : "tauglich (Kleidung ≥ 0,5)"}
+          {nachKrassheit ? "mit erkanntem Trick" : "tauglich (Kleidung ≥ 0,5)"}
         </div>
       </div>
       <div className="stat-card">
@@ -93,57 +94,65 @@ function Kennzahlen({ data, track }: { data: TrackData; track: Track }) {
   );
 }
 
+/** Was oben in der Sparte steht - eine Zeile, die ihre Aufgabe beschreibt. */
+const HINWEIS: Record<Track, string> = {
+  promo:
+    "Quelle: der Shooting-Ordner in Drive. Ausgewählt wird nach sichtbarer Kleidung, der Text " +
+    "wirbt für die Rabattcode-Aktion. Läuft täglich von selbst.",
+  viral:
+    "Genommen werden immer die am höchsten bewerteten Tricks, nicht die am längsten nicht " +
+    "verwendeten. Jede Einstellung zeigt den Moment von Absprung bis Landung, rund eine Sekunde " +
+    "lang. Der Text stammt aus einem Konzept.",
+  sports:
+    "Wie die Doc Meiro Reels aufgebaut, nur aus eigenen Quellordnern: die krassesten Momente, " +
+    "geschnitten von Absprung bis Landung, Text aus einem Konzept.",
+  clothing:
+    "Hier zählt, wie gut die Kleidung zu sehen ist - nicht der Trick. Geschnitten wird auf den " +
+    "besten Ausschnitt jedes Clips, der Text stammt aus einem Konzept oder aus dem Dialog.",
+};
+
 export default async function DashboardPage() {
-  const [promo, viral] = await Promise.all([ladeSparte("promo"), ladeSparte("viral")]);
+  const sparten = await Promise.all(TRACK_LISTE.map((s) => ladeSparte(s.key)));
+  const daten = Object.fromEntries(
+    TRACK_LISTE.map((s, i) => [s.key, sparten[i]]),
+  ) as Record<Track, TrackData>;
+
+  const inhalte = Object.fromEntries(
+    TRACK_LISTE.map((sparte) => {
+      const track = sparte.key;
+      const data = daten[track];
+
+      return [
+        track,
+        <>
+          <Kennzahlen data={data} track={track} />
+          <p className="sparte-hinweis">{HINWEIS[track]}</p>
+
+          <TriggerButtons track={track} />
+          {track === "promo" ? <DailySettings /> : <ViralSchedule track={track} />}
+          {/* Der Dialog arbeitet mit der Kleidungsbewertung - in den
+              Reels-Sparten entstehen Videos nach Konzept. */}
+          {bewertungsart(track) === "kleidung" && <VideoChat track={track} />}
+          <LiveActivity track={track} />
+          <ConceptLibrary track={track} />
+          <ClipLibrary track={track} />
+
+          <h2>Erzeugte Videos</h2>
+          <VideoGruppen zeilen={data.zeilen} track={track} />
+        </>,
+      ];
+    }),
+  ) as Record<Track, React.ReactNode>;
 
   return (
     <main>
       <h1>EdgeChase Video-Werkstatt</h1>
       <p className="subtitle">
-        Zwei getrennte Sparten - Werbevideos aus dem Shooting-Material und virale Parkour-Edits.
+        Vier getrennte Sparten - Werbevideos aus dem Shooting-Material und drei Reihen Reels, jede
+        mit eigenen Quellordnern, eigener Bibliothek und eigenem Zeitplan.
       </p>
 
-      <Sparten
-        promo={
-          <>
-            <Kennzahlen data={promo} track="promo" />
-            <p className="sparte-hinweis">
-              Quelle: der Shooting-Ordner in Drive. Ausgewählt wird nach sichtbarer Kleidung, der
-              Text wirbt für die Rabattcode-Aktion. Läuft täglich von selbst.
-            </p>
-
-            <TriggerButtons track="promo" />
-            <DailySettings />
-            <VideoChat />
-            <LiveActivity track="promo" />
-            <ConceptLibrary track="promo" />
-            <ClipLibrary track="promo" />
-
-            <h2>Erzeugte Promo-Videos</h2>
-            <VideoGruppen zeilen={promo.zeilen} track="promo" />
-          </>
-        }
-        viral={
-          <>
-            <Kennzahlen data={viral} track="viral" />
-            <p className="sparte-hinweis">
-              Quelle: der Ordner „Parkour Bangers" in Drive. Genommen werden immer die am höchsten
-              bewerteten Tricks, nicht die am längsten nicht verwendeten. Jede Einstellung zeigt den
-              Moment von Absprung bis Landung, rund eine Sekunde lang. Der Text stammt aus einem
-              Konzept.
-            </p>
-
-            <TriggerButtons track="viral" />
-            <ViralSchedule />
-            <LiveActivity track="viral" />
-            <ConceptLibrary track="viral" />
-            <ClipLibrary track="viral" />
-
-            <h2>Erzeugte Edits</h2>
-            <VideoGruppen zeilen={viral.zeilen} track="viral" />
-          </>
-        }
-      />
+      <Sparten inhalte={inhalte} />
     </main>
   );
 }

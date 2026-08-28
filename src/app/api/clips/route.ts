@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { CURRENT_ANALYSIS_VERSION } from "@/lib/pipeline";
 import { trackFromRequest } from "@/lib/trackParam";
 import { listFolders } from "@/lib/sourceFolders";
+import { bewertungsart } from "@/lib/trackClient";
 
 // Greift bei jedem Aufruf live auf die Datenbank zu - nicht statisch cachen.
 export const dynamic = "force-dynamic";
@@ -13,10 +14,10 @@ export async function GET(request: NextRequest) {
   // "Tauglich" heisst je Sparte etwas anderes: beim Promo-Video, dass die
   // Kleidung zu sehen ist, beim viralen Edit, dass ueberhaupt ein Trick
   // vorkommt.
-  const usableWhere =
-    track === "viral"
-      ? { track, analysisVersion: CURRENT_ANALYSIS_VERSION, stuntScore: { gte: 0.25 } }
-      : { track, analysisVersion: CURRENT_ANALYSIS_VERSION, apparelScore: { gte: 0.5 } };
+  const nachKrassheit = bewertungsart(track) === "krassheit";
+  const usableWhere = nachKrassheit
+    ? { track, analysisVersion: CURRENT_ANALYSIS_VERSION, stuntScore: { gte: 0.25 } }
+    : { track, analysisVersion: CURRENT_ANALYSIS_VERSION, apparelScore: { gte: 0.5 } };
 
   const [total, analyzed, usable] = await Promise.all([
     prisma.clip.count({ where: { track } }),
@@ -37,18 +38,17 @@ export async function GET(request: NextRequest) {
   // Liste erst einmal in eine sinnvolle bringen zu müssen.
   const clips = await prisma.clip.findMany({
     where: { track },
-    orderBy:
-      track === "viral"
-        ? [
-            { manualRank: { sort: "asc", nulls: "last" } },
-            { stuntScore: { sort: "desc", nulls: "last" } },
-            { name: "asc" },
-          ]
-        : [
-            { manualRank: { sort: "asc", nulls: "last" } },
-            { apparelScore: { sort: "desc", nulls: "last" } },
-            { name: "asc" },
-          ],
+    orderBy: nachKrassheit
+      ? [
+          { manualRank: { sort: "asc", nulls: "last" } },
+          { stuntScore: { sort: "desc", nulls: "last" } },
+          { name: "asc" },
+        ]
+      : [
+          { manualRank: { sort: "asc", nulls: "last" } },
+          { apparelScore: { sort: "desc", nulls: "last" } },
+          { name: "asc" },
+        ],
     take: 500,
   });
 

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import type { Track } from "@/lib/trackClient";
 
 interface Settings {
   enabled: boolean;
@@ -9,7 +10,8 @@ interface Settings {
   conceptMode: "rotation" | "fixed";
   conceptIds: string[];
   zeitpunkt: string;
-  zielordnerId: string;
+  /** Null heisst: die Anwendung legt sich beim ersten Video selbst einen an. */
+  zielordnerId: string | null;
 }
 
 interface Konzept {
@@ -19,7 +21,7 @@ interface Konzept {
   totalSeconds: number;
 }
 
-export function ViralSchedule() {
+export function ViralSchedule({ track }: { track: Track }) {
   const router = useRouter();
   const [settings, setSettings] = useState<Settings | null>(null);
   const [konzepte, setKonzepte] = useState<Konzept[]>([]);
@@ -28,22 +30,23 @@ export function ViralSchedule() {
   const [note, setNote] = useState<{ text: string; error: boolean } | null>(null);
 
   useEffect(() => {
-    fetch("/api/viral-schedule", { cache: "no-store" })
+    fetch(`/api/viral-schedule?track=${track}`, { cache: "no-store" })
       .then((r) => r.json())
       .then(setSettings)
       .catch(() => {});
-    fetch("/api/concepts?track=viral", { cache: "no-store" })
+    fetch(`/api/concepts?track=${track}`, { cache: "no-store" })
       .then((r) => r.json())
       .then((d) => setKonzepte(d.concepts ?? []))
       .catch(() => {});
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [track]);
 
   async function save() {
     if (!settings) return;
     setBusy("save");
     setNote(null);
     try {
-      const res = await fetch("/api/viral-schedule", {
+      const res = await fetch(`/api/viral-schedule?track=${track}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(settings),
@@ -63,7 +66,7 @@ export function ViralSchedule() {
     setBusy(nurWartende ? "wartende" : "jetzt");
     setNote(null);
     try {
-      const res = await fetch(`/api/viral/run${nurWartende ? "?nurWartende=1" : ""}`, {
+      const res = await fetch(`/api/viral/run?track=${track}${nurWartende ? "&nurWartende=1" : ""}`, {
         method: "POST",
       });
       const data = await res.json();
@@ -197,15 +200,25 @@ export function ViralSchedule() {
           )}
 
           <p className="chat-hint">
-            Die fertigen Edits landen im Drive-Ordner{" "}
-            <a
-              className="drive-link"
-              href={`https://drive.google.com/drive/folders/${settings.zielordnerId}`}
-              target="_blank"
-              rel="noreferrer"
-            >
-              „Not posted yet"
-            </a>
+            {settings.zielordnerId ? (
+              <>
+                Die fertigen Edits landen im Drive-Ordner{" "}
+                <a
+                  className="drive-link"
+                  href={`https://drive.google.com/drive/folders/${settings.zielordnerId}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  „Not posted yet"
+                </a>
+              </>
+            ) : (
+              <>
+                Die fertigen Edits landen in einem Drive-Ordner, den die Anwendung beim ersten
+                Video selbst anlegt - benannt nach dieser Sparte. Verschieben und umbenennen
+                kannst du ihn danach beliebig
+              </>
+            )}
             - und zwar alle: der Zeitplan wie auch das, was du unten von Hand nach einem
             Konzept erzeugst.
           </p>
