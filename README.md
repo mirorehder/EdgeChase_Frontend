@@ -172,7 +172,8 @@ npm run remotion:studio
 | EdgeChase Clothing Reels | Erkennbarkeit der Kleidung | Konzept oder Dialog | eigener, aus |
 
 Jede Sparte hat eigene Quellordner, eine eigene Clip-Bibliothek, einen eigenen
-Zielordner in Drive und einen eigenen Zeitplan. Ein Clip gehört immer genau
+Zielordner in Drive und einen eigenen Zeitplan. Die Quellordner legen die
+Migrationen an; weitere lassen sich im Dashboard aufnehmen. Ein Clip gehört immer genau
 einer Sparte - der, aus deren Ordner er stammt.
 
 Die Sparten unterscheiden sich technisch nur in einem Punkt, der
