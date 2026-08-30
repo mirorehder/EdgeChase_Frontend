@@ -7,6 +7,7 @@ import {
   clipUrl,
 } from "./renderStage";
 import { env } from "./env";
+import { logActivity } from "./activity";
 import type { PromoVideoProps } from "@/remotion/PromoVideo";
 
 export interface RenderScene {
@@ -16,7 +17,12 @@ export interface RenderScene {
   endMs: number;
 }
 
-const POLL_INTERVAL_MS = 3000;
+// Jede Abfrage ist selbst ein Lambda-Aufruf. Bei drei Sekunden entsteht ein
+// steter Strom von Aufrufen neben den laufenden Teilstücken - und der Fehler
+// heisst nicht umsonst "Rate Exceeded", AWS drosselt auch die Rate, nicht nur
+// die Zahl gleichzeitiger Ausführungen. Fünf Sekunden sind bei einem Render
+// von anderthalb Minuten genau genug.
+const POLL_INTERVAL_MS = 5000;
 
 /** Bildrate der Komposition, siehe src/remotion/Root.tsx. */
 const COMPOSITION_FPS = 30;
@@ -38,13 +44,40 @@ const COMPOSITION_FPS = 30;
  * AWS-Kontingent an gleichzeitigen Ausführungen hergibt (bei frischen Konten
  * oft nur zehn) - dann scheitert er an "Concurrency limit reached".
  *
- * Die Rechnung deckelt deshalb die Anzahl der Teilstücke und macht sie so
- * klein, wie dieser Deckel erlaubt.
+ * Die Rechnung deckelt deshalb die Anzahl der Teilstücke. Beim Deckel zählt
+ * nicht nur die Zahl der Teilstücke: dazu kommt die steuernde Funktion, und
+ * jede Fortschrittsabfrage ist ebenfalls ein Aufruf derselben Funktion. Bei
+ * acht Teilstücken waren das acht plus eins plus eine Abfrage - genau die
+ * zehn, die ein frisches Konto erlaubt. Ein Render lief damit ununterbrochen
+ * an der Kante, und jede kleinste Überlappung liess ihn scheitern.
+ *
+ * Sechs lässt zwei Aufrufe Luft und bleibt zugleich bei rund zwei Szenen je
+ * Lambda - der Grenze, die oben als noch tragfähig gemessen ist.
  */
-const MAX_CHUNKS = Number(process.env.REMOTION_MAX_CHUNKS ?? 8);
+export const MAX_CHUNKS = Number(process.env.REMOTION_MAX_CHUNKS ?? 6);
 const MIN_FRAMES_PER_LAMBDA = 25;
 
-function framesPerLambdaFor(totalFrames: number): number {
+/**
+ * Ab so vielen Bildern je Lambda wurde "Runtime.TruncatedResponse" gemessen.
+ *
+ * Die beiden Grenzen laufen gegeneinander: wenige Teilstücke schonen das
+ * Kontingent, treiben aber die Bilder je Lambda hoch. Beides zugleich lässt
+ * sich nur bis zu einer bestimmten Videolänge erfüllen - siehe SICHER_BIS.
+ */
+const MAX_FRAMES_PER_LAMBDA = 70;
+
+/**
+ * Bis hierher passt ein Video in beide Grenzen: sechs Teilstücke à höchstens
+ * siebzig Bilder, bei dreissig Bildern je Sekunde.
+ *
+ * Darüber gewinnt das Kontingent. Ein Render, der es sprengt, scheitert
+ * garantiert und sofort; einer mit zu vielen Bildern je Lambda scheitert nur
+ * bei 4K-Material. Von zwei schlechten Möglichkeiten ist das die bessere -
+ * aber sie soll im Protokoll stehen und nicht still passieren.
+ */
+export const SICHER_BIS_SEKUNDEN = (MAX_CHUNKS * MAX_FRAMES_PER_LAMBDA) / COMPOSITION_FPS;
+
+export function framesPerLambdaFor(totalFrames: number): number {
   const override = process.env.REMOTION_FRAMES_PER_LAMBDA;
   if (override) return Number(override);
   return Math.max(MIN_FRAMES_PER_LAMBDA, Math.ceil(totalFrames / MAX_CHUNKS));
@@ -121,6 +154,20 @@ export async function renderPromoVideo(
     1,
     Math.round((props.scenes.reduce((sum, s) => sum + s.durationMs, 0) / 1000) * COMPOSITION_FPS),
   );
+
+  // Ein zu langes Video sprengt eine der beiden Grenzen. Das darf passieren,
+  // aber nicht stillschweigend - genau so ein unsichtbarer Fallstrick hat
+  // vorher jeden Render scheitern lassen.
+  const sekunden = totalFrames / COMPOSITION_FPS;
+  if (sekunden > SICHER_BIS_SEKUNDEN) {
+    await logActivity(
+      `Achtung: ${sekunden.toFixed(1)}s sind länger als die ${SICHER_BIS_SEKUNDEN}s, ` +
+        `für die ${MAX_CHUNKS} Teilstücke und die Speichergrenze zusammenpassen. ` +
+        `Der Render läuft mit ${framesPerLambdaFor(totalFrames)} Bildern je Lambda und kann ` +
+        `bei 4K-Material an "Runtime.TruncatedResponse" scheitern.`,
+      { level: "error" },
+    );
+  }
 
   const { renderId, bucketName } = await renderMediaOnLambda({
     region: env.remotionAwsRegion as any,
