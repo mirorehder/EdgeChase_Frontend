@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import type { Track } from "@/lib/trackClient";
 
 // Bewusst eigener Zustand statt <details open>: die Live-Anzeige stösst
@@ -45,7 +46,9 @@ function laenge(zeile: VideoZeile): string {
 
 /** Ein Video als zusammengeklappte Zeile, die sich aufklappen lässt. */
 function VideoEintrag({ zeile }: { zeile: VideoZeile }) {
+  const router = useRouter();
   const [offen, setOffen] = useState(false);
+  const [laeuft, setLaeuft] = useState(false);
   const titel = zeile.fileTitle || zeile.hookText.replace(/\n/g, " ");
 
   return (
@@ -110,6 +113,25 @@ function VideoEintrag({ zeile }: { zeile: VideoZeile }) {
           )}
 
           {zeile.lastError && <p className="error-text">{zeile.lastError}</p>}
+
+          {/* Ohne diesen Knopf ist ein fehlgeschlagener Auftrag verloren: der
+              Wächter greift nur nach wartenden. Wer die Ursache behoben hat,
+              soll genau dieses Video noch einmal versuchen können - mit
+              derselben Zusammenstellung, die schon Gemini-Zeit gekostet hat. */}
+          {zeile.status === "failed" && (
+            <button
+              className="secondary"
+              disabled={laeuft}
+              onClick={async () => {
+                setLaeuft(true);
+                await fetch(`/api/jobs/retry?id=${zeile.id}`, { method: "POST" }).catch(() => {});
+                router.refresh();
+                setLaeuft(false);
+              }}
+            >
+              {laeuft ? "Wird eingereiht …" : "Nochmal versuchen"}
+            </button>
+          )}
 
           {zeile.driveUrl && (
             <a className="drive-link" href={zeile.driveUrl} target="_blank" rel="noreferrer">
@@ -177,8 +199,11 @@ function Gruppe({
 }
 
 export function VideoGruppen({ zeilen, track }: { zeilen: VideoZeile[]; track: Track }) {
+  const router = useRouter();
+  const [laeuft, setLaeuft] = useState(false);
   const nachZeitplan = zeilen.filter((z) => z.origin === "scheduled");
   const vonHand = zeilen.filter((z) => z.origin !== "scheduled");
+  const fehlgeschlagen = zeilen.filter((z) => z.status === "failed");
 
   if (!zeilen.length) {
     return (
@@ -192,6 +217,30 @@ export function VideoGruppen({ zeilen, track }: { zeilen: VideoZeile[]; track: T
 
   return (
     <div className="video-gruppen">
+      {/* Scheitern selten einzelne Renders, sondern alle - etwa wenn das
+          AWS-Kontingent voll ist oder ein Zugangstoken abgelaufen -, waere es
+          muehsam, jeden Auftrag einzeln aufzuklappen. */}
+      {fehlgeschlagen.length > 1 && (
+        <div className="actions">
+          <button
+            className="secondary"
+            disabled={laeuft}
+            onClick={async () => {
+              setLaeuft(true);
+              await fetch(`/api/jobs/retry?track=${track}&alle=1`, { method: "POST" }).catch(
+                () => {},
+              );
+              router.refresh();
+              setLaeuft(false);
+            }}
+          >
+            {laeuft
+              ? "Werden eingereiht …"
+              : `${fehlgeschlagen.length} fehlgeschlagene erneut versuchen`}
+          </button>
+        </div>
+      )}
+
       <Gruppe
         art="scheduled"
         titel="Nach Zeitplan"
