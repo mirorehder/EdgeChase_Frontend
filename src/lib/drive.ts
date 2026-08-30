@@ -352,6 +352,51 @@ function getWriteClient(): drive_v3.Drive {
   return cachedOAuthDrive;
 }
 
+/**
+ * Übersetzt Googles "invalid_grant" in einen Satz, mit dem sich etwas anfangen
+ * lässt.
+ *
+ * Google antwortet auf ein untaugliches Refresh-Token nur mit diesem einen
+ * Wort. Im Dashboard stand dann "invalid_grant" - richtig, aber ohne jeden
+ * Hinweis darauf, was zu tun ist. Der Fehler ist kein Programmfehler und geht
+ * nicht von selbst weg: das Token muss neu geholt werden.
+ */
+export function istTokenFehler(fehler: unknown): boolean {
+  const text = fehler instanceof Error ? fehler.message : String(fehler);
+  return /invalid_grant|invalid_token|unauthorized_client/i.test(text);
+}
+
+export const TOKEN_HINWEIS =
+  "Der Drive-Zugang ist abgelaufen (invalid_grant). Das Refresh-Token gilt nicht mehr - " +
+  "meistens, weil der OAuth-Zustimmungsbildschirm zurück auf 'Testmodus' steht (dann " +
+  "verfällt es nach sieben Tagen) oder der Zugriff widerrufen wurde. Zu beheben: " +
+  "Zustimmungsbildschirm auf 'In Produktion' setzen, mit scripts/oauth-url.ts ein neues " +
+  "Token holen und als GOOGLE_OAUTH_REFRESH_TOKEN in Vercel hinterlegen.";
+
+/**
+ * Prüft, ob sich mit dem hinterlegten Refresh-Token ein Zugangstoken holen
+ * lässt.
+ *
+ * Wird vor dem Render aufgerufen, nicht erst beim Hochladen. Sonst läuft erst
+ * ein voller Lambda-Render durch - anderthalb Minuten Rechenzeit, die Geld
+ * kosten -, und der Auftrag scheitert danach an einer Kleinigkeit, die schon
+ * vorher feststand.
+ */
+export async function pruefeSchreibzugang(): Promise<void> {
+  const client = new google.auth.OAuth2(
+    env.googleOAuthClientId,
+    env.googleOAuthClientSecret,
+  );
+  client.setCredentials({ refresh_token: env.googleOAuthRefreshToken });
+
+  try {
+    await client.getAccessToken();
+  } catch (err) {
+    if (istTokenFehler(err)) throw new Error(TOKEN_HINWEIS);
+    throw err;
+  }
+}
+
 const cachedOutputFolderIds = new Map<Track, string>();
 
 /**
@@ -538,6 +583,9 @@ export async function uploadToOutputFolderWithRetry(
     try {
       return await uploadToOutputFolder(fileName, buffer, track, folderIdOverride);
     } catch (err) {
+      // Ein untauglicher Zugang wird durch Wiederholen nicht besser - im
+      // Gegenteil, drei Versuche verschleiern nur, woran es liegt.
+      if (istTokenFehler(err)) throw new Error(TOKEN_HINWEIS);
       lastError = err;
     }
   }

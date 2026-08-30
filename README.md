@@ -92,6 +92,13 @@ deshalb per OAuth im Namen des Nutzers:
      npx tsx scripts/oauth-url.ts <code>     # Code aus der Adresszeile
    ```
 
+Läuft das Refresh-Token ab, scheitert **jeder** Upload mit `invalid_grant`.
+Die Anwendung prüft den Zugang seit Neuestem **vor** dem Render und bricht mit
+einem Satz ab, der die Behebung nennt - sonst liefe erst ein voller
+Lambda-Render durch, nur um danach am Hochladen zu scheitern. Neues Token:
+Zustimmungsbildschirm auf "In Produktion", dann `scripts/oauth-url.ts` in zwei
+Schritten, Ergebnis als `GOOGLE_OAUTH_REFRESH_TOKEN` in Vercel.
+
 Den Zielordner legt die Anwendung selbst an (Name aus
 `DRIVE_OUTPUT_FOLDER_NAME`, Standard „EdgeChase Promo-Videos"). Das ist
 kein Komfort, sondern Notwendigkeit: mit `drive.file` sieht sie nur, was

@@ -3,6 +3,8 @@ import {
   listSourceClips,
   downloadFileToPath,
   fileSize,
+  istTokenFehler,
+  pruefeSchreibzugang,
   uploadToOutputFolderWithRetry,
   type Track,
 } from "./drive";
@@ -1209,6 +1211,13 @@ export async function processJob(jobId: string): Promise<void> {
 
     try {
       const scenes = job.scenes as unknown as ComposedScene[];
+
+      // Erst den Drive-Zugang prüfen, dann rendern. Andersherum läuft ein
+      // voller Lambda-Render durch - anderthalb Minuten Rechenzeit, die Geld
+      // kosten -, und der Auftrag scheitert danach am Hochladen an etwas, das
+      // schon vorher feststand.
+      await pruefeSchreibzugang();
+
       await logActivity(
         `Render gestartet (Versuch ${attempt} von ${MAX_RENDER_ATTEMPTS}) ...`,
         { videoId: jobId, track },
@@ -1267,6 +1276,18 @@ export async function processJob(jobId: string): Promise<void> {
 
       // Am Kontingent gescheitert: nicht sofort nachsetzen, sondern den
       // laufenden Lambdas Zeit geben, fertig zu werden.
+      // Ein toter Zugang wird durch Wiederholen nicht besser. Sofort
+      // aufgeben, statt zwei weitere Renders zu verbrennen - und zwar mit
+      // dem Satz, der sagt, was zu tun ist.
+      if (istTokenFehler(message)) {
+        await logActivity(message, { level: "error", videoId: jobId, track });
+        await prisma.promoVideo.update({
+          where: { id: jobId },
+          data: { lastError: message, status: "failed" },
+        });
+        return;
+      }
+
       if (istKontingentFehler(message)) {
         const entscheidung = kontingentEntscheidung(attempt, job.createdAt);
 
