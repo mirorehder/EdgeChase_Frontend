@@ -41,20 +41,29 @@ const COMPOSITION_FPS = 30;
  * gemessen: bis zu zwei 4K-Szenen liefen durch, bei vieren brach es ab.
  *
  * Zu klein, und der Render zerfällt in mehr Teilstücke, als das
- * AWS-Kontingent an gleichzeitigen Ausführungen hergibt (bei frischen Konten
- * oft nur zehn) - dann scheitert er an "Concurrency limit reached".
+ * AWS-Kontingent an gleichzeitigen Ausführungen hergibt - dann scheitert er
+ * an "Concurrency limit reached".
  *
  * Die Rechnung deckelt deshalb die Anzahl der Teilstücke. Beim Deckel zählt
  * nicht nur die Zahl der Teilstücke: dazu kommt die steuernde Funktion, und
- * jede Fortschrittsabfrage ist ebenfalls ein Aufruf derselben Funktion. Bei
- * acht Teilstücken waren das acht plus eins plus eine Abfrage - genau die
- * zehn, die ein frisches Konto erlaubt. Ein Render lief damit ununterbrochen
- * an der Kante, und jede kleinste Überlappung liess ihn scheitern.
+ * jede Fortschrittsabfrage ist ebenfalls ein Aufruf derselben Funktion.
  *
- * Sechs lässt zwei Aufrufe Luft und bleibt zugleich bei rund zwei Szenen je
- * Lambda - der Grenze, die oben als noch tragfähig gemessen ist.
+ * Zur Vorgeschichte, damit niemand den Wert versehentlich zurückdreht: ein
+ * frisches AWS-Konto ist auf zehn gleichzeitige Ausführungen gedrosselt. Mit
+ * acht Teilstücken waren es acht plus eins plus eine Abfrage - genau zehn.
+ * Jeder Render lief an der Kante, und jede Überlappung liess ihn scheitern.
+ * Sechs war die Notbremse: sie hielt das Kontingent ein, trieb aber die
+ * Bilder je Lambda so hoch, dass Videos über vierzehn Sekunden an der
+ * Speichergrenze scheiterten - "Runtime.TruncatedResponse". Die beiden
+ * Grenzen liessen sich unter zehn Ausführungen nicht mehr versöhnen.
+ *
+ * Seit das Kontingent auf den regulären Wert angehoben ist, ist die Klemme
+ * weg. Zwanzig Teilstücke sind 22 gleichzeitige Ausführungen - weit unter
+ * jedem angehobenen Kontingent, auch unter 100 - und drücken die Bilder je
+ * Lambda so weit, dass beide Grenzen bis 46 Sekunden Videolänge
+ * zusammenpassen. Nebenbei rendert es rund dreimal so schnell.
  */
-export const MAX_CHUNKS = Number(process.env.REMOTION_MAX_CHUNKS ?? 6);
+export const MAX_CHUNKS = Number(process.env.REMOTION_MAX_CHUNKS ?? 20);
 const MIN_FRAMES_PER_LAMBDA = 25;
 
 /**
@@ -67,15 +76,19 @@ const MIN_FRAMES_PER_LAMBDA = 25;
 const MAX_FRAMES_PER_LAMBDA = 70;
 
 /**
- * Bis hierher passt ein Video in beide Grenzen: sechs Teilstücke à höchstens
- * siebzig Bilder, bei dreissig Bildern je Sekunde.
+ * Bis hierher passt ein Video in beide Grenzen: MAX_CHUNKS Teilstücke à
+ * höchstens siebzig Bilder, bei dreissig Bildern je Sekunde.
  *
  * Darüber gewinnt das Kontingent. Ein Render, der es sprengt, scheitert
  * garantiert und sofort; einer mit zu vielen Bildern je Lambda scheitert nur
  * bei 4K-Material. Von zwei schlechten Möglichkeiten ist das die bessere -
  * aber sie soll im Protokoll stehen und nicht still passieren.
  */
-export const SICHER_BIS_SEKUNDEN = (MAX_CHUNKS * MAX_FRAMES_PER_LAMBDA) / COMPOSITION_FPS;
+// Abgerundet: der Wert steht so im Protokoll, und "46s" liest sich besser als
+// "46.666666666666664s". Abrunden ist ausserdem die sichere Richtung.
+export const SICHER_BIS_SEKUNDEN = Math.floor(
+  (MAX_CHUNKS * MAX_FRAMES_PER_LAMBDA) / COMPOSITION_FPS,
+);
 
 export function framesPerLambdaFor(totalFrames: number): number {
   const override = process.env.REMOTION_FRAMES_PER_LAMBDA;

@@ -17,8 +17,19 @@
  */
 import { framesPerLambdaFor, MAX_CHUNKS, SICHER_BIS_SEKUNDEN } from "../src/lib/render";
 
-/** Kontingent gleichzeitiger Lambda-Ausführungen eines frischen AWS-Kontos. */
-const KONTINGENT = 10;
+/**
+ * Kontingent gleichzeitiger Lambda-Ausführungen.
+ *
+ * Nicht mehr die 10 eines frischen Kontos: das Kontingent ist inzwischen auf
+ * den regulären AWS-Wert angehoben (Service Quotas -> AWS Lambda ->
+ * "Concurrent executions", L-B99A9384, in eu-central-1).
+ *
+ * Absichtlich vorsichtig angesetzt: geprüft wird gegen 100, nicht gegen den
+ * tatsächlichen Wert. Was gegen 100 hält, hält auch gegen 1000 - und sollte
+ * das Kontingent je auf eine kleinere Erhöhung zurückfallen, schlägt dieser
+ * Test an, statt dass es der Betrieb tut.
+ */
+const KONTINGENT = 100;
 
 /** Die steuernde Funktion und die Fortschrittsabfrage laufen mit. */
 const OVERHEAD = 2;
@@ -37,8 +48,11 @@ function pruefe(frage: string, ist: unknown, soll: unknown) {
   );
 }
 
-/** Videolängen, wie sie im Betrieb wirklich vorkommen. */
-const LAENGEN_SEKUNDEN = [8, 11, 13, 15, 18, 25];
+/**
+ * Videolängen, wie sie im Betrieb wirklich vorkommen - dazu 40 und 60, um die
+ * neue Obergrenze von beiden Seiten einzuklammern.
+ */
+const LAENGEN_SEKUNDEN = [8, 11, 13, 15, 18, 25, 40, 60];
 
 console.log(
   `Deckel: ${MAX_CHUNKS} Teilstücke, Kontingent ${KONTINGENT}, Overhead ${OVERHEAD}, ` +
@@ -71,14 +85,23 @@ for (const sekunden of LAENGEN_SEKUNDEN) {
   }
 }
 
-console.log("\nZum Vergleich die alte Einstellung mit acht Teilstücken:");
-const altBilder = 13 * FPS;
-const altJeLambda = Math.max(25, Math.ceil(altBilder / 8));
-console.log(
-  `13s -> ${Math.ceil(altBilder / altJeLambda)} Teilstücke + ${OVERHEAD} = ` +
-    `${Math.ceil(altBilder / altJeLambda) + OVERHEAD} gleichzeitige Aufrufe ` +
-    `(Kontingent ${KONTINGENT})`,
-);
+console.log("\nZum Vergleich, warum es vorher klemmte (Kontingent 10):");
+for (const [deckel, was] of [
+  [8, "die ursprüngliche Einstellung"],
+  [6, "die Notbremse danach"],
+] as const) {
+  const bilder = 20 * FPS;
+  const jeLambda = Math.max(25, Math.ceil(bilder / deckel));
+  const stuecke = Math.ceil(bilder / jeLambda);
+  console.log(
+    `  ${deckel} Teilstücke (${was}): 20s -> ${stuecke} + ${OVERHEAD} = ` +
+      `${stuecke + OVERHEAD} Aufrufe, ${jeLambda} Bilder je Lambda` +
+      // ">=", nicht ">": genau zehn ist kein Bestehen. AWS drosselt auch die
+      // Rate, nicht nur die Zahl - an der Kante scheiterte es reihenweise.
+      `${stuecke + OVERHEAD >= 10 ? " -> Kontingent ausgereizt" : ""}` +
+      `${jeLambda >= TRUNCATED_AB_BILDERN ? " -> Speichergrenze gesprengt" : ""}`,
+  );
+}
 
 console.log(fehler === 0 ? "\nAlles wie erwartet." : `\n${fehler} Abweichung(en).`);
 process.exit(fehler === 0 ? 0 : 1);
