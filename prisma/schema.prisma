@@ -190,6 +190,29 @@ model PromoVideo {
   /// Arbeitsordner nicht vollschreiben.
   driveFolderId String?
 
+  /// Das Konzept, aus dem dieser Auftrag entstanden ist.
+  ///
+  /// Bisher stand die Herkunft nur als Fliesstext in requestedVia ("Konzept:
+  /// ..."). Für den Sound reicht das nicht: der Titel eines Konzepts kann sich
+  /// ändern, und zwei Konzepte dürfen gleich heissen.
+  conceptId String?
+
+  /// Der Sound, wie er zum Zeitpunkt der Anlage am Konzept stand.
+  ///
+  /// Festgehalten und nicht erst beim Posten nachgeschlagen - aus demselben
+  /// Grund wie driveFolderId: ändert sich die Einstellung zwischen Anlegen und
+  /// Posten, soll dieser Auftrag den Sound bekommen, der beim Anlegen galt.
+  soundAudioId String?
+  soundTitle   String?
+
+  /// "geprueft" = beginnt nachweislich an der gewollten Stelle, kann direkt
+  /// angehaengt werden. "offen" = eingefuegt, aber noch nicht geprueft; die
+  /// Posting-Routine muss selbst entscheiden, ob er brauchbar ist.
+  ///
+  /// Die Anwendung kann das nicht klaeren: sie hat keinen Instagram-Zugang.
+  /// Deshalb gibt sie den Stand weiter, statt ihn zu erraten.
+  soundStatus String?
+
   /// Instagram-Media-ID des geposteten Videos, sobald bekannt.
   ///
   /// Wird von diesem Tool nicht gefüllt - das Posten läuft anderswo. Das
@@ -286,6 +309,46 @@ model Concept {
   /// Wann zuletzt ein Video nach diesem Konzept entstanden ist. Grundlage der
   /// Rotation: das am längsten nicht verwendete Konzept kommt als nächstes.
   lastUsedAt DateTime?
+
+  // --- Der Sound dieses Konzepts ------------------------------------------
+  //
+  // Instagram kennt beim Anhängen eines Sounds KEINEN Startversatz: der Ton
+  // beginnt immer bei 0:00. Ein voller Song, dessen Stelle bei 0:47 liegt,
+  // ist damit unbrauchbar - man hört das Intro. Brauchbar sind nur Sounds,
+  // deren Anfang schon die gewollte Stelle ist; das sind in aller Regel die
+  // von Creatorn zugeschnittenen "original_sound"-Einträge.
+  //
+  // Deshalb zwei getrennte Felder: was der Nutzer eingefügt hat (soundUrl),
+  // und was am Ende wirklich verwendet wird (soundAudioId). Bei einem
+  // Zuschnitt ist beides dasselbe. Bei einem vollen Song wird einmalig ein
+  // passender Zuschnitt gesucht und nach dem Anhören bestätigt - dann steht
+  // hier dessen ID, und es muss nie wieder gesucht werden.
+
+  /// Was der Nutzer eingefügt hat, im Wortlaut. Bleibt erhalten, auch wenn
+  /// soundAudioId später auf einen anderen Zuschnitt zeigt - sonst wäre
+  /// hinterher nicht mehr nachvollziehbar, was ursprünglich gemeint war.
+  soundUrl String?
+
+  /// Die ID, die beim Posten wirklich angehängt wird.
+  soundAudioId String?
+
+  /// "original_sound" oder "music". Bei "music" ohne geprüften Zuschnitt ist
+  /// der Sound NICHT verwendbar - siehe oben.
+  soundKind String?
+
+  soundTitle  String?
+  soundArtist String?
+
+  /// "ohne"     - kein eigener Sound; es gilt der Trend-Sound beim Posten.
+  ///              Auch der Ausgangszustand: ein neues Konzept hat keinen.
+  /// "offen"    - eingefügt, aber noch nicht geprüft
+  /// "geprueft" - beginnt an der gewollten Stelle, kann angehängt werden
+  soundStatus String @default("ohne")
+
+  /// Freitext: welche Stelle gemeint ist, warum ein Ersatz gewählt wurde.
+  soundNote String?
+
+  soundCheckedAt DateTime?
 
   createdAt DateTime @default(now())
 

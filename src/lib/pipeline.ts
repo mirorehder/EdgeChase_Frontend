@@ -6,6 +6,7 @@ import {
   istTokenFehler,
   pruefeSchreibzugang,
   uploadToOutputFolderWithRetry,
+  uploadSidecar,
   type Track,
 } from "./drive";
 import {
@@ -29,6 +30,7 @@ import {
 import { env } from "./env";
 import { hookTextToFileName } from "./filename";
 import { logActivity } from "./activity";
+import { beilageBauen, beilagenName } from "./sound";
 import { getDailySettings } from "./dailyConfig";
 import { getViralSchedule, viralOutputFolderId, viralTextStyle } from "./viralSchedule";
 import { bewertungsart, trackBeschreibung } from "./trackClient";
@@ -1254,6 +1256,39 @@ export async function processJob(jobId: string): Promise<void> {
         job.createdAt,
       );
 
+      // Der Sound als Beilage. Bewusst NACH dem Video und in einem eigenen
+      // try: scheitert sie, ist das Video trotzdem da und der Auftrag fertig.
+      // Ein Reel ohne die Beilage bekommt beim Posten den Trend-Sound - ein
+      // Auftrag, der wegen einer 300-Byte-Datei als gescheitert gilt, wäre
+      // der weit grössere Schaden.
+      if (job.soundAudioId) {
+        const beilage = beilagenName(fileName);
+        try {
+          await uploadSidecar(
+            beilage,
+            beilageBauen(
+              fileName,
+              job.soundAudioId,
+              job.soundTitle,
+              job.requestedVia?.replace(/^Konzept:\s*/, "") ?? null,
+              job.soundStatus,
+            ),
+            track,
+            job.driveFolderId,
+          );
+          await logActivity(`Sound-Beilage ${beilage} abgelegt (${job.soundTitle ?? job.soundAudioId}).`, {
+            videoId: jobId,
+            track,
+          });
+        } catch (err) {
+          await logActivity(
+            `Sound-Beilage konnte nicht abgelegt werden: ${err instanceof Error ? err.message : String(err)}. ` +
+              "Das Video ist hochgeladen; beim Posten gilt der Trend-Sound.",
+            { level: "error", videoId: jobId, track },
+          );
+        }
+      }
+
       await prisma.promoVideo.update({
         where: { id: jobId },
         data: {
@@ -1533,6 +1568,15 @@ export async function createViralJobFromConcept(
       // für alle Reels dieselbe.
       textStyle: viralTextStyle(),
       requestedVia: `Konzept: ${concept.title}`,
+      conceptId: concept.id,
+      // Der Sound wird weitergereicht, nicht bewertet. Ob er brauchbar ist,
+      // kann diese Anwendung nicht entscheiden - sie hat keinen
+      // Instagram-Zugang und weiss deshalb nicht einmal, ob hinter der ID ein
+      // Zuschnitt oder ein vollstaendiger Song steckt. Sie gibt den Stand mit,
+      // und wer Instagram erreicht, entscheidet.
+      soundAudioId: concept.soundAudioId,
+      soundTitle: concept.soundTitle,
+      soundStatus: concept.soundAudioId ? concept.soundStatus : null,
       // Zeitplan und Knopf im Dashboard landen im selben Ordner. Er wird beim
       // Anlegen festgehalten, damit ein Auftrag auch dann dort landet, wenn
       // die Einstellung sich zwischen Anlegen und Render ändert.

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { trackBeschreibung, type Track } from "@/lib/trackClient";
+import { soundBeschriftung, soundEingabePruefen, istVerwendbar } from "@/lib/sound";
 
 interface TextPhase {
   text: string;
@@ -23,6 +24,13 @@ interface Concept {
   secondsPerScene: number;
   theme: string | null;
   notes: string | null;
+  soundUrl: string | null;
+  soundAudioId: string | null;
+  soundKind: string | null;
+  soundTitle: string | null;
+  soundArtist: string | null;
+  soundStatus: string;
+  soundNote: string | null;
   createdAt: string;
 }
 
@@ -39,6 +47,9 @@ export function ConceptLibrary({ track }: { track: Track }) {
   const [auf, setAuf] = useState(false);
   const [offenId, setOffenId] = useState<string | null>(null);
   const [entwurf, setEntwurf] = useState<{ title: string; phases: TextPhase[] } | null>(null);
+  const [soundId, setSoundId] = useState<string | null>(null);
+  const [soundEntwurf, setSoundEntwurf] = useState("");
+  const [soundFehler, setSoundFehler] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   async function load() {
@@ -51,6 +62,40 @@ export function ConceptLibrary({ track }: { track: Track }) {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [track]);
+
+  function soundOeffnen(concept: Concept) {
+    const gleich = soundId === concept.id;
+    setSoundId(gleich ? null : concept.id);
+    setSoundEntwurf(gleich ? "" : concept.soundUrl ?? "");
+    setSoundFehler(null);
+  }
+
+  async function soundSpeichern(concept: Concept) {
+    // Dieselbe Pruefung wie auf dem Server - ein Beitragslink statt eines
+    // Soundlinks soll hier auffallen und nicht erst beim Posten.
+    const gelesen = soundEingabePruefen(soundEntwurf);
+    if (gelesen.fehler) {
+      setSoundFehler(gelesen.fehler);
+      return;
+    }
+    setBusy(`sound-${concept.id}`);
+    setSoundFehler(null);
+    try {
+      const res = await fetch(`/api/concepts/${concept.id}/sound`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: soundEntwurf }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Sound konnte nicht gespeichert werden.");
+      setSoundId(null);
+      await load();
+    } catch (err) {
+      setSoundFehler(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(null);
+    }
+  }
 
   async function upload(file: File) {
     setBusy("upload");
@@ -282,6 +327,17 @@ export function ConceptLibrary({ track }: { track: Track }) {
                 )}
                 {concept.notes && <span className="clip-meta">{concept.notes}</span>}
 
+                {/* Der Sound steht auch zugeklappt da: ob ein Edit seinen
+                    eigenen Sound bekommt oder den Trend-Sound, ist beim
+                    Ueberfliegen der Liste die wichtigere Information als der
+                    Link selbst. */}
+                <span
+                  className="clip-meta"
+                  style={{ color: istVerwendbar(concept) ? "var(--ok)" : undefined }}
+                >
+                  Sound: {soundBeschriftung(concept)}
+                </span>
+
                 <div className="actions" style={{ marginTop: 8, marginBottom: 0 }}>
                   <button onClick={() => verwenden(concept)} disabled={busy !== null}>
                     {trackBeschreibung(track).nachKonzept ? "Edit nach diesem Konzept" : "Video nach diesem Konzept"}
@@ -292,6 +348,13 @@ export function ConceptLibrary({ track }: { track: Track }) {
                     disabled={busy !== null}
                   >
                     {offenId === concept.id ? "Zuklappen" : "Texte bearbeiten"}
+                  </button>
+                  <button
+                    className="secondary"
+                    onClick={() => soundOeffnen(concept)}
+                    disabled={busy !== null}
+                  >
+                    {soundId === concept.id ? "Zuklappen" : "Sound"}
                   </button>
                   {concept.sourceUrl && (
                     <a
@@ -311,6 +374,63 @@ export function ConceptLibrary({ track }: { track: Track }) {
                     Löschen
                   </button>
                 </div>
+
+                {soundId === concept.id && (
+                  <div className="clip-editor">
+                    <label>
+                      Instagram-Sound (Link auf die Sound-Seite)
+                      <input
+                        value={soundEntwurf}
+                        onChange={(e) => setSoundEntwurf(e.target.value)}
+                        placeholder="https://www.instagram.com/reels/audio/2243706922800068/"
+                      />
+                    </label>
+                    <span className="clip-meta">
+                      Im Reel unten auf den Soundnamen tippen, dort teilen. Ein Zuschnitt eines
+                      Creators wird direkt verwendet. Ein vollständiger Song nicht: Instagram
+                      startet jeden Sound bei 0:00, das Reel liefe im Intro. Dafür wird einmalig
+                      ein passender Zuschnitt gesucht und bestätigt.
+                    </span>
+                    {concept.soundNote && (
+                      <span className="clip-meta">Notiz: {concept.soundNote}</span>
+                    )}
+                    {soundFehler && (
+                      <span className="clip-meta" style={{ color: "var(--err)" }}>
+                        {soundFehler}
+                      </span>
+                    )}
+                    <div className="actions" style={{ marginTop: 8, marginBottom: 0 }}>
+                      <button
+                        onClick={() => soundSpeichern(concept)}
+                        disabled={busy !== null}
+                      >
+                        {busy === `sound-${concept.id}` ? "Speichert …" : "Sound speichern"}
+                      </button>
+                      {concept.soundAudioId && (
+                        <a
+                          className="drive-link"
+                          href={`https://www.instagram.com/reels/audio/${concept.soundAudioId}/`}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Sound anhören
+                        </a>
+                      )}
+                      {concept.soundUrl && (
+                        <button
+                          className="secondary"
+                          onClick={() => {
+                            setSoundEntwurf("");
+                            setSoundFehler(null);
+                          }}
+                          disabled={busy !== null}
+                        >
+                          Feld leeren (entfernt den Sound beim Speichern)
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
 
                 {offenId === concept.id && entwurf && (
                   <div className="clip-editor">

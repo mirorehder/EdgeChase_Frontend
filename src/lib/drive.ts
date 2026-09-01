@@ -550,6 +550,35 @@ export async function uploadToOutputFolder(
   return { id: res.data.id, webViewLink: res.data.webViewLink ?? null };
 }
 
+/**
+ * Legt eine kleine JSON-Datei neben ein hochgeladenes Video.
+ *
+ * Damit findet die Posting-Routine den Sound, ohne selbst suchen zu müssen.
+ * Absichtlich eine eigene Datei und kein Zusatz am Videonamen: der Dateiname
+ * wird beim Posten zur Bildunterschrift, eine angehängte ID stünde also unter
+ * dem Reel.
+ */
+export async function uploadSidecar(
+  fileName: string,
+  inhalt: unknown,
+  track: Track = "promo",
+  folderIdOverride?: string | null,
+): Promise<string> {
+  const drive = getWriteClient();
+  const folderId = folderIdOverride || (await ensureOutputFolder(track));
+
+  const res = await drive.files.create({
+    requestBody: { name: fileName, parents: [folderId] },
+    media: {
+      mimeType: "application/json",
+      body: bufferToStream(Buffer.from(JSON.stringify(inhalt, null, 2), "utf8")),
+    },
+    fields: "id",
+  });
+  if (!res.data.id) throw new Error("Drive nahm die Sound-Beilage nicht an.");
+  return res.data.id;
+}
+
 function bufferToStream(buffer: Buffer) {
   const { Readable } = require("node:stream") as typeof import("node:stream");
   return Readable.from(buffer);
