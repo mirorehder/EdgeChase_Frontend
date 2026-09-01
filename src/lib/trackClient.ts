@@ -28,6 +28,12 @@ export interface TrackBeschreibung {
   key: Track;
   /** Wie die Sparte in der Oberfläche heisst. */
   label: string;
+  /**
+   * Derselbe Name für die untere Leiste am Telefon. Dort steht je Sparte ein
+   * Viertel der Bildschirmbreite zur Verfügung - "EdgeChase Clothing Reels"
+   * bricht darin auf drei Zeilen um.
+   */
+  kurz: string;
   /** Eine Zeile darunter, damit die Reiter sich unterscheiden lassen. */
   untertitel: string;
   bewertung: Bewertungsart;
@@ -41,6 +47,7 @@ export interface TrackBeschreibung {
 export const TRACK_LISTE: readonly TrackBeschreibung[] = [
   {
     key: "promo",
+    kurz: "Promo",
     label: "Promo-Video-Generator",
     untertitel: "Werbevideos aus dem Shooting-Material",
     bewertung: "kleidung",
@@ -48,6 +55,7 @@ export const TRACK_LISTE: readonly TrackBeschreibung[] = [
   },
   {
     key: "viral",
+    kurz: "Doc Meiro",
     label: "Doc Meiro Reels",
     untertitel: "Parkour-Höhepunkte nach Konzept",
     bewertung: "krassheit",
@@ -55,6 +63,7 @@ export const TRACK_LISTE: readonly TrackBeschreibung[] = [
   },
   {
     key: "sports",
+    kurz: "Sports",
     label: "EdgeChase Sports Reels",
     untertitel: "Sport-Höhepunkte nach Konzept",
     bewertung: "krassheit",
@@ -62,6 +71,7 @@ export const TRACK_LISTE: readonly TrackBeschreibung[] = [
   },
   {
     key: "clothing",
+    kurz: "Clothing",
     label: "EdgeChase Clothing Reels",
     untertitel: "Die Kleidung in Bewegung, nach Konzept",
     bewertung: "kleidung",

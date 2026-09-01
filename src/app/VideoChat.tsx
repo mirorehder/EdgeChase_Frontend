@@ -23,7 +23,16 @@ export function VideoChat({ track }: { track: Track }) {
   const [error, setError] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
 
+  // Dem Verlauf nachlaufen, sobald etwas dazukommt - aber nicht beim ersten
+  // Aufbau. Sonst zieht der leere Chat die Seite schon beim Öffnen zu sich,
+  // und man landet mitten im Inhalt statt beim Titel. Als App vom
+  // Home-Bildschirm sieht das aus, als sei die Seite kaputt geladen.
+  const ersterAufbau = useRef(true);
   useEffect(() => {
+    if (ersterAufbau.current) {
+      ersterAufbau.current = false;
+      return;
+    }
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [turns, busy]);
 

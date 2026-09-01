@@ -31,6 +31,10 @@ main {
   max-width: 960px;
   margin: 0 auto;
   padding: 32px 20px 64px;
+  /* Quer gehalten liegt die Kameraeinbuchtung neben dem Inhalt. Ohne diese
+     beiden Zeilen verschwindet dort die linke Spalte der Clip-Bibliothek. */
+  padding-left: max(20px, env(safe-area-inset-left));
+  padding-right: max(20px, env(safe-area-inset-right));
 }
 
 h1 {
@@ -624,6 +628,121 @@ tr:last-child td {
 
 .sparte-inhalt-clothing {
   --accent: var(--clothing);
+}
+
+/* --------------------------------------------------------------------------
+   Dieselbe Auswahl als Leiste unten, für schmale Bildschirme.
+
+   Vom Home-Bildschirm gestartet läuft die Oberfläche im Vollbild: keine
+   Adressleiste, kein Zurück-Knopf. Die Karten oben sind dann nach zwei
+   Fingerbewegungen aus dem Bild, und die Sparte lässt sich nur noch durch
+   Zurückscrollen wechseln. Die feste Leiste unten löst das und liegt
+   ausserdem dort, wo der Daumen ohnehin ist.
+
+   Gezeigt wird immer genau eine der beiden: unterhalb von 760px die Leiste,
+   darüber die Karten.
+   -------------------------------------------------------------------------- */
+
+.tableiste {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  .sparten {
+    display: none;
+  }
+
+  .tableiste {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 40;
+    /* Durchscheinend, aber nicht mitlesbar: bei 86% blieb die Überschrift
+       dahinter erkennbar und die Leiste wirkte schmutzig. */
+    background: color-mix(in srgb, var(--bg) 93%, transparent);
+    -webkit-backdrop-filter: blur(16px);
+    backdrop-filter: blur(16px);
+    border-top: 1px solid var(--border);
+    /* Wirkt nur mit viewport-fit=cover (siehe src/app/layout.tsx): hält die
+       Beschriftungen über dem Home-Indikator statt darunter. */
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+
+  .tab {
+    position: relative;
+    appearance: none;
+    background: none;
+    border: 0;
+    padding: 9px 4px 8px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    color: var(--muted);
+    cursor: pointer;
+    /* Ohne die beiden Zeilen blitzt beim Tippen ein graues Rechteck auf und
+       ein langer Druck markiert die Beschriftung - beides verrät sofort, dass
+       es kein App-Bedienelement ist. */
+    -webkit-tap-highlight-color: transparent;
+    -webkit-user-select: none;
+    user-select: none;
+    transition: color 0.15s;
+  }
+
+  /* Der Strich über der aktiven Sparte. Er nimmt die Leitfarbe an, die auch
+     Knöpfe und Balken im Inhalt darunter tragen. */
+  .tab::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 50%;
+    width: 26px;
+    height: 2px;
+    border-radius: 0 0 2px 2px;
+    transform: translateX(-50%) scaleX(0);
+    background: currentColor;
+    transition: transform 0.15s;
+  }
+
+  .tab.aktiv::before {
+    transform: translateX(-50%) scaleX(1);
+  }
+
+  .tab-zeichen {
+    width: 23px;
+    height: 23px;
+  }
+
+  .tab-titel {
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.1;
+    white-space: nowrap;
+  }
+
+  .tab-promo.aktiv {
+    color: var(--accent);
+  }
+  .tab-viral.aktiv {
+    color: var(--viral);
+  }
+  .tab-sports.aktiv {
+    color: var(--sports);
+  }
+  .tab-clothing.aktiv {
+    color: var(--clothing);
+  }
+
+  /* Platz für die Leiste. Ohne das verdeckt sie den letzten Knopf der Seite -
+     und der lässt sich dann nicht mehr drücken. */
+  main {
+    padding-bottom: calc(56px + 64px + env(safe-area-inset-bottom));
+  }
 }
 
 .sparte-hinweis {
