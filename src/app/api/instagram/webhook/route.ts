@@ -1,0 +1,115 @@
+import { NextRequest, NextResponse } from "next/server";
+import { env } from "@/lib/env";
+import { kommentareAusPayload, signaturStimmt } from "@/lib/instagram/graph";
+import { nimmKommentareAuf } from "@/lib/instagram/verarbeitung";
+
+/**
+ * Die Adresse, die Meta anruft, sobald jemand kommentiert.
+ *
+ * Node-Laufzeit, weil die Signaturprüfung "crypto" braucht. Und "dynamic",
+ * weil hier nichts zwischengespeichert werden darf - jeder Aufruf ist ein
+ * neues Ereignis.
+ */
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+/**
+ * So lange wird der Anstoss der Verarbeitung angeschoben, bevor geantwortet
+ * wird.
+ *
+ * Meta erwartet die Antwort binnen weniger Sekunden und stellt sonst erneut
+ * zu. Die Verarbeitung selbst dauert länger als das - sie läuft deshalb in
+ * einer eigenen Ausführung. Auf ihr Ergebnis wird nicht gewartet, die Anfrage
+ * wird nur lange genug angeschoben, dass sie die Plattform sicher erreicht.
+ */
+const ANSTOSS_MS = 1200;
+
+/**
+ * Der Handschlag beim Einrichten des Webhooks.
+ *
+ * Meta ruft die Adresse einmal mit einem selbst gewählten Prüfwort auf und
+ * erwartet die mitgeschickte Zeichenfolge unverändert zurück - als reinen
+ * Text, nicht als JSON. Stimmt das Prüfwort nicht, wird der Webhook nicht
+ * eingerichtet.
+ */
+export async function GET(request: NextRequest) {
+  const params = new URL(request.url).searchParams;
+
+  const modus = params.get("hub.mode");
+  const pruefwort = params.get("hub.verify_token");
+  const challenge = params.get("hub.challenge");
+
+  if (modus === "subscribe" && pruefwort === env.igWebhookVerifyToken && challenge) {
+    return new NextResponse(challenge, {
+      status: 200,
+      headers: { "Content-Type": "text/plain" },
+    });
+  }
+
+  return new NextResponse("Prüfwort stimmt nicht.", { status: 403 });
+}
+
+export async function POST(request: NextRequest) {
+  // Der rohe Text, nicht das geparste JSON: die Signatur bezieht sich auf die
+  // Bytes, wie sie ankamen. Einmal durch JSON.parse und wieder zurück ergäbe
+  // eine andere Zeichenfolge und damit eine andere Signatur.
+  const rohkoerper = await request.text();
+
+  if (!signaturStimmt(rohkoerper, request.headers.get("x-hub-signature-256"))) {
+    // Ohne diese Sperre könnte jeder, der die Adresse kennt, Kommentare
+    // erfinden und damit beliebig viele Gutscheine erzeugen.
+    return NextResponse.json({ error: "Signatur ungültig." }, { status: 403 });
+  }
+
+  let payload: unknown;
+  try {
+    payload = JSON.parse(rohkoerper);
+  } catch {
+    // Kein gültiges JSON - erneutes Zustellen würde daran nichts ändern,
+    // deshalb wird es angenommen und verworfen.
+    return NextResponse.json({ ok: true, hinweis: "Kein gültiges JSON." });
+  }
+
+  const kommentare = kommentareAusPayload(payload);
+  if (kommentare.length === 0) {
+    // Meta schickt auch Ereignisse, die uns nicht betreffen (Likes, Mentions,
+    // Änderungen an anderen Feldern). Die sind kein Fehler.
+    return NextResponse.json({ ok: true, neu: 0 });
+  }
+
+  let neu: number;
+  try {
+    neu = await nimmKommentareAuf(kommentare, payload);
+  } catch (fehler) {
+    // Hier ist ein Fehlschlag anders zu bewerten als weiter unten: der
+    // Kommentar ist noch nirgends festgehalten. Ein 500er sorgt dafür, dass
+    // Meta es erneut versucht, statt dass die Person still leer ausgeht.
+    const text = fehler instanceof Error ? fehler.message : String(fehler);
+    return NextResponse.json({ error: text }, { status: 500 });
+  }
+
+  if (neu > 0) await stosseVerarbeitungAn(request);
+
+  return NextResponse.json({ ok: true, neu });
+}
+
+async function stosseVerarbeitungAn(request: NextRequest): Promise<void> {
+  const host = request.headers.get("host");
+  const proto = request.headers.get("x-forwarded-proto") ?? "https";
+  const basis = host
+    ? `${proto}://${host}`
+    : process.env.VERCEL_URL
+      ? `https://${process.env.VERCEL_URL}`
+      : "http://localhost:3000";
+
+  const anfrage = fetch(`${basis}/api/instagram/process`, {
+    method: "POST",
+    headers: { "x-api-key": env.cronSecret },
+  }).catch(() => {
+    // Geht der Anstoss verloren, bleibt der Kommentar auf "empfangen" stehen
+    // und wird beim nächsten Aufruf der Verarbeitungsroute nachgeholt. Ein
+    // verlorener Anstoss darf die Antwort an Meta nicht gefährden.
+  });
+
+  await Promise.race([anfrage, new Promise((r) => setTimeout(r, ANSTOSS_MS))]);
+}

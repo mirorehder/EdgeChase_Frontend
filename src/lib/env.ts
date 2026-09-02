@@ -75,6 +75,50 @@ export const env = {
   get cronScheduleLabel() {
     return process.env.CRON_SCHEDULE_LABEL || "08:00 UTC";
   },
+  /**
+   * Zugriffstoken des EdgeChase-Instagram-Kontos.
+   *
+   * Eigenes Token, nicht das des MCP-Servers: der Kommentar-Automat läuft
+   * unabhängig davon und soll nicht ausfallen, wenn dort etwas neu verbunden
+   * wird. Meta macht Tokens ungültig, wenn das Passwort wechselt oder
+   * Berechtigungen entzogen werden - dann steht in den Logs eine 401 von
+   * graph.instagram.com.
+   */
+  get igAccessToken() {
+    return required("IG_ACCESS_TOKEN");
+  },
+  /**
+   * Die Instagram-Kennung des EdgeChase-Kontos.
+   *
+   * Sie ist kein Geheimnis und ändert sich nicht, deshalb steht sie als
+   * Vorgabe im Code - so muss in Vercel eine Variable weniger gepflegt
+   * werden. Zwei Dinge hängen daran: der Versand der privaten Antwort und die
+   * Sperre gegen die eigene Endlosschleife (Kommentare des eigenen Kontos
+   * werden übergangen).
+   */
+  get igUserId() {
+    return process.env.IG_USER_ID || "17841450788279331";
+  },
+  /**
+   * Das App-Geheimnis der Meta-App - damit unterschreibt Meta jedes
+   * Webhook-Paket. Ohne die Prüfung könnte jeder, der die Adresse kennt,
+   * Kommentare erfinden und Gutscheine erzeugen.
+   */
+  get igAppSecret() {
+    return required("IG_APP_SECRET");
+  },
+  /** Frei gewähltes Prüfwort für den einmaligen Handschlag beim Einrichten. */
+  get igWebhookVerifyToken() {
+    return required("IG_WEBHOOK_VERIFY_TOKEN");
+  },
+  /** Wix-API-Key mit Berechtigung für Gutscheine. */
+  get wixApiKey() {
+    return required("WIX_API_KEY");
+  },
+  /** Die EdgeChase-Site. Keine geheime Angabe, deshalb als Vorgabe im Code. */
+  get wixSiteId() {
+    return process.env.WIX_SITE_ID || "e939c7dd-bd30-437b-8ce5-58e6c971ac95";
+  },
   get remotionAwsAccessKeyId() {
     return required("REMOTION_AWS_ACCESS_KEY_ID");
   },

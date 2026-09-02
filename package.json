@@ -11,6 +11,7 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
+    "instagram:pruefe": "tsx scripts/pruefe-instagram-namen.ts",
     "remotion:studio": "remotion studio src/remotion/index.ts",
     "remotion:render": "remotion render src/remotion/index.ts PromoVideo out/promo.mp4",
     "remotion:lambda:deploy-site": "tsx scripts/deploy-remotion-site.ts",
