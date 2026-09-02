@@ -555,9 +555,20 @@ export interface ViralCandidate {
 export async function selectViralScenes(
   candidates: ViralCandidate[],
   desiredCount: number,
+  /**
+   * Der eingeblendete Text des Videos - die Aussage, zu der die Clips passen
+   * muessen.
+   *
+   * Fehlte hier lange, und die Auswahl arbeitete deshalb blind: sie sah nur
+   * Bewertung und Beschreibung und waehlte nach Spektakel. Im Schwesterprojekt
+   * fuehrte genau das dazu, dass unter "Blick vom Hochhaus bei Nacht" ein
+   * Feuerwerk lief - "nachts" war die einzige Information, die die Auswahl
+   * hatte.
+   */
+  hookText = "",
 ): Promise<string[]> {
   try {
-    return await selectViralScenesMitModell(candidates, desiredCount);
+    return await selectViralScenesMitModell(candidates, desiredCount, hookText);
   } catch (err) {
     // Das Modell ordnet hier nur - die Auswahl selbst steht schon fest, weil
     // die Kandidatenliste nach Bewertung sortiert hereinkommt. Faellt Gemini
@@ -585,6 +596,7 @@ function ersatzReihenfolge(candidates: ViralCandidate[], desiredCount: number): 
 async function selectViralScenesMitModell(
   candidates: ViralCandidate[],
   desiredCount: number,
+  hookText: string,
 ): Promise<string[]> {
   const ai = client();
 
@@ -597,20 +609,35 @@ async function selectViralScenesMitModell(
     )
     .join("\n");
 
-  const prompt = `Du stellst einen schnell geschnittenen Parkour-Edit zusammen. Jede Einstellung zeigt etwa eine Sekunde: genau den Trick, nichts davor, nichts danach.
+  // Der Themenblock steht ganz oben und nicht als Nebensatz weiter unten: was
+  // am Anfang der Anweisung steht, wird zuverlaessiger befolgt.
+  const themenBlock = hookText.trim()
+    ? `WORUM ES IN DIESEM VIDEO GEHT
+Der eingeblendete Text lautet: „${hookText.replace(/\n/g, " ").trim()}"
 
-Verfügbare Höhepunkte, bereits nach stuntScore sortiert - der stärkste Trick steht oben:
+Jeder gewählte Clip muss zu dieser Aussage passen. Das steht über allem anderen - auch über der Bewertung. Geht es um Risiko, gehören die riskantesten Clips hinein; geht es um einen misslungenen Versuch, gehört ein Fail hinein, kein sauberer Trick.
+
+`
+    : "";
+
+  const prompt = `${themenBlock}Du stellst einen schnell geschnittenen Parkour-Edit zusammen. Jede Einstellung zeigt etwa eine Sekunde: genau den Trick, nichts davor, nichts danach.
+
+Verfügbare Clips:
 ${candidateList}
 
 Wähle genau ${desiredCount} IDs aus dieser Liste und bringe sie in die Reihenfolge, in der sie im Video erscheinen sollen.
 
-WICHTIGSTE REGEL: Es zählt, wie spektakulär die Tricks sind. Nimm die am höchsten bewerteten Clips. Übergehe einen stark bewerteten Trick niemals zugunsten von Abwechslung - lieber zwei ähnliche starke Tricks als einen schwachen. Weggelassen wird immer von unten, also das Schwächste zuerst.
+Die Liste ist bereits vorsortiert. In dieser Reihenfolge stecken schon drei Dinge: die Bewertung, die von Hand gezogene Reihenfolge und wie lange ein Clip nicht mehr verwendet wurde. Du musst sie NICHT noch einmal nach Krassheit sortieren - tu das nicht, sonst kommen Tag für Tag dieselben Clips heraus.
+
+Regeln für die Auswahl:
+- Passung zur Aussage vor Krassheit. Ein etwas schwächerer Clip, der die Aussage trägt, ist besser als ein starker, der daneben liegt.
+- Ort, Umgebung, Tageszeit, Untergrund und Bildähnlichkeit zählen ausdrücklich NICHT. Es geht nicht darum, ein Original nachzustellen, sondern dieselbe Sache zu erzählen. Ein Backflip von einer Mauer erfüllt dieselbe Aufgabe wie einer vom Sprungbrett.
+- Nimm ruhig aus der ganzen Liste, nicht nur von oben. Die vorderen Plätze stehen dort auch deshalb, weil sie lange nicht dran waren.
 
 Regeln für die Reihenfolge:
-- Der erste Clip entscheidet, ob jemand weiterschaut: er muss sofort beeindrucken. Nimm dafür einen der stärksten.
-- Der allerstärkste Trick gehört ans Ende.
-- Sind zwei Clips gleich stark bewertet, stelle den mit dem anderen Ort oder der anderen Bewegung dazwischen.
-- Clips ohne echten Trick (stuntScore nahe 0) nur nehmen, wenn sonst zu wenige da sind.
+- Der erste Clip entscheidet, ob jemand weiterschaut: er muss sofort beeindrucken.
+- Ein besonders starker Trick gehört ans Ende.
+- Zwei sehr ähnliche Einstellungen nicht direkt hintereinander.
 
 Gib ausschliesslich IDs aus der Liste zurück.`;
 

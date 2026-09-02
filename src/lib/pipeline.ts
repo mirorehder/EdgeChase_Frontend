@@ -659,6 +659,22 @@ const STUNT_SCORE_THRESHOLD = 0.25;
 const RANG_BONUS = 0.3;
 
 /**
+ * Wie schwer es wiegt, dass ein Clip lange nicht dran war.
+ *
+ * Hier stand vorher nichts, und genau das war der Fehler. Die Rotation war nur
+ * das ZWEITE Sortierkriterium der Datenbankabfrage - sie entschied also erst
+ * bei exakt gleicher Bewertung, und bei Kommazahlen wie 0.72 gegen 0.68 tritt
+ * das nie ein. Aus dem Betrieb: "es kommen immer dieselben fünf Videos".
+ *
+ * Als Bonus auf der Bewertungsskala verschiebt sie um höchstens ±0,175. Ein
+ * lange nicht verwendeter Clip überholt damit einen, der bis zu 0,35 besser
+ * bewertet ist - spürbar, aber ein wirklich herausragender Trick gewinnt
+ * weiterhin. Bewusst KEINE harte Sperrfrist: die wäre zuverlässiger, würde
+ * aber bei einer kleinen Bibliothek ins Leere greifen.
+ */
+const ROTATIONS_BONUS = 0.35;
+
+/**
  * Die Gunst je Clip: 1 ganz oben im Ordner, 0 ganz unten, 0,5 unsortiert.
  *
  * Innerhalb des Ordners sortiert, aber ordnerübergreifend vergleichbar
@@ -694,6 +710,53 @@ async function rangGunst(track: Track): Promise<Map<string, number>> {
 }
 
 /**
+ * Die Frische je Clip: 1 fuer den am laengsten nicht verwendeten, 0 fuer den
+ * zuletzt verwendeten, nie verwendete ganz vorn.
+ *
+ * Ueber den Rang normiert und nicht ueber den Abstand in Tagen: sonst haengt
+ * die Wirkung davon ab, wie lange das Werkzeug schon laeuft. Nach einer
+ * Betriebspause waeren sonst ploetzlich alle Clips gleich "frisch" und die
+ * Rotation waere wieder wirkungslos.
+ */
+async function rotationsGunst(track: Track): Promise<Map<string, number>> {
+  const clips = await prisma.clip.findMany({
+    where: { track },
+    select: { id: true, lastUsedAt: true },
+  });
+
+  // Nach dem ZEITPUNKT gestaffelt, nicht nach der Position in der Liste.
+  //
+  // Der Unterschied ist nicht kosmetisch. Über die Position bekämen 25 Clips
+  // immer die Werte 1,0 bis 0,0 - auch dann, wenn noch keiner verwendet wurde
+  // und alle gleich frisch sind. Die Reihenfolge käme dann aus der
+  // Abfragereihenfolge der Datenbank, und der erste Clip hätte grundlos einen
+  // Vorsprung von 0,175. An der Prüfung gemessen: derselbe Clip landete
+  // dadurch in allen fünf Videos, obwohl die Rotation ihn längst hätte
+  // verdrängen müssen.
+  //
+  // Clips, die im selben Video verwendet wurden, teilen sich denselben
+  // Zeitpunkt und damit denselben Wert - so wie es sein soll.
+  const zeitpunkte = [...new Set(clips.map((c) => c.lastUsedAt?.getTime() ?? -1))].sort(
+    (a, b) => a - b,
+  );
+
+  const gunst = new Map<string, number>();
+
+  // Nur ein Zeitpunkt heisst: alle gleich frisch. Dann sagt die Rotation
+  // nichts, und 0,5 lässt den Bonus verschwinden statt zu würfeln.
+  if (zeitpunkte.length < 2) {
+    for (const c of clips) gunst.set(c.id, 0.5);
+    return gunst;
+  }
+
+  const stufe = new Map(zeitpunkte.map((t, i) => [t, 1 - i / (zeitpunkte.length - 1)]));
+  for (const c of clips) {
+    gunst.set(c.id, stufe.get(c.lastUsedAt?.getTime() ?? -1) ?? 0.5);
+  }
+  return gunst;
+}
+
+/**
  * Die Bewertung, auf die es in dieser Sparte ankommt.
  *
  * Bei den Reels die Krassheit des Tricks, bei allem, was die Ware zeigen soll,
@@ -707,13 +770,25 @@ function bewertungVon(
   return (bewertungsart(track) === "krassheit" ? clip.stuntScore : clip.apparelScore) ?? 0;
 }
 
-/** Bewertung plus Gunst - die Zahl, nach der der Kandidatenkreis entsteht. */
+/**
+ * Bewertung, Handreihenfolge und Frische - die Zahl, nach der der
+ * Kandidatenkreis entsteht.
+ *
+ * Beide Boni sind als Abweichung von der Mitte formuliert (Wert minus 0,5),
+ * damit sie einen Clip nicht pauschal anheben, sondern nur gegeneinander
+ * verschieben. Ein Clip ohne Angabe bleibt mit 0,5 neutral.
+ */
 function effektiveBewertung(
   clip: { id: string; stuntScore: number | null; apparelScore: number | null },
   track: Track,
   gunst: Map<string, number>,
+  frische: Map<string, number>,
 ): number {
-  return bewertungVon(clip, track) + RANG_BONUS * ((gunst.get(clip.id) ?? 0.5) - 0.5);
+  return (
+    bewertungVon(clip, track) +
+    RANG_BONUS * ((gunst.get(clip.id) ?? 0.5) - 0.5) +
+    ROTATIONS_BONUS * ((frische.get(clip.id) ?? 0.5) - 0.5)
+  );
 }
 
 /**
@@ -737,6 +812,7 @@ export async function viraleKandidaten(
 ) {
   const verwendbar = await usableFolderIds(track);
   const gunst = await rangGunst(track);
+  const frische = await rotationsGunst(track);
   const nachKrassheit = bewertungsart(track) === "krassheit";
 
   const grundfilter = {
@@ -757,13 +833,24 @@ export async function viraleKandidaten(
   // Rangfolge von Hand verschiebt die Reihenfolge noch, und würde schon hier
   // auf die Wunschanzahl gekürzt, käme ein hochgezogener Clip nie hinein.
   //
-  // Der Kreis selbst bleibt bewusst eng (die Gewünschten plus ein paar
-  // Ersatzleute): bei einem grossen Kreis könnte die Auswahl einen der
-  // stärksten Tricks zugunsten von Abwechslung übergehen.
-  const kreisGroesse = wantedCount + VIRAL_POOL_SPARE;
+  // Der Kreis war bewusst eng - die Gewünschten plus vier -, damit die Auswahl
+  // keinen der stärksten Tricks zugunsten von Abwechslung übergeht. Bei fünf
+  // gewünschten Clips wählte das Modell damit aus neun, und diese neun standen
+  // nach Bewertung fest: Tag für Tag dieselben.
+  //
+  // Jetzt steckt die Rotation in der Bewertung selbst, deshalb ist ein weiter
+  // Kreis nicht mehr gefährlich - er ist die Voraussetzung dafür, dass sie
+  // überhaupt etwas bewirken kann. Die Untergrenze bildet ab, wie viele Clips
+  // tatsächlich rotieren sollen; darunter dreht sich nichts, egal wie hoch der
+  // Bonus steht.
+  const kreisGroesse = Math.max(wantedCount + VIRAL_POOL_SPARE, ROTIERENDER_KREIS);
 
   const roh = await prisma.clip.findMany({
     where: ausgeschlossen.length ? { ...grundfilter, id: { notIn: ausgeschlossen } } : grundfilter,
+    // Nur die Vorauswahl aus der Datenbank. Die eigentliche Reihenfolge macht
+    // effektiveBewertung weiter unten - hier wird lediglich sichergestellt,
+    // dass genug Material hereinkommt, damit Handreihenfolge und Frische die
+    // Reihenfolge noch umstellen können.
     orderBy: [
       nachKrassheit
         ? { stuntScore: "desc" as const }
@@ -774,7 +861,11 @@ export async function viraleKandidaten(
   });
 
   return [...roh]
-    .sort((a, b) => effektiveBewertung(b, track, gunst) - effektiveBewertung(a, track, gunst))
+    .sort(
+      (a, b) =>
+        effektiveBewertung(b, track, gunst, frische) -
+        effektiveBewertung(a, track, gunst, frische),
+    )
     .slice(0, kreisGroesse);
 }
 
@@ -788,10 +879,21 @@ const VIRAL_MIN_SECONDS_PER_SCENE = 0.7;
 
 const VIRAL_DEFAULT_TOTAL_SECONDS = 13;
 
-/** Ersatzleute über die gewünschte Anzahl hinaus: genug, damit die Auswahl
- *  Reihenfolge und Abwechslung gestalten kann, zu wenig, um einen der besten
- *  Tricks fallen zu lassen. */
-const VIRAL_POOL_SPARE = 4;
+/** Ersatzleute über die gewünschte Anzahl hinaus. */
+const VIRAL_POOL_SPARE = 6;
+
+/**
+ * Wie viele Clips mindestens im Kandidatenkreis stehen sollen.
+ *
+ * Aus dem Betrieb: die Sparte hat rund 25 brauchbare Clips, und davon sollen
+ * etwa die besten 15 rotieren. Ein Kreis, der kleiner ist als diese Zahl, kann
+ * gar nicht rotieren - selbst mit dem höchsten Bonus stehen dann immer
+ * dieselben zur Wahl.
+ *
+ * Wächst die Bibliothek, gehört der Wert hoch. Er deckelt nach oben nichts:
+ * verlangt ein Konzept mehr Einstellungen, gewinnt wantedCount + Ersatzleute.
+ */
+const ROTIERENDER_KREIS = Number(process.env.VIRAL_ROTATION_POOL ?? 15);
 
 export interface ViralComposeOptions {
   /** Text des Overlays - stammt aus dem gewählten Konzept. */
@@ -1018,7 +1120,13 @@ export async function composeViralVideo(
     folderContext: c.rootFolderId ? beschreibungen.get(c.rootFolderId) : undefined,
   }));
 
-  const orderedIds = await selectViralScenes(payload, Math.min(wantedCount, candidates.length));
+  // Der Text des Konzepts geht mit: ohne ihn waehlt die Auswahl nach Spektakel
+  // und kann inhaltlich danebenliegen, ohne dass ein Fehler vorliegt.
+  const orderedIds = await selectViralScenes(
+    payload,
+    Math.min(wantedCount, candidates.length),
+    options.hookText,
+  );
   const byId = new Map(candidates.map((c) => [c.id, c]));
 
   const scenes: ComposedScene[] = [];
