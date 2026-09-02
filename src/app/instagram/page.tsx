@@ -75,6 +75,15 @@ export default async function InstagramSeite() {
     proTag.set(schluessel, [...(proTag.get(schluessel) ?? []), zeile]);
   }
 
+  // Für den Verlauf zählen auch die leeren Tage - eine Lücke ist die
+  // Information, dass an dem Tag nichts kam, und nicht das Fehlen des Tages.
+  const verlauf = Array.from({ length: TAGE }, (_, i) => {
+    const datum = new Date(Date.now() - (TAGE - 1 - i) * 24 * 60 * 60 * 1000);
+    const schluessel = tagesschluessel(datum);
+    return { schluessel, anzahl: proTag.get(schluessel)?.length ?? 0 };
+  });
+  const hoechstwert = Math.max(...verlauf.map((t) => t.anzahl), 1);
+
   const proReel = new Map<string, typeof zeilen>();
   for (const zeile of zeilen) {
     proReel.set(zeile.mediaId, [...(proReel.get(zeile.mediaId) ?? []), zeile]);
@@ -140,6 +149,19 @@ export default async function InstagramSeite() {
           <div className="value">{gesamtCodes}</div>
           <div className="label">Codes insgesamt</div>
         </div>
+      </div>
+
+      <h2 className="abschnitt-titel">Verlauf</h2>
+      <div className="ig-verlauf">
+        {verlauf.map(({ schluessel, anzahl }) => (
+          <div className="ig-balken" key={schluessel} title={`${datumLesbar(schluessel)}: ${anzahl}`}>
+            <div
+              className="ig-balken-fuellung"
+              style={{ height: `${hoechstwert ? (anzahl / hoechstwert) * 100 : 0}%` }}
+            />
+            <div className="ig-balken-tag">{schluessel.slice(8)}</div>
+          </div>
+        ))}
       </div>
 
       <h2 className="abschnitt-titel">Pro Tag</h2>
