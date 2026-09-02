@@ -2,7 +2,7 @@ import { prisma } from "../db";
 import { env } from "../env";
 import { erstelleGutschein } from "../wix/coupons";
 import { formuliereAntwort, formuliereDm } from "./antwort";
-import { antworteAufKommentar, ladeCaption, sendePrivateAntwort, type WebhookKommentar } from "./graph";
+import { antworteAufKommentar, ladeMedia, sendePrivateAntwort, type WebhookKommentar } from "./graph";
 import { istAktionsReel, leseNameAusHandle, leseNameAusText, spracheAusCaption } from "./namen";
 
 /**
@@ -24,6 +24,47 @@ export const GUTSCHEIN = {
 
 /** So viele frühere Antworten bekommt das Modell als Negativbeispiel. */
 const NEGATIVBEISPIELE = 8;
+
+/**
+ * So lange gilt die zwischengespeicherte Einschätzung eines Reels.
+ *
+ * Eine Bildunterschrift ändert sich praktisch nie, deshalb wäre ein Abruf je
+ * Kommentar Verschwendung. Ganz ohne Auffrischung bliebe aber eine
+ * nachträglich korrigierte Bildunterschrift für immer falsch einsortiert -
+ * ein Tag ist der Ausgleich zwischen beidem.
+ */
+const MEDIA_FRISCH_MS = 24 * 60 * 60 * 1000;
+
+/** Ist der Automat eingeschaltet? Fehlt die Zeile, gilt er als eingeschaltet. */
+export async function istEingeschaltet(): Promise<boolean> {
+  const config = await prisma.instagramConfig.findUnique({ where: { id: "default" } });
+  return config?.enabled ?? true;
+}
+
+/**
+ * Einschätzung eines Reels, aus dem Zwischenspeicher oder frisch von Meta.
+ */
+async function medienInfo(mediaId: string) {
+  const bekannt = await prisma.instagramMedia.findUnique({ where: { id: mediaId } });
+
+  if (bekannt && Date.now() - bekannt.aktualisiertAm.getTime() < MEDIA_FRISCH_MS) {
+    return bekannt;
+  }
+
+  const { caption, permalink } = await ladeMedia(mediaId);
+  const daten = {
+    caption,
+    permalink,
+    istAktion: istAktionsReel(caption),
+    sprache: spracheAusCaption(caption),
+  };
+
+  return prisma.instagramMedia.upsert({
+    where: { id: mediaId },
+    create: { id: mediaId, ...daten },
+    update: daten,
+  });
+}
 
 /**
  * Schreibt eingegangene Kommentare in die Tabelle und meldet, wie viele davon
@@ -88,9 +129,9 @@ async function fuehreAus(zeile: {
     return { status: "uebersprungen", hinweis: "Antwort innerhalb eines Threads." };
   }
 
-  const caption = await ladeCaption(zeile.mediaId);
+  const media = await medienInfo(zeile.mediaId);
 
-  if (!istAktionsReel(caption)) {
+  if (!media.istAktion) {
     return {
       status: "uebersprungen",
       hinweis: "Das Reel ruft nicht zur Namens-Aktion auf.",
@@ -139,7 +180,7 @@ async function fuehreAus(zeile: {
 
   const antwortText = await formuliereAntwort({
     name,
-    sprache: spracheAusCaption(caption),
+    sprache: media.sprache === "de" ? "de" : "en",
     zuletzt: frühere.map((z) => z.antwortText!).filter(Boolean),
     dmGelungen: dmGesendet,
   });
@@ -185,6 +226,12 @@ async function fuehreAus(zeile: {
  * mehr zu tun.
  */
 export async function verarbeiteOffene(hoechstens = 10): Promise<Abschluss[]> {
+  // Ausgeschaltet heisst: nichts anfassen. Die Kommentare bleiben auf
+  // "empfangen" liegen und werden nachgeholt, sobald wieder eingeschaltet
+  // wird - sie gehen also nicht verloren, warten aber gegen Metas
+  // Sieben-Tage-Frist für die private Antwort.
+  if (!(await istEingeschaltet())) return [];
+
   const offene = await prisma.instagramComment.findMany({
     where: { status: "empfangen" },
     orderBy: { createdAt: "asc" },

@@ -490,3 +490,46 @@ model InstagramComment {
   @@index([status])
   @@index([createdAt])
 }
+
+/// Der Ein-Aus-Schalter des Kommentar-Automaten. Eine einzige Zeile.
+///
+/// Ohne ihn liesse sich der Automat nur anhalten, indem man den Webhook bei
+/// Meta abmeldet oder das Projekt zurückrollt - beides unangemessen grob für
+/// "heute bitte mal nicht". Steht er auf false, bleiben eingehende Kommentare
+/// unangetastet auf "empfangen" liegen und werden nachgeholt, sobald wieder
+/// eingeschaltet wird.
+///
+/// Achtung beim längeren Pausieren: Metas Frist für die private Antwort auf
+/// einen Kommentar beträgt sieben Tage. Was länger liegt, lässt sich nicht
+/// mehr per DM beantworten.
+model InstagramConfig {
+  id String @id @default("default")
+
+  enabled Boolean @default(true)
+
+  updatedAt DateTime @updatedAt
+}
+
+/// Was wir über ein Reel wissen, zwischengespeichert.
+///
+/// Ob ein Reel zur Namens-Aktion gehört, steht in seiner Bildunterschrift.
+/// Die für jeden einzelnen Kommentar erneut abzurufen wäre Verschwendung -
+/// unter einem Reel kommen dutzende zusammen, und die Bildunterschrift ändert
+/// sich praktisch nie. Nach einem Tag wird trotzdem neu geschaut, damit eine
+/// nachträglich korrigierte Bildunterschrift nicht für immer falsch
+/// einsortiert bleibt.
+model InstagramMedia {
+  /// Die Media-ID von Instagram.
+  id String @id
+
+  caption   String
+  permalink String?
+
+  /// Ruft das Reel zur Namens-Aktion auf?
+  istAktion Boolean
+
+  /// "de" oder "en" - bestimmt die Sprache der öffentlichen Antwort.
+  sprache String
+
+  aktualisiertAm DateTime @updatedAt
+}

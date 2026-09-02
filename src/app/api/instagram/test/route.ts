@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { env } from "@/lib/env";
 import { formuliereAntwort, formuliereDm } from "@/lib/instagram/antwort";
-import { ladeCaption } from "@/lib/instagram/graph";
+import { ladeMedia } from "@/lib/instagram/graph";
 import {
   istAktionsReel,
   leseNameAusHandle,
@@ -76,9 +76,10 @@ export async function GET(request: NextRequest) {
         if (!mediaId) {
           return NextResponse.json({ error: "mediaId fehlt." }, { status: 400 });
         }
-        const caption = await ladeCaption(mediaId);
+        const { caption, permalink } = await ladeMedia(mediaId);
         return NextResponse.json({
           caption,
+          permalink,
           istAktionsReel: istAktionsReel(caption),
           sprache: spracheAusCaption(caption),
         });

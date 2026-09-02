@@ -119,13 +119,21 @@ export function kommentareAusPayload(payload: unknown): WebhookKommentar[] {
   return kommentare;
 }
 
-/** Die Bildunterschrift eines Reels - Grundlage für Relevanz und Sprache. */
-export async function ladeCaption(mediaId: string): Promise<string> {
-  const media = await graph<{ caption?: string }>(mediaId, {
+/**
+ * Bildunterschrift und Adresse eines Reels.
+ *
+ * Die Bildunterschrift entscheidet über Relevanz und Sprache; die Adresse
+ * dient nur der Übersichtsseite, damit sich ein Reel von dort aus öffnen
+ * lässt, statt es anhand einer nackten ID suchen zu müssen.
+ */
+export async function ladeMedia(
+  mediaId: string,
+): Promise<{ caption: string; permalink: string | null }> {
+  const media = await graph<{ caption?: string; permalink?: string }>(mediaId, {
     method: "GET",
-    query: { fields: "caption" },
+    query: { fields: "caption,permalink" },
   });
-  return media.caption ?? "";
+  return { caption: media.caption ?? "", permalink: media.permalink ?? null };
 }
 
 /**
