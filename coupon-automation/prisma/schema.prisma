@@ -1,0 +1,123 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+
+  // Migrationen müssen an Neons Verbindungspooler vorbei: der läuft im
+  // Transaction-Mode und lehnt die DDL-Anweisungen ab, die "prisma migrate
+  // deploy" beim Build absetzt. Beide Variablen setzt die Neon-Integration
+  // in Vercel automatisch.
+  directUrl = env("DATABASE_URL_UNPOOLED")
+}
+
+/// Ein Kommentar unter einem "kommentiere deinen Namen"-Reel und das, was
+/// daraufhin passiert ist.
+///
+/// Der Zweck der Tabelle ist in erster Linie die Doppelsperre. Meta stellt
+/// denselben Webhook mehrfach zu, wenn die Antwort zu lange dauert oder eine
+/// Zustellung als fehlgeschlagen gilt - ohne festen Schlüssel bekäme dieselbe
+/// Person zwei Codes und zwei Antworten. Weil die Kommentar-ID von Instagram
+/// selbst der Primärschlüssel ist, scheitert der zweite Versuch schon beim
+/// Einfügen.
+///
+/// Zweitens ist sie die Chronik: welcher Code an wen ging, was übersprungen
+/// wurde und warum. Ohne sie liesse sich im Nachhinein nicht klären, weshalb
+/// jemand keinen Code bekommen hat.
+model InstagramComment {
+  /// Die Kommentar-ID von Instagram.
+  id String @id
+
+  /// Das Reel, unter dem der Kommentar steht.
+  mediaId String
+
+  /// Gesetzt, wenn der Kommentar selbst Antwort auf einen Kommentar ist.
+  /// Solche Wortmeldungen sind keine Namensrufe und werden übergangen.
+  parentId String?
+
+  /// Instagram-scoped ID und Handle der kommentierenden Person. Beides liefert
+  /// erst der Webhook - die Kommentar-Liste der Graph-API gibt es nicht her.
+  authorId       String?
+  authorUsername String?
+
+  /// Der Kommentartext, so wie er kam.
+  text String
+
+  /// Der daraus gelesene Vorname, sofern einer erkennbar war.
+  name String?
+
+  /// Der tatsächlich vergebene Code - kann vom Namen abweichen, wenn er schon
+  /// vergeben war (LARS -> LARS15).
+  couponCode String?
+  couponId   String?
+
+  /// "empfangen" | "verarbeitet" | "uebersprungen" | "fehler"
+  status String @default("empfangen")
+
+  /// Warum übersprungen, oder was schiefgegangen ist.
+  hinweis String?
+
+  dmGesendet      Boolean @default(false)
+  antwortGesendet Boolean @default(false)
+
+  /// Der Wortlaut der öffentlichen Antwort. Wird den nächsten Formulierungen
+  /// als Negativbeispiel mitgegeben, damit sich die Antworten unterscheiden
+  /// und nicht nach Textbaustein aussehen.
+  antwortText String?
+
+  /// Das rohe Webhook-Payload. Kostet fast nichts und ist das Einzige, womit
+  /// sich hinterher nachvollziehen lässt, was Meta tatsächlich geschickt hat -
+  /// die Feldnamen der Instagram-Webhooks ändern sich zwischen API-Versionen.
+  payload Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([createdAt])
+}
+
+/// Der Ein-Aus-Schalter des Kommentar-Automaten. Eine einzige Zeile.
+///
+/// Ohne ihn liesse sich der Automat nur anhalten, indem man den Webhook bei
+/// Meta abmeldet oder das Projekt zurückrollt - beides unangemessen grob für
+/// "heute bitte mal nicht". Steht er auf false, bleiben eingehende Kommentare
+/// unangetastet auf "empfangen" liegen und werden nachgeholt, sobald wieder
+/// eingeschaltet wird.
+///
+/// Achtung beim längeren Pausieren: Metas Frist für die private Antwort auf
+/// einen Kommentar beträgt sieben Tage. Was länger liegt, lässt sich nicht
+/// mehr per DM beantworten.
+model InstagramConfig {
+  id String @id @default("default")
+
+  enabled Boolean @default(true)
+
+  updatedAt DateTime @updatedAt
+}
+
+/// Was wir über ein Reel wissen, zwischengespeichert.
+///
+/// Ob ein Reel zur Namens-Aktion gehört, steht in seiner Bildunterschrift.
+/// Die für jeden einzelnen Kommentar erneut abzurufen wäre Verschwendung -
+/// unter einem Reel kommen dutzende zusammen, und die Bildunterschrift ändert
+/// sich praktisch nie. Nach einem Tag wird trotzdem neu geschaut, damit eine
+/// nachträglich korrigierte Bildunterschrift nicht für immer falsch
+/// einsortiert bleibt.
+model InstagramMedia {
+  /// Die Media-ID von Instagram.
+  id String @id
+
+  caption   String
+  permalink String?
+
+  /// Ruft das Reel zur Namens-Aktion auf?
+  istAktion Boolean
+
+  /// "de" oder "en" - bestimmt die Sprache der öffentlichen Antwort.
+  sprache String
+
+  aktualisiertAm DateTime @updatedAt
+}

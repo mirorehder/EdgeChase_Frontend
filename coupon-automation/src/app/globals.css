@@ -1,0 +1,307 @@
+:root {
+  color-scheme: dark;
+  --bg: #0f1115;
+  --surface: #171a21;
+  --border: #2a2e38;
+  --text: #e7e9ee;
+  --muted: #9aa1ac;
+  --accent: #4f7cff;
+  --ok: #3ecf8e;
+  --warn: #f5a623;
+  --err: #ef4444;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+main {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 32px 20px 64px;
+  padding-left: max(20px, env(safe-area-inset-left));
+  padding-right: max(20px, env(safe-area-inset-right));
+}
+
+h1 {
+  font-size: 22px;
+  margin-bottom: 4px;
+}
+
+.subtitle {
+  color: var(--muted);
+  margin-top: 0;
+  margin-bottom: 28px;
+  font-size: 14px;
+}
+
+.stats-row {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+
+.stat-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 16px;
+  min-width: 130px;
+}
+
+.stat-card .value {
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.stat-card .label {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+button {
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 16px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.error-text {
+  color: var(--err);
+  font-size: 12px;
+}
+
+.empty-state {
+  color: var(--muted);
+  font-size: 14px;
+  padding: 24px 0;
+}
+
+.tag {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(79, 124, 255, 0.18);
+  color: var(--accent);
+}
+
+.abschnitt-titel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: var(--text);
+  font-size: inherit;
+  font-weight: inherit;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+/* ==========================================================================
+   Instagram-Kommentar-Automat
+   ========================================================================== */
+
+.ig-schalter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  margin: 20px 0;
+  /* Der Zustand muss ohne Lesen erkennbar sein - deshalb die Kante in
+     Signalfarbe statt eines blossen Wortes. */
+  border-left: 4px solid var(--muted);
+}
+
+.ig-schalter.ig-an {
+  border-left-color: var(--ok);
+}
+
+.ig-schalter.ig-aus {
+  border-left-color: var(--warn);
+}
+
+.ig-schalter-titel {
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.ig-schalter-text {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.ig-warnung {
+  margin-top: 8px;
+  color: var(--warn);
+  font-size: 13px;
+}
+
+.ig-knopf {
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.ig-knopf:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.ig-knopf:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.ig-fehlerkasten {
+  border: 1px solid var(--err);
+  border-radius: 10px;
+  padding: 12px 16px;
+  margin-bottom: 20px;
+  background: color-mix(in srgb, var(--err) 8%, var(--surface));
+  font-size: 13px;
+}
+
+.ig-fehlerkasten ul {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  color: var(--muted);
+}
+
+.ig-tabelle {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  /* Auf dem Telefon ist die Tabelle breiter als der Schirm; sie soll für sich
+     scrollen und nicht die ganze Seite verschieben. */
+  display: block;
+  overflow-x: auto;
+}
+
+.ig-tabelle th {
+  text-align: left;
+  padding: 8px 10px;
+  color: var(--muted);
+  font-weight: 500;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.ig-tabelle td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.ig-tabelle code {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 12px;
+}
+
+.ig-zeile-fehler td {
+  background: color-mix(in srgb, var(--err) 6%, transparent);
+}
+
+.ig-schwach {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.ig-reels {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.ig-reel {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  background: var(--surface);
+}
+
+.ig-reel-kopf {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 12px;
+}
+
+.ig-reel-kopf a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.ig-reel-caption {
+  font-size: 13px;
+  margin-bottom: 8px;
+  line-height: 1.4;
+}
+
+.ig-gruende {
+  font-size: 13px;
+  color: var(--muted);
+  padding-left: 18px;
+}
+
+.ig-verlauf {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 88px;
+  margin-bottom: 24px;
+}
+
+.ig-balken {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  height: 100%;
+  min-width: 0;
+}
+
+/* Auch ein Tag ohne Kommentare bekommt eine sichtbare Grundlinie - sonst
+   sähe eine Lücke aus wie ein fehlender Tag statt wie eine Null. */
+.ig-balken-fuellung {
+  background: var(--accent);
+  border-radius: 3px 3px 0 0;
+  min-height: 2px;
+  transition: height 0.2s;
+}
+
+.ig-balken-tag {
+  text-align: center;
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 4px;
+  font-variant-numeric: tabular-nums;
+}
