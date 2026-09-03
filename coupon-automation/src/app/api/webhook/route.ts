@@ -55,9 +55,22 @@ export async function POST(request: NextRequest) {
   // eine andere Zeichenfolge und damit eine andere Signatur.
   const rohkoerper = await request.text();
 
-  if (!signaturStimmt(rohkoerper, request.headers.get("x-hub-signature-256"))) {
+  const kopfzeile = request.headers.get("x-hub-signature-256");
+  if (!signaturStimmt(rohkoerper, kopfzeile)) {
     // Ohne diese Sperre könnte jeder, der die Adresse kennt, Kommentare
     // erfinden und damit beliebig viele Gutscheine erzeugen.
+    //
+    // Absichtlich nur Längen und Präfix im Log, nie der Secret-Wert selbst
+    // und nie der berechnete Hash - der liesse sich sonst als Orakel
+    // missbrauchen, um gültige Signaturen für selbst gewählte Inhalte zu
+    // erschleichen.
+    console.error("Webhook-Signatur ungültig", {
+      kopfzeilePraesent: kopfzeile !== null,
+      kopfzeilePraefixOk: kopfzeile?.startsWith("sha256=") ?? false,
+      kopfzeileLaenge: kopfzeile?.length ?? 0,
+      koerperLaenge: rohkoerper.length,
+      secretLaenge: env.igAppSecret.length,
+    });
     return NextResponse.json({ error: "Signatur ungültig." }, { status: 403 });
   }
 
