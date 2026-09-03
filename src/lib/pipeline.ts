@@ -43,7 +43,23 @@ import {
 
 // Hochzählen, wenn sich Analyse-Felder oder der Analyse-Prompt ändern -
 // Clips mit älterer Version werten sich dann automatisch neu aus.
-export const CURRENT_ANALYSIS_VERSION = 1;
+export const CURRENT_ANALYSIS_VERSION = 2;
+
+/**
+ * Ab welcher Analyse-Version ein Clip WEITER VERWENDET werden darf.
+ *
+ * Getrennt von CURRENT_ANALYSIS_VERSION, und das ist keine Feinheit: der
+ * Kandidatenfilter verlangte bisher die aktuelle Version. Ein Hochzaehlen
+ * haette damit schlagartig jeden Clip als unbrauchbar gefuehrt - die
+ * Videoerzeugung haette stillgestanden, bis die Neuanalyse durch ist, und die
+ * laeuft ueber Tage.
+ *
+ * Jetzt sagt CURRENT, was neu vermessen werden MUSS, und MIN_USABLE, was
+ * verwendet werden DARF. Diese Zahl wird nur dann angehoben, wenn eine alte
+ * Analyse wirklich unbrauchbar geworden ist - dann steht der Stillstand
+ * bewusst da und nicht als Nebenwirkung.
+ */
+export const MIN_USABLE_ANALYSIS_VERSION = 1;
 
 // Begrenzt, wie viele Clips ein einzelner Lauf neu analysiert. Pro Clip fallen
 // Download aus Drive, Upload zu Gemini, dessen Verarbeitung und die Spiegelung
@@ -273,6 +289,7 @@ function analysisFields(analysis: ClipAnalysis) {
     description: analysis.description,
     apparelScore: analysis.apparelScore,
     stuntScore: analysis.stuntScore ?? null,
+    momentArt: analysis.momentArt ?? null,
     highlightStartMs: analysis.highlightStartMs ?? null,
     highlightEndMs: analysis.highlightEndMs ?? null,
     startMs: analysis.startMs,
@@ -308,12 +325,17 @@ async function analysierbareOrdnerFilter(track: Track) {
   return { rootFolderId: { in: wurzeln.map((w) => w.driveFolderId) } };
 }
 
-/** Analysiert alle noch nicht (oder mit alter Prompt-Version) ausgewerteten Clips - siehe Auftrag 5.1. */
-export async function analyzeUnanalyzedClips(
-  limit = ANALYZE_BATCH_LIMIT,
-  track: Track = "promo",
-): Promise<AnalyzedClipSummary[]> {
-  const pending = await prisma.clip.findMany({
+/**
+ * Die Clips, die als Naechstes neu vermessen werden - in genau der
+ * Reihenfolge, in der es geschieht.
+ *
+ * Als eigene Funktion, weil die Reihenfolge eine Entscheidung ist und keine
+ * Nebensache: sie bestimmt, wie lange es dauert, bis eine Aenderung an der
+ * Analyse im fertigen Video ankommt. Ohne eigene Funktion liesse sie sich nur
+ * pruefen, indem man wirklich analysiert - also mit Gemini und Minuten.
+ */
+export async function naechsteZuAnalysieren(track: Track, limit: number) {
+  return prisma.clip.findMany({
     where: {
       track,
       ...(await analysierbareOrdnerFilter(track)),
@@ -329,8 +351,30 @@ export async function analyzeUnanalyzedClips(
       OR: [{ analysisVersion: null }, { analysisVersion: { not: CURRENT_ANALYSIS_VERSION } }],
     },
     take: limit,
-    orderBy: { createdAt: "asc" },
+    // Bei den Reels-Sparten die am SCHWAECHSTEN bewerteten zuerst - das sieht
+    // verkehrt herum aus und ist Absicht.
+    //
+    // Wer neu vermessen wird, hat eine veraltete Bewertung. Am meisten aendert
+    // sich dort, wo die alte Bewertung den Clip AUSGESCHLOSSEN hat: der
+    // fruehere Prompt setzte jeden Fehlversuch auf 0, und der Kandidatenfilter
+    // verlangt 0.25. Genau diese Clips zuerst zu vermessen bringt die Fails
+    // nach einem einzigen Abgleich zurueck statt nach Tagen.
+    //
+    // Bei den Kleidungs-Sparten aendert sich nichts an der Bewertung, dort
+    // bleibt es beim Aeltesten zuerst.
+    orderBy:
+      bewertungsart(track) === "krassheit"
+        ? [{ stuntScore: { sort: "asc" as const, nulls: "first" as const } }, { createdAt: "asc" as const }]
+        : [{ createdAt: "asc" as const }],
   });
+}
+
+/** Analysiert alle noch nicht (oder mit alter Prompt-Version) ausgewerteten Clips - siehe Auftrag 5.1. */
+export async function analyzeUnanalyzedClips(
+  limit = ANALYZE_BATCH_LIMIT,
+  track: Track = "promo",
+): Promise<AnalyzedClipSummary[]> {
+  const pending = await naechsteZuAnalysieren(track, limit);
 
   const results: AnalyzedClipSummary[] = [];
   const gestartet = Date.now();
@@ -534,7 +578,8 @@ export async function composeVideo(
       disabled: false,
       ...(verwendbar ? { rootFolderId: { in: verwendbar } } : {}),
       apparelScore: { gte: APPAREL_SCORE_THRESHOLD },
-      analysisVersion: CURRENT_ANALYSIS_VERSION,
+      // Verwendbar, nicht aktuell - siehe MIN_USABLE_ANALYSIS_VERSION.
+      analysisVersion: { gte: MIN_USABLE_ANALYSIS_VERSION },
     },
     orderBy: { lastUsedAt: { sort: "asc", nulls: "first" } },
     take: poolSize,
@@ -817,7 +862,9 @@ export async function viraleKandidaten(
 
   const grundfilter = {
     track,
-    analysisVersion: CURRENT_ANALYSIS_VERSION,
+    // Nicht CURRENT: siehe MIN_USABLE_ANALYSIS_VERSION. Ein Hochzaehlen der
+    // aktuellen Version darf die Videoerzeugung nicht anhalten.
+    analysisVersion: { gte: MIN_USABLE_ANALYSIS_VERSION },
     // Die Mindestbewertung haelt fern, was der Sparte nichts bringt: einen
     // Clip ohne Trick bei den Reels, einen ohne sichtbare Kleidung dort, wo
     // die Ware gezeigt werden soll.
@@ -1002,7 +1049,8 @@ async function waehleAufbauSzene(
   const kandidaten = await prisma.clip.findMany({
     where: {
       track,
-      analysisVersion: CURRENT_ANALYSIS_VERSION,
+      // Verwendbar, nicht aktuell - siehe MIN_USABLE_ANALYSIS_VERSION.
+      analysisVersion: { gte: MIN_USABLE_ANALYSIS_VERSION },
       disabled: false,
       ...(verwendbar ? { rootFolderId: { in: verwendbar } } : {}),
       ...(ausgeschlossen.length ? { id: { notIn: ausgeschlossen } } : {}),
@@ -1118,6 +1166,10 @@ export async function composeViralVideo(
     stuntScore: bewertungVon(c, track),
     trickMs: (c.highlightEndMs ?? 0) - (c.highlightStartMs ?? 0),
     folderContext: c.rootFolderId ? beschreibungen.get(c.rootFolderId) : undefined,
+    // Damit die Auswahl einen Sturz als solchen erkennt: verlangt das Konzept
+    // an einer Stelle einen Fehlversuch, muss sie wissen, welche Clips einer
+    // sind. Aus der Beschreibung allein geht das nicht verlaesslich hervor.
+    momentArt: c.momentArt ?? undefined,
   }));
 
   // Der Text des Konzepts geht mit: ohne ihn waehlt die Auswahl nach Spektakel

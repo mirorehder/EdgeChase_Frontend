@@ -73,6 +73,16 @@ export interface ClipAnalysis {
   /** Nur Sparte "viral": Absprung und Landung in Millisekunden. */
   highlightStartMs?: number;
   highlightEndMs?: number;
+  /**
+   * Was fuer ein Moment das ist: "trick" (gelungen), "fail" (Sturz,
+   * Fehlversuch, Abbruch) oder "kein_moment".
+   *
+   * Getrennt von stuntScore, weil beides verschiedene Fragen sind: WIE STARK
+   * wirkt der Moment, und WAS FUER EINER ist es. Vorher gab es nur die
+   * Bewertung, und ein Fail bekam darin eine 0 - er war damit nicht selten,
+   * sondern unwaehlbar.
+   */
+  momentArt?: "trick" | "fail" | "kein_moment";
 }
 
 /**
@@ -232,6 +242,7 @@ interface ViralRaw {
   stuntScore: number;
   takeoffMs: number;
   landingMs: number;
+  momentArt: "trick" | "fail" | "kein_moment";
 }
 
 async function analyzeViralClip(
@@ -262,12 +273,19 @@ Antworte ausschliesslich auf Englisch.
 
 Beschreibe wörtlich und neutral, was zu sehen ist: Ort, Hindernis, welche Bewegung ausgeführt wird. Erfinde nichts.
 
-Bewerte stuntScore (0-1): wie spektakulär und wie sauber ausgeführt ist der Trick?
-- 0 bedeutet: es kommt gar kein Trick vor - nur Gehen, Anlauf, Aufwärmen, Zuschauen, ein Fehlversuch oder ein Abbruch.
-- 0.3 bedeutet: eine einfache Bewegung, etwa ein kleiner Sprung oder ein Vault.
-- 0.7 bedeutet: ein klarer, sauberer Trick mit Höhe, Weite oder Rotation.
-- 1 bedeutet: aussergewöhnlich - grosse Höhe, grosse Distanz, mehrfache Rotation, sichtbares Risiko.
-Sei streng. Die meisten Rohclips liegen unter 0.5.
+Bestimme zuerst momentArt - was für ein Moment das ist:
+- "trick": der Versuch gelingt, die Person kommt kontrolliert auf.
+- "fail": der Versuch misslingt - Sturz, Abrutschen, harter Aufprall, Abbruch mitten in der Bewegung.
+- "kein_moment": es passiert nichts Nennenswertes - nur Gehen, Warten, Aufwärmen, Zuschauen, Kamera richten.
+
+Bewerte dann stuntScore (0-1): wie stark wirkt dieser Moment auf jemanden, der das Video sieht?
+
+WICHTIG: Ein Fail ist KEIN Grund für eine niedrige Bewertung. Ein harter Sturz aus grosser Höhe wirkt stärker als ein sauberer kleiner Sprung und gehört entsprechend hoch bewertet. Bewertet wird die Wucht des Moments, nicht die Sauberkeit der Ausführung. Nur "kein_moment" gehört nahe 0.
+- 0 bedeutet: es passiert wirklich nichts - momentArt ist "kein_moment".
+- 0.3 bedeutet: eine einfache Bewegung, etwa ein kleiner Sprung oder ein Vault, oder ein harmloses Verstolpern.
+- 0.7 bedeutet: ein klarer Trick mit Höhe, Weite oder Rotation - oder ein deutlicher Sturz, bei dem man zusammenzuckt.
+- 1 bedeutet: aussergewöhnlich - grosse Höhe, grosse Distanz, mehrfache Rotation, sichtbares Risiko, oder ein Sturz, der wehtut.
+Sei streng bei der Wucht, aber nicht streng gegen Fails.
 
 Bestimme dann die zwei entscheidenden Zeitpunkte in Millisekunden ab Clipbeginn:
 - takeoffMs: der Moment, in dem der Körper den Boden oder das Hindernis verlässt und der Trick beginnt.
@@ -275,7 +293,9 @@ Bestimme dann die zwei entscheidenden Zeitpunkte in Millisekunden ab Clipbeginn:
 
 Diese beiden Zeitpunkte sind das Wichtigste an dieser Aufgabe. Aus ihnen wird geschnitten - liegen sie falsch, zeigt das fertige Video den Anlauf statt den Sprung. Der Anlauf davor gehört NICHT dazu, das Weglaufen danach auch nicht.
 
-Kommt kein Trick vor, setze stuntScore auf 0 und beide Zeitpunkte auf die auffälligste Bewegung im Clip.${ordnerHinweis}`;
+Die beiden Zeitpunkte gelten auch für einen Fail: takeoffMs, wenn die Bewegung beginnt, landingMs, wenn der Sturz vorbei ist - der Aufprall gehört unbedingt dazu, er ist der Höhepunkt.
+
+Ist momentArt "kein_moment", setze stuntScore auf 0 und beide Zeitpunkte auf die auffälligste Bewegung im Clip.${ordnerHinweis}`;
 
   const uploaded = await uploadForAnalysis(ai, quelle, mimeType);
 
@@ -303,8 +323,12 @@ Kommt kein Trick vor, setze stuntScore auf 0 und beide Zeitpunkte auf die auffä
             stuntScore: { type: Type.NUMBER },
             takeoffMs: { type: Type.INTEGER },
             landingMs: { type: Type.INTEGER },
+            // Als Aufzaehlung und nicht als freier Text: sonst kommen
+            // Varianten wie "Fail", "misslungen" oder "trick (fail)" zurueck,
+            // und der Vergleich im Code geht still ins Leere.
+            momentArt: { type: Type.STRING, enum: ["trick", "fail", "kein_moment"] },
           },
-          required: ["description", "stuntScore", "takeoffMs", "landingMs"],
+          required: ["description", "stuntScore", "takeoffMs", "landingMs", "momentArt"],
         },
       },
     });
@@ -331,6 +355,12 @@ function correctViralAnalysis(
   const stuntScore = clamp(raw.stuntScore ?? 0, 0, 1);
   const limit = durationMs ?? Number.MAX_SAFE_INTEGER;
 
+  // Unbekannte Werte gelten als "trick" und nicht als "kein_moment": ein
+  // falsch als bedeutungslos gefuehrter Clip verschwindet aus jeder Auswahl,
+  // ein falsch als Trick gefuehrter faellt nur bei der Sichtung auf.
+  const momentArt: ClipAnalysis["momentArt"] =
+    raw.momentArt === "fail" || raw.momentArt === "kein_moment" ? raw.momentArt : "trick";
+
   let takeoff = clamp(raw.takeoffMs ?? 0, 0, limit);
   let landing = clamp(raw.landingMs ?? takeoff + 800, 0, limit);
 
@@ -356,6 +386,7 @@ function correctViralAnalysis(
     // Für die virale Sparte ohne Bedeutung, das Feld gehört der anderen.
     apparelScore: 0,
     stuntScore,
+    momentArt,
     highlightStartMs: Math.round(takeoff),
     highlightEndMs: Math.round(landing),
     startMs,
@@ -543,6 +574,8 @@ export interface ViralCandidate {
   /** Was im Dashboard ueber den Quellordner steht: was fuer Clips dort liegen
    *  und wofuer sie gedacht sind. Leer, wenn nichts hinterlegt ist. */
   folderContext?: string;
+  /** "trick", "fail" oder "kein_moment" - leer, solange nicht neu analysiert. */
+  momentArt?: string;
 }
 
 /**
@@ -603,7 +636,8 @@ async function selectViralScenesMitModell(
   const candidateList = candidates
     .map(
       (c) =>
-        `- id: ${c.id} | stuntScore: ${c.stuntScore.toFixed(2)} | Trickdauer: ${(c.trickMs / 1000).toFixed(1)}s` +
+        `- id: ${c.id} | Wucht: ${c.stuntScore.toFixed(2)} | Dauer: ${(c.trickMs / 1000).toFixed(1)}s` +
+        (c.momentArt === "fail" ? " | FAIL (Sturz/Fehlversuch)" : "") +
         (c.folderContext ? ` | Ordner: ${c.folderContext}` : "") +
         ` | ${c.description}`,
     )

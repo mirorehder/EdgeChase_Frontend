@@ -1,0 +1,11 @@
+-- Was fuer ein Moment ein Clip zeigt: "trick", "fail" oder "kein_moment".
+--
+-- Der Analyse-Prompt setzte einen Fehlversuch bisher auf stuntScore 0, und
+-- der Kandidatenfilter verlangt 0.25. Fails waren damit nicht selten, sondern
+-- unwaehlbar. Die Bewertung sagt jetzt, WIE STARK ein Moment wirkt, dieses
+-- Feld, WAS FUER EINER es ist.
+--
+-- Bleibt leer, bis der Clip neu analysiert ist. Ausdruecklich kein Standard:
+-- "trick" waere fuer die bestehenden Fails schlicht falsch, und leer sagt
+-- ehrlich "noch nicht bestimmt".
+ALTER TABLE "Clip" ADD COLUMN "momentArt" TEXT;

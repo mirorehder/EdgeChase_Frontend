@@ -1,5 +1,9 @@
 import { prisma } from "@/lib/db";
-import { CURRENT_ANALYSIS_VERSION, type ComposedScene } from "@/lib/pipeline";
+import {
+  CURRENT_ANALYSIS_VERSION,
+  MIN_USABLE_ANALYSIS_VERSION,
+  type ComposedScene,
+} from "@/lib/pipeline";
 import { TRACK_LISTE, bewertungsart, type Track } from "@/lib/trackClient";
 import { TriggerButtons } from "./TriggerButtons";
 import { LiveActivity } from "./LiveActivity";
@@ -25,8 +29,11 @@ interface TrackData {
 async function ladeSparte(track: Track): Promise<TrackData> {
   const usableWhere =
     bewertungsart(track) === "krassheit"
-      ? { track, analysisVersion: CURRENT_ANALYSIS_VERSION, stuntScore: { gte: 0.25 } }
-      : { track, analysisVersion: CURRENT_ANALYSIS_VERSION, apparelScore: { gte: 0.5 } };
+      // Verwendbar heisst nicht "auf aktuellem Stand": nach einem Hochzaehlen
+      // der Analyse-Version sind alle Clips veraltet, aber weiterhin
+      // brauchbar. Die Zahl darunter zeigt den Stand der Neuanalyse.
+      ? { track, analysisVersion: { gte: MIN_USABLE_ANALYSIS_VERSION }, stuntScore: { gte: 0.25 } }
+      : { track, analysisVersion: { gte: MIN_USABLE_ANALYSIS_VERSION }, apparelScore: { gte: 0.5 } };
 
   const [jobs, total, analyzed, usable, clips] = await Promise.all([
     prisma.promoVideo.findMany({ where: { track }, orderBy: { createdAt: "desc" }, take: 50 }),
@@ -78,7 +85,7 @@ function Kennzahlen({ data, track }: { data: TrackData; track: Track }) {
       </div>
       <div className="stat-card">
         <div className="value">{data.analyzed}</div>
-        <div className="label">davon analysiert</div>
+        <div className="label">auf aktuellem Analysestand</div>
       </div>
       <div className="stat-card">
         <div className="value">{data.usable}</div>

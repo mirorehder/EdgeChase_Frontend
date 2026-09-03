@@ -65,6 +65,17 @@ model Clip {
   /// gar kein Trick vorkommt - nur Gehen, Anlauf oder Vorbereitung.
   stuntScore Float?
 
+  /// Nur die Reels-Sparten: was für ein Moment das ist - "trick" (gelungen),
+  /// "fail" (Sturz, Fehlversuch, Abbruch) oder "kein_moment".
+  ///
+  /// Getrennt von stuntScore, weil es zwei verschiedene Fragen sind: WIE STARK
+  /// wirkt der Moment, und WAS FÜR EINER ist es. Vorher gab es nur die
+  /// Bewertung, und der Analyse-Prompt setzte einen Fehlversuch darin auf 0.
+  /// Zusammen mit dem Filter "stuntScore >= 0.25" waren Fails damit nicht
+  /// selten, sondern unwählbar - aus dem Betrieb: "es werden praktisch nur
+  /// Parkour Bangers gewählt".
+  momentArt String?
+
   /// Nur Sparte "viral": der eigentliche Höhepunkt, in Millisekunden ab
   /// Clipbeginn - vom Absprung bis zur Landung.
   ///
