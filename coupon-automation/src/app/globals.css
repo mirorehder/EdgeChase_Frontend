@@ -28,6 +28,9 @@ main {
   padding: 32px 20px 64px;
   padding-left: max(20px, env(safe-area-inset-left));
   padding-right: max(20px, env(safe-area-inset-right));
+  /* Im Vollbildmodus gibt es keine Browserleiste, die unten Platz macht -
+     ohne das hier klebt der Schalter am Home-Indikator. */
+  padding-bottom: calc(64px + env(safe-area-inset-bottom));
 }
 
 h1 {
