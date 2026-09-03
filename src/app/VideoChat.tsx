@@ -2,20 +2,36 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { Track } from "@/lib/trackClient";
+import { bewertungsart, type Track } from "@/lib/trackClient";
 
 interface Turn {
   role: "user" | "assistant";
   content: string;
 }
 
-const BEISPIELE = [
+/**
+ * Beispiele je Bewertungsart.
+ *
+ * Nicht bloss Zierde: sie sagen, was in dieser Sparte überhaupt einstellbar
+ * ist. In den Kleider-Sparten gehört die Textgestaltung dazu, in den
+ * Reels-Sparten nicht (die ist für alle Reels dieselbe), dafür das Thema, nach
+ * dem die Höhepunkte gesucht werden.
+ */
+const BEISPIELE_KLEIDUNG = [
   "Mach ein Video mit 5 Clips vom Shooting, Text im Referenz-Stil",
   "Kurzes Video, 3 Sprünge ins Wasser, knapper Hook",
   "6 Clips, 2 Sekunden pro Szene, Text: Comment your name for a code",
 ];
 
+const BEISPIELE_REELS = [
+  "7 Clips, möglichst Fails, Text: they said I should stop",
+  "Kurzer Edit, 5 Höhepunkte aus grosser Höhe",
+  "10 Einstellungen, 15 Sekunden, riskante Aktionen",
+];
+
 export function VideoChat({ track }: { track: Track }) {
+  const nachKrassheit = bewertungsart(track) === "krassheit";
+  const beispiele = nachKrassheit ? BEISPIELE_REELS : BEISPIELE_KLEIDUNG;
   const router = useRouter();
   const [turns, setTurns] = useState<Turn[]>([]);
   const [input, setInput] = useState("");
@@ -76,7 +92,9 @@ export function VideoChat({ track }: { track: Track }) {
           role: "assistant",
           content:
             renderData.status === "done"
-              ? "Fertig - das Video liegt in Drive und steht unten in der Liste."
+              ? "Fertig - das Video liegt in Drive und steht unten in der Liste. " +
+                "Wenn es sitzt: dort aufklappen und „Als Konzept speichern\" - dann lässt es " +
+                "sich jederzeit wieder erzeugen und kommt auch im Zeitplan vor."
               : `Der Render ist fehlgeschlagen: ${renderData.lastError ?? renderData.error ?? "unbekannter Fehler"}`,
         },
       ]);
@@ -90,16 +108,17 @@ export function VideoChat({ track }: { track: Track }) {
 
   return (
     <section className="chat">
-      <h2>Video auf Zuruf</h2>
+      <h2>{nachKrassheit ? "Edit auf Zuruf" : "Video auf Zuruf"}</h2>
       <p className="chat-hint">
-        Beschreib, was du willst - Anzahl Clips, Thema, Textstil, Hook-Text. Was fehlt, wird
-        nachgefragt.
+        {nachKrassheit
+          ? "Beschreib, was du willst - Anzahl Einstellungen, Länge, Thema, Text im Bild. Was fehlt, wird nachgefragt. Gefällt dir das Ergebnis, lässt es sich unten als Konzept sichern."
+          : "Beschreib, was du willst - Anzahl Clips, Thema, Textstil, Hook-Text. Was fehlt, wird nachgefragt. Gefällt dir das Ergebnis, lässt es sich unten als Konzept sichern."}
       </p>
 
       <div className="chat-log">
         {turns.length === 0 && (
           <div className="chat-examples">
-            {BEISPIELE.map((beispiel) => (
+            {beispiele.map((beispiel) => (
               <button key={beispiel} className="chip" onClick={() => send(beispiel)}>
                 {beispiel}
               </button>
@@ -134,7 +153,11 @@ export function VideoChat({ track }: { track: Track }) {
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="z.B. 4 Clips vom Shooting, Referenz-Stil, Text über 30 Codes"
+          placeholder={
+            nachKrassheit
+              ? "z.B. 6 Einstellungen, Stürze, Text: mom said it's dangerous"
+              : "z.B. 4 Clips vom Shooting, Referenz-Stil, Text über 30 Codes"
+          }
           disabled={busy !== null}
         />
         <button type="submit" disabled={busy !== null || !input.trim()}>

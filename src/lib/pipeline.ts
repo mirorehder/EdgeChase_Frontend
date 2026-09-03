@@ -34,6 +34,7 @@ import { beilageBauen, beilagenName } from "./sound";
 import { getDailySettings } from "./dailyConfig";
 import { getViralSchedule, viralOutputFolderId, viralTextStyle } from "./viralSchedule";
 import { bewertungsart, trackBeschreibung } from "./trackClient";
+import { trackFromValue } from "./trackParam";
 import {
   fillMissingFolderNames,
   folderDescriptions,
@@ -700,7 +701,7 @@ export async function composeVideo(
 // ---------------------------------------------------------------------------
 
 /** Unterhalb davon ist kein Trick zu sehen, den ein Edit zeigen könnte. */
-const STUNT_SCORE_THRESHOLD = 0.25;
+export const STUNT_SCORE_THRESHOLD = 0.25;
 
 /**
  * Wie schwer die von Hand gezogene Reihenfolge wiegt.
@@ -970,6 +971,15 @@ export interface ViralComposeOptions {
    * eigene, längere Eröffnungseinstellung.
    */
   textPhases?: ConceptTextPhase[];
+  /**
+   * Worum es gehen soll, ohne dass es im Bild steht - aus dem Dialog.
+   *
+   * Getrennt vom hookText, weil beides auseinanderfallen kann: "5 Clips,
+   * möglichst Stürze" sagt, was gesucht wird, der eingeblendete Text sagt
+   * etwas ganz anderes. Ohne dieses Feld wäre die Auswahl blind für den
+   * eigentlichen Wunsch.
+   */
+  themeHint?: string;
 }
 
 /** Wie lang die Aufbau-Einstellung höchstens und mindestens sein darf. */
@@ -1229,6 +1239,7 @@ export async function composeViralVideo(
     payload,
     Math.min(wantedCount, candidates.length),
     options.hookText,
+    options.themeHint ?? "",
   );
   const byId = new Map(candidates.map((c) => [c.id, c]));
 
@@ -1621,6 +1632,179 @@ export async function createJobFromSpec(
   });
 
   await logActivity(`Auftrag aus Anweisung angelegt: "${requestedVia}"`, { videoId: job.id });
+  return job.id;
+}
+
+/**
+ * Macht aus einem fertigen Video ein wiederverwendbares Konzept.
+ *
+ * Der Weg zurück: ein Video entsteht im Dialog, es sitzt - und ohne diesen
+ * Schritt wäre das ein Einzelfall, den niemand wiederholen kann. Die
+ * Anweisung von damals steht nur als Fliesstext am Auftrag, der Zeitplan
+ * kennt sie nicht, und beim nächsten Mal tippt man sie neu und bekommt etwas
+ * anderes.
+ *
+ * Übernommen wird, was das Video AUSMACHT - Text, Textphasen mit ihren
+ * Standzeiten, Anzahl und Länge der Einstellungen, die Textgestaltung, der
+ * Sound. Ausdrücklich NICHT übernommen werden die verwendeten Clips: ein
+ * Konzept ist eine Vorlage, keine Konserve. Jeder Lauf danach sucht sich
+ * seine eigenen Höhepunkte, sonst käme jedes Mal dasselbe Video heraus.
+ */
+export async function konzeptAusAuftrag(
+  jobId: string,
+  angaben: { title?: string; theme?: string; notes?: string } = {},
+) {
+  const job = await prisma.promoVideo.findUnique({ where: { id: jobId } });
+  if (!job) throw new Error("Video nicht gefunden.");
+
+  const scenes = (job.scenes as unknown as ComposedScene[] | null) ?? [];
+  if (!scenes.length) {
+    throw new Error("Dieses Video hat keine Einstellungen - daraus lässt sich kein Konzept ableiten.");
+  }
+
+  const track = trackFromValue(job.track);
+  const totalSeconds = Math.round(scenes.reduce((a, s) => a + s.seconds, 0) * 10) / 10;
+  const clipCount = scenes.length;
+
+  const phasen = konzeptPhasenAus(job, totalSeconds);
+
+  // Die Reihenfolge ist Absicht: was der Nutzer eingibt, gilt; sonst der
+  // Dateiname, den das Modell für genau dieses Video erfunden hat; sonst der
+  // Text im Bild. Ein Konzept ohne Titel waere in der Liste nicht zu finden.
+  const titel =
+    angaben.title?.trim() ||
+    job.fileTitle?.trim() ||
+    job.hookText.split("\n")[0].trim().slice(0, 70) ||
+    "Ohne Titel";
+
+  const datum = job.createdAt.toLocaleDateString("de-DE", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+  const herkunft = job.requestedVia?.trim();
+  const notizen =
+    angaben.notes?.trim() ||
+    `Aus dem Video vom ${datum} übernommen.` +
+      (herkunft ? ` Anweisung damals: „${herkunft}"` : "");
+
+  const concept = await prisma.concept.create({
+    data: {
+      title: titel,
+      track,
+      hookText: job.hookText,
+      textPhases: phasen as unknown as object,
+      textStyle: job.textStyle || (bewertungsart(track) === "krassheit" ? viralTextStyle() : "reference"),
+      clipCount,
+      totalSeconds,
+      secondsPerScene: Math.round((totalSeconds / clipCount) * 100) / 100,
+      theme: angaben.theme?.trim() || null,
+      notes: notizen,
+      // Der Sound zieht mit um: gefallen hat das Video MIT ihm. soundKind
+      // bleibt leer - was fuer ein Eintrag dahintersteckt, weiss diese
+      // Anwendung nicht, und zu raten waere schlimmer als nichts zu wissen.
+      soundAudioId: job.soundAudioId,
+      soundTitle: job.soundTitle,
+      soundStatus: job.soundAudioId ? (job.soundStatus ?? "offen") : "ohne",
+      // Es gibt bereits ein Video nach diesem Konzept - eben das, aus dem es
+      // stammt. Ohne diesen Zeitpunkt stuende das frische Konzept in der
+      // Rotation ganz vorn und wuerde morgen gleich wiederholt.
+      lastUsedAt: job.createdAt,
+    },
+  });
+
+  await logActivity(
+    `Konzept aus Video abgeleitet: "${concept.title}" - ${clipCount} Einstellungen, ` +
+      `${totalSeconds}s, ${phasen.length} Textphase(n)` +
+      (concept.soundAudioId ? `, Sound übernommen` : "") +
+      ".",
+    { track, videoId: job.id },
+  );
+
+  return concept;
+}
+
+/**
+ * Die Textphasen eines Auftrags in die Form eines Konzepts bringen.
+ *
+ * Am Auftrag stehen sie auf der Zeitachse (ab wann, wie lange), im Konzept als
+ * Abfolge mit Standzeiten - dieselbe Sache, zwei Blickwinkel. Fehlen sie ganz,
+ * stand der Text über der vollen Länge; das ist eine einzelne Phase.
+ */
+function konzeptPhasenAus(
+  job: { hookText: string; textPhases: unknown },
+  totalSeconds: number,
+): ConceptTextPhase[] {
+  const roh = (job.textPhases as unknown as ComposedTextPhase[] | null) ?? [];
+  if (!roh.length) {
+    return [{ text: job.hookText, seconds: totalSeconds, role: "plain", sceneHint: "" }];
+  }
+
+  return roh.map((p, i) => ({
+    text: p.text,
+    seconds: Math.round((p.durationMs / 1000) * 10) / 10,
+    // Bei einer einzelnen Phase steht der Text durchgehend. Bei mehreren baut
+    // die erste auf und die uebrigen loesen ein - genau so liest sie die
+    // Zusammenstellung wieder.
+    role: roh.length === 1 ? "plain" : i === 0 ? "setup" : "payoff",
+    // Was im Bild war, als dieser Text stand, waere hier die Beschreibung
+    // UNSERER eigenen Clips. Der Hinweis ist aber dafuer da, beim naechsten
+    // Mal etwas Passendes zu SUCHEN - die Clips von damals einzutragen hiesse,
+    // das Konzept auf sie festzunageln.
+    sceneHint: "",
+  }));
+}
+
+/**
+ * Legt einen Reels-Edit aus einer frei formulierten Anweisung an.
+ *
+ * Das Gegenstück zu createJobFromSpec für die Sparten, die nach Krassheit
+ * auswählen. Bewusst ohne Konzept: dieser Edit gehört zu keinem, und ihn
+ * einem unterzuschieben hiesse, dessen Rotation zu verfälschen. Wer das
+ * Ergebnis behalten will, macht hinterher aus dem fertigen Video ein Konzept.
+ *
+ * Die Textgestaltung kommt nicht aus der Anweisung: sie ist für alle Reels
+ * dieselbe Entscheidung, genau wie beim Weg über ein Konzept.
+ */
+export async function createViralJobFromSpec(
+  track: Track,
+  spec: { hookText: string; clipCount: number; totalSeconds: number; themeHint?: string },
+  requestedVia: string,
+): Promise<string> {
+  const composed = await composeViralVideo(track, {
+    hookText: spec.hookText,
+    clipCount: spec.clipCount,
+    totalSeconds: spec.totalSeconds,
+    themeHint: spec.themeHint,
+  });
+
+  const job = await prisma.promoVideo.create({
+    data: {
+      track,
+      hookText: composed.hookText,
+      scenes: composed.scenes as unknown as object,
+      status: "queued",
+      origin: "manual",
+      textPhases: (composed.textPhases as unknown as object) ?? undefined,
+      textStyle: viralTextStyle(),
+      fileTitle: composed.fileTitle || null,
+      requestedVia,
+      // Ausdrücklich NICHT in den Ordner, aus dem gepostet wird.
+      //
+      // Ein Edit auf Zuruf ist ein Versuch: der Nutzer will ihn ansehen und
+      // erst dann entscheiden, ob daraus ein Konzept wird. Läge er in der
+      // Liste "noch zu posten", würde die Posting-Routine ihn am nächsten Tag
+      // veröffentlichen, bevor jemand ihn beurteilt hat. Er geht deshalb in
+      // den gewöhnlichen Ausgabeordner der Sparte.
+      driveFolderId: null,
+    },
+  });
+
+  await logActivity(
+    `Edit aus Anweisung angelegt: "${requestedVia}"` +
+      (spec.themeHint ? ` (gesucht: ${spec.themeHint})` : ""),
+    { videoId: job.id, track },
+  );
   return job.id;
 }
 

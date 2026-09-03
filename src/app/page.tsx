@@ -137,9 +137,11 @@ export default async function DashboardPage() {
 
           <TriggerButtons track={track} />
           {track === "promo" ? <DailySettings /> : <ViralSchedule track={track} />}
-          {/* Der Dialog arbeitet mit der Kleidungsbewertung - in den
-              Reels-Sparten entstehen Videos nach Konzept. */}
-          {bewertungsart(track) === "kleidung" && <VideoChat track={track} />}
+          {/* In jeder Sparte, aber dahinter stecken zwei Wege: die
+              Kleider-Sparten waehlen die Clips schon im Dialog aus, die
+              Reels-Sparten erst beim Zusammenstellen. Was der Nutzer tippt,
+              sieht in beiden Faellen gleich aus. */}
+          <VideoChat track={track} />
           <LiveActivity track={track} />
           <ConceptLibrary track={track} />
           <ClipLibrary track={track} />

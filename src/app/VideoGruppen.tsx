@@ -51,6 +51,52 @@ function VideoEintrag({ zeile }: { zeile: VideoZeile }) {
   const [laeuft, setLaeuft] = useState(false);
   const titel = zeile.fileTitle || zeile.hookText.replace(/\n/g, " ");
 
+  // Als Konzept sichern: eigener Zustand, weil der Titel vorher noch geaendert
+  // werden koennen soll. Zugeklappt steht davon nichts da - der Knopf ist die
+  // Ausnahme, nicht die Regel.
+  const [konzeptOffen, setKonzeptOffen] = useState(false);
+  const [konzeptTitel, setKonzeptTitel] = useState("");
+  const [konzeptMeldung, setKonzeptMeldung] = useState<{ text: string; fehler: boolean } | null>(
+    null,
+  );
+
+  function konzeptUmschalten() {
+    const naechster = !konzeptOffen;
+    setKonzeptOffen(naechster);
+    setKonzeptMeldung(null);
+    // Vorbelegt mit dem Titel, den das Modell fuer genau dieses Video erfunden
+    // hat - der trifft es meist besser als alles, was man in der Eile tippt.
+    if (naechster) setKonzeptTitel(zeile.fileTitle || zeile.hookText.split("\n")[0].slice(0, 70));
+  }
+
+  async function alsKonzeptSichern() {
+    setLaeuft(true);
+    setKonzeptMeldung(null);
+    try {
+      const res = await fetch(`/api/jobs/${zeile.id}/concept`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: konzeptTitel }),
+      });
+      const daten = await res.json();
+      if (!res.ok) throw new Error(daten.error ?? "Konzept konnte nicht angelegt werden.");
+
+      setKonzeptOffen(false);
+      setKonzeptMeldung({
+        text: `Konzept „${daten.concept.title}" angelegt - es steht oben in der Konzept-Bibliothek.`,
+        fehler: false,
+      });
+      router.refresh();
+    } catch (err) {
+      setKonzeptMeldung({
+        text: err instanceof Error ? err.message : String(err),
+        fehler: true,
+      });
+    } finally {
+      setLaeuft(false);
+    }
+  }
+
   return (
     <li className={`video video-${zeile.origin}`}>
       <button className="video-kopf" onClick={() => setOffen(!offen)} aria-expanded={offen}>
@@ -131,6 +177,45 @@ function VideoEintrag({ zeile }: { zeile: VideoZeile }) {
             >
               {laeuft ? "Wird eingereiht …" : "Nochmal versuchen"}
             </button>
+          )}
+
+          {/* Nur am fertigen Video: was noch rendert oder gescheitert ist,
+              hat sich noch nicht bewaehrt - und genau darum geht es hier. */}
+          {zeile.status === "done" && (
+            <div className="actions" style={{ marginBottom: 0 }}>
+              <button className="secondary" onClick={konzeptUmschalten} disabled={laeuft}>
+                {konzeptOffen ? "Abbrechen" : "Als Konzept speichern"}
+              </button>
+            </div>
+          )}
+
+          {konzeptOffen && (
+            <div className="clip-editor">
+              <label>
+                Name des Konzepts
+                <input
+                  value={konzeptTitel}
+                  onChange={(e) => setKonzeptTitel(e.target.value)}
+                  placeholder="z.B. Mom said it's dangerous"
+                />
+              </label>
+              <span className="clip-meta">
+                Übernommen werden Text, Anzahl und Länge der Einstellungen, die Textgestaltung und
+                der Sound - nicht die verwendeten Clips. Jeder Lauf danach sucht sich seine eigenen
+                Höhepunkte, sonst käme jedes Mal dasselbe Video heraus.
+              </span>
+              <div className="actions" style={{ marginBottom: 0 }}>
+                <button onClick={alsKonzeptSichern} disabled={laeuft || !konzeptTitel.trim()}>
+                  {laeuft ? "Wird angelegt …" : "Konzept anlegen"}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {konzeptMeldung && (
+            <p className={`action-message ${konzeptMeldung.fehler ? "error" : ""}`}>
+              {konzeptMeldung.text}
+            </p>
           )}
 
           {zeile.driveUrl && (

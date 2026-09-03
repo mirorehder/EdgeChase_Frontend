@@ -649,9 +649,17 @@ export async function selectViralScenes(
    * hatte.
    */
   hookText = "",
+  /**
+   * Worum es gehen soll, ohne dass es im Bild steht.
+   *
+   * Aus dem Dialog: "5 Clips, moeglichst Stuerze". Der eingeblendete Text
+   * sagt so etwas oft gerade nicht - dann waere die Auswahl ohne diesen
+   * Hinweis blind fuer den eigentlichen Wunsch.
+   */
+  themenHinweis = "",
 ): Promise<string[]> {
   try {
-    return await selectViralScenesMitModell(candidates, desiredCount, hookText);
+    return await selectViralScenesMitModell(candidates, desiredCount, hookText, themenHinweis);
   } catch (err) {
     // Das Modell ordnet hier nur - die Auswahl selbst steht schon fest, weil
     // die Kandidatenliste nach Bewertung sortiert hereinkommt. Faellt Gemini
@@ -699,6 +707,7 @@ async function selectViralScenesMitModell(
   candidates: ViralCandidate[],
   desiredCount: number,
   hookText: string,
+  themenHinweis = "",
 ): Promise<string[]> {
   const ai = client();
 
@@ -706,14 +715,20 @@ async function selectViralScenesMitModell(
 
   // Der Themenblock steht ganz oben und nicht als Nebensatz weiter unten: was
   // am Anfang der Anweisung steht, wird zuverlaessiger befolgt.
-  const themenBlock = hookText.trim()
-    ? `WORUM ES IN DIESEM VIDEO GEHT
-Der eingeblendete Text lautet: „${hookText.replace(/\n/g, " ").trim()}"
+  // Die ausdrueckliche Vorgabe steht VOR dem eingeblendeten Text: sie ist der
+  // Wunsch in eigenen Worten, der Text nur das, was am Ende im Bild steht.
+  const wunschZeile = themenHinweis.trim()
+    ? `Ausdrücklich gewünscht ist: ${themenHinweis.replace(/\n/g, " ").trim()}. Das wiegt am schwersten.\n`
+    : "";
 
-Jeder gewählte Clip muss zu dieser Aussage passen. Das steht über allem anderen - auch über der Bewertung. Geht es um Risiko, gehören die riskantesten Clips hinein; geht es um einen misslungenen Versuch, gehört ein Fail hinein, kein sauberer Trick.
+  const themenBlock =
+    hookText.trim() || wunschZeile
+      ? `WORUM ES IN DIESEM VIDEO GEHT
+${wunschZeile}${hookText.trim() ? `Der eingeblendete Text lautet: „${hookText.replace(/\n/g, " ").trim()}"\n` : ""}
+Jeder gewählte Clip muss dazu passen. Das steht über allem anderen - auch über der Bewertung. Geht es um Risiko, gehören die riskantesten Clips hinein; geht es um einen misslungenen Versuch, gehört ein Fail hinein, kein sauberer Trick.
 
 `
-    : "";
+      : "";
 
   const prompt = `${themenBlock}Du stellst einen schnell geschnittenen Parkour-Edit zusammen. Jede Einstellung zeigt etwa eine Sekunde: genau den Trick, nichts davor, nichts danach.
 
@@ -1105,6 +1120,153 @@ Antworte mit status "question" und einer Frage in reply, ODER mit status "ready"
       themeHint: (spec.themeHint ?? "").trim(),
       clipNames: (spec.clipNames ?? []).filter(Boolean),
     },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Dialog in den Reels-Sparten
+//
+// Getrennt vom Dialog der Kleider-Sparten, und das ist kein Doppel: dort wählt
+// der Dialog die Clips selbst aus einer Liste und braucht deshalb deren
+// Kleidungsbewertung. Hier wählt er GAR KEINE Clips - das macht später
+// composeViralVideo anhand von Bewertung, Rotation und dem eingeblendeten
+// Text. Der Dialog legt nur fest, was im Video stehen soll, wie lang es wird
+// und worum es geht.
+//
+// Deshalb sieht er auch nur die Ordner und nicht jeden einzelnen Clip: eine
+// Liste von vierzig Trickbeschreibungen würde ihn zu Aussagen verleiten, die
+// er nicht halten kann ("ich nehme den Backflip von der Mauer") - die Auswahl
+// trifft er ja nicht.
+// ---------------------------------------------------------------------------
+
+export interface ReelsSpec {
+  /** Der Text, der im Video steht. */
+  hookText: string;
+  /** Wie viele Einstellungen. */
+  clipCount: number;
+  /** Gesamtlänge in Sekunden. */
+  totalSeconds: number;
+  /** Worum es gehen soll - geht in die Clipauswahl ein, steht aber nicht im
+   *  Bild. Leer, wenn der Nutzer nichts vorgegeben hat. */
+  themeHint: string;
+}
+
+export interface ReelsChatResult {
+  status: "question" | "ready";
+  reply: string;
+  spec?: ReelsSpec;
+}
+
+/** Ein Quellordner, wie ihn der Dialog zu sehen bekommt. */
+export interface ChatOrdnerSummary {
+  name: string;
+  beschreibung: string;
+  /** Wie viele verwendbare Clips darin liegen. */
+  anzahl: number;
+}
+
+export async function interpretReelsRequest(
+  turns: ChatTurn[],
+  ordner: ChatOrdnerSummary[],
+  recentHookTexts: string[],
+  spartenName: string,
+): Promise<ReelsChatResult> {
+  const ai = client();
+
+  const ordnerListe = ordner.length
+    ? ordner
+        .map(
+          (o) =>
+            `- ${o.name} (${o.anzahl} verwendbare Clips)${o.beschreibung ? `: ${o.beschreibung}` : ""}`,
+        )
+        .join("\n")
+    : "(keine Ordner eingetragen)";
+
+  const dialog = turns
+    .map((t) => `${t.role === "user" ? "NUTZER" : "SYSTEM"}: ${t.content}`)
+    .join("\n");
+
+  const prompt = `Du hilfst dabei, ein schnell geschnittenes Reel für "${spartenName}" zusammenzustellen. Der Nutzer beschreibt auf Deutsch, was er möchte. Deine Aufgabe ist es, daraus die Einstellungen abzuleiten - oder gezielt nachzufragen.
+
+WAS SO EIN REEL IST: eine Folge kurzer Höhepunkte, hart geschnitten, jede Einstellung ungefähr eine Sekunde. Darüber steht ein Text, der die ganze Zeit stehen bleibt.
+
+EINSTELLBAR SIND:
+- hookText: der Text, der im Video steht. IMMER auf Englisch, auch wenn der Nutzer deutsch schreibt. Zeilenumbrüche mit \\n werden als gesetzte Umbrüche übernommen. Kurz und gesprochen, wie in einem Reel - kein Werbesatz.
+- clipCount: 3 bis 10 Einstellungen. Voreinstellung 7.
+- totalSeconds: 6 bis 25 Sekunden Gesamtlänge. Voreinstellung 13.
+- themeHint: worum es gehen soll, in Stichworten - z.B. "Stürze", "grosse Höhe", "Rooftop". Das steuert die Auswahl der Clips, steht aber NICHT im Bild. Leer lassen, wenn der Nutzer nichts dazu sagt.
+
+WELCHE CLIPS ES GIBT (nur zur Einordnung - du wählst sie NICHT aus, das geschieht später automatisch):
+${ordnerListe}
+
+ZULETZT VERWENDETE TEXTE (nicht wiederholen, falls du selbst einen formulierst):
+${recentHookTexts.length ? recentHookTexts.map((t) => `- ${t}`).join("\n") : "(noch keine)"}
+
+BISHERIGER DIALOG:
+${dialog}
+
+REGELN:
+- Frage nur nach, wenn eine Angabe des Nutzers mehrdeutig ist oder wenn er erkennbar selbst bestimmen will, es aber noch nicht getan hat. Stelle dann GENAU EINE Frage.
+- Frage nicht nach Dingen, für die es eine Voreinstellung gibt.
+- Gibt der Nutzer keinen Text vor, formuliere selbst einen, der zum gewünschten Thema passt.
+- Verspreche keine bestimmten Clips. Du wählst sie nicht aus - sage höchstens, wonach gesucht wird.
+- Passen Wunsch und Bestand nicht zusammen (etwa Stürze, aber es gibt keinen Ordner dafür), sag das offen, statt es zuzusagen.
+- reply ist immer auf Deutsch, kurz und sachlich.
+
+Antworte mit status "question" und einer Frage in reply, ODER mit status "ready", einer kurzen Zusammenfassung in reply und der vollständigen spec.`;
+
+  const response = await ai.models.generateContent({
+    model: MODEL,
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    config: {
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          status: { type: Type.STRING },
+          reply: { type: Type.STRING },
+          spec: {
+            type: Type.OBJECT,
+            properties: {
+              hookText: { type: Type.STRING },
+              clipCount: { type: Type.INTEGER },
+              totalSeconds: { type: Type.NUMBER },
+              themeHint: { type: Type.STRING },
+            },
+            required: ["hookText", "clipCount", "totalSeconds", "themeHint"],
+          },
+        },
+        required: ["status", "reply"],
+      },
+    },
+  });
+
+  const raw = JSON.parse(response.text ?? "{}") as Partial<ReelsChatResult>;
+
+  if (raw.status !== "ready" || !raw.spec) {
+    return {
+      status: "question",
+      reply: raw.reply?.trim() || "Worum soll es in dem Reel gehen?",
+    };
+  }
+
+  return { status: "ready", reply: raw.reply?.trim() || "Alles klar, ich schneide das.", spec: reelsSpecKorrigieren(raw.spec) };
+}
+
+/**
+ * Die Grenzen deterministisch nachziehen.
+ *
+ * Ausgelagert und ausgeführt, damit sich nachprüfen lässt, dass eine
+ * unsinnige Antwort des Modells nichts kaputt macht - ohne dafür Gemini
+ * aufrufen zu müssen.
+ */
+export function reelsSpecKorrigieren(spec: Partial<ReelsSpec>): ReelsSpec {
+  return {
+    // Eigene Zeilenumbrüche bleiben erhalten, überflüssiger Leerraum nicht.
+    hookText: (spec.hookText ?? "").replace(/[ \t]+/g, " ").replace(/ ?\n ?/g, "\n").trim(),
+    clipCount: Math.min(10, Math.max(3, Math.round(spec.clipCount || 7))),
+    totalSeconds: Math.min(25, Math.max(6, spec.totalSeconds || 13)),
+    themeHint: (spec.themeHint ?? "").trim(),
   };
 }
 
