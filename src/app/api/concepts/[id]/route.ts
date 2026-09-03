@@ -17,6 +17,15 @@ interface Patch {
   textPhases?: PhasePatch[];
   clipCount?: number;
   totalSeconds?: number;
+  /**
+   * Die Regieanweisung - worauf es bei der Clipauswahl ankommt.
+   *
+   * Ausdrücklich als eigenes Feld im Patch: nur so lässt sich unterscheiden
+   * zwischen "nicht mitgeschickt, unverändert lassen" (undefined) und
+   * "geleert" (leerer String). Ohne die Unterscheidung könnte man eine
+   * Anweisung nie wieder entfernen.
+   */
+  theme?: string;
 }
 
 /** Kürzer kann keine Phase sein - darunter ist nichts zu lesen. */
@@ -68,11 +77,20 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
         totalSeconds: patch.totalSeconds
           ? Math.min(60, Math.max(3, patch.totalSeconds))
           : concept.totalSeconds,
+        // undefined = nicht angefasst; leerer String = ausdrücklich entfernt.
+        theme:
+          patch.theme === undefined ? concept.theme : patch.theme.trim() || null,
       },
     });
 
     await logActivity(
-      `Konzept "${updated.title}" bearbeitet: ${phasen.length} Textphase(n).`,
+      `Konzept "${updated.title}" bearbeitet: ${phasen.length} Textphase(n)` +
+        (patch.theme !== undefined
+          ? updated.theme
+            ? `, Regieanweisung "${updated.theme}"`
+            : ", Regieanweisung entfernt"
+          : "") +
+        ".",
       { track: trackFromValue(concept.track) },
     );
     return NextResponse.json(updated);

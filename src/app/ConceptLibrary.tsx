@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { trackBeschreibung, type Track } from "@/lib/trackClient";
+import { bewertungsart, trackBeschreibung, type Track } from "@/lib/trackClient";
 import { soundBeschriftung, soundEingabePruefen, istVerwendbar } from "@/lib/sound";
 
 interface TextPhase {
@@ -40,13 +40,18 @@ const MAX_PARTS = 80;
 
 export function ConceptLibrary({ track }: { track: Track }) {
   const router = useRouter();
+  const nachKrassheit = bewertungsart(track) === "krassheit";
   const [concepts, setConcepts] = useState<Concept[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [fehler, setFehler] = useState(false);
   const [auf, setAuf] = useState(false);
   const [offenId, setOffenId] = useState<string | null>(null);
-  const [entwurf, setEntwurf] = useState<{ title: string; phases: TextPhase[] } | null>(null);
+  const [entwurf, setEntwurf] = useState<{
+    title: string;
+    phases: TextPhase[];
+    theme: string;
+  } | null>(null);
   const [soundId, setSoundId] = useState<string | null>(null);
   const [soundEntwurf, setSoundEntwurf] = useState("");
   const [soundFehler, setSoundFehler] = useState<string | null>(null);
@@ -192,6 +197,7 @@ export function ConceptLibrary({ track }: { track: Track }) {
       phases: concept.textPhases?.length
         ? concept.textPhases.map((p) => ({ ...p }))
         : [{ text: concept.hookText, seconds: concept.totalSeconds, role: "plain", sceneHint: "" }],
+      theme: concept.theme ?? "",
     });
   }
 
@@ -211,7 +217,11 @@ export function ConceptLibrary({ track }: { track: Track }) {
       const res = await fetch(`/api/concepts/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: entwurf.title, textPhases: entwurf.phases }),
+        body: JSON.stringify({
+          title: entwurf.title,
+          textPhases: entwurf.phases,
+          theme: entwurf.theme,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
@@ -292,8 +302,10 @@ export function ConceptLibrary({ track }: { track: Track }) {
                 <span className="clip-meta">
                   {concept.clipCount} Einstellungen · {concept.totalSeconds}s gesamt ·{" "}
                   {concept.secondsPerScene}s je Szene
-                  {concept.theme ? ` · ${concept.theme}` : ""}
                 </span>
+                {concept.theme && (
+                  <span className="clip-meta">Regie: {concept.theme}</span>
+                )}
                 {/* Mehrere Textphasen nacheinander: erst der Aufbau, dann die
                     Pointe. Erst die Abfolge ergibt bei solchen Videos den
                     Sinn, deshalb stehen sie einzeln da und nicht als ein
@@ -449,6 +461,24 @@ export function ConceptLibrary({ track }: { track: Track }) {
                         value={entwurf.title}
                         onChange={(e) => setEntwurf({ ...entwurf, title: e.target.value })}
                       />
+                    </label>
+
+                    <label>
+                      Regieanweisung - worauf es bei der Clipauswahl ankommt
+                      <textarea
+                        rows={2}
+                        value={entwurf.theme}
+                        placeholder={
+                          nachKrassheit
+                            ? "z.B. möglichst Fails, hohe Sprünge, viel Risiko"
+                            : "z.B. Oberteile gut sichtbar, Bewegung, Nahaufnahmen"
+                        }
+                        onChange={(e) => setEntwurf({ ...entwurf, theme: e.target.value })}
+                      />
+                      <span className="clip-meta">
+                        Steuert, welche Clips gewählt werden - steht nicht im Bild. Leer lassen,
+                        wenn egal. Leeren und speichern entfernt die Anweisung.
+                      </span>
                     </label>
 
                     {entwurf.phases.map((phase, i) => (

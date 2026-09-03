@@ -186,6 +186,15 @@ model PromoVideo {
   /// den automatischen Tageslaeufen.
   requestedVia String?
 
+  /// Worauf es bei der Clipauswahl ankam - die Regieanweisung.
+  ///
+  /// Getrennt von requestedVia, obwohl beides aus derselben Eingabe stammt:
+  /// requestedVia ist der Wortlaut fürs Protokoll ("6 Clips, möglichst
+  /// Stürze"), dieses Feld die daraus abgeleitete Vorgabe an die Auswahl
+  /// ("Stürze"). Nur so lässt sie sich später in ein Konzept übernehmen -
+  /// aus dem Fliesstext müsste man sie sonst wieder herauslesen.
+  themeHint String?
+
   /// Lautstaerke des Originaltons der Clips. 0 = stumm, 1 = unveraendert,
   /// darueber wird verstaerkt.
   videoVolume Float @default(1)
@@ -329,7 +338,16 @@ model Concept {
   totalSeconds    Float
   secondsPerScene Float
 
-  /// Womit sich das Video inhaltlich befasst, in Stichworten.
+  /// Die Regieanweisung: worauf es bei der Clipauswahl ankommt.
+  ///
+  /// Freitext in eigenen Worten - "vor allem die schwarze Jacke", "möglichst
+  /// Stürze, keine sauberen Landungen", "grosse Höhe". Geht in die Auswahl
+  /// ein, steht aber NICHT im Bild; dafür ist hookText da.
+  ///
+  /// Stammt entweder aus dem Dialog ("6 Einstellungen, möglichst Stürze"),
+  /// aus der Auswertung eines Referenzvideos, oder wird von Hand eingetragen.
+  /// Leer heisst: die Auswahl richtet sich allein nach Bewertung, Rotation
+  /// und dem eingeblendeten Text.
   theme String?
 
   /// Beobachtungen zur Schrift, zu Farben und zur Platzierung - als

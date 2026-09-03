@@ -1628,6 +1628,9 @@ export async function createJobFromSpec(
       textStyle: spec.textStyle,
       fileTitle: composed.fileTitle || null,
       requestedVia,
+      // Festgehalten, damit sie in ein Konzept übernommen werden kann. Aus
+      // requestedVia liesse sie sich nur wieder herausraten.
+      themeHint: spec.themeHint?.trim() || null,
     },
   });
 
@@ -1698,7 +1701,11 @@ export async function konzeptAusAuftrag(
       clipCount,
       totalSeconds,
       secondsPerScene: Math.round((totalSeconds / clipCount) * 100) / 100,
-      theme: angaben.theme?.trim() || null,
+      // Die Regieanweisung wandert mit: sie hat die Clipauswahl dieses Videos
+      // ueberhaupt erst getroffen. Ohne sie waehlte der naechste Lauf nach
+      // diesem Konzept wieder beliebige Hoehepunkte, und der Grund, warum das
+      // Video gefiel, ginge verloren.
+      theme: angaben.theme?.trim() || job.themeHint?.trim() || null,
       notes: notizen,
       // Der Sound zieht mit um: gefallen hat das Video MIT ihm. soundKind
       // bleibt leer - was fuer ein Eintrag dahintersteckt, weiss diese
@@ -1789,6 +1796,7 @@ export async function createViralJobFromSpec(
       textStyle: viralTextStyle(),
       fileTitle: composed.fileTitle || null,
       requestedVia,
+      themeHint: spec.themeHint?.trim() || null,
       // Ausdrücklich NICHT in den Ordner, aus dem gepostet wird.
       //
       // Ein Edit auf Zuruf ist ein Versuch: der Nutzer will ihn ansehen und
@@ -1957,6 +1965,10 @@ export async function createViralJobFromConcept(
     totalSeconds: concept.totalSeconds || undefined,
     excludeClipIds: options.excludeClipIds,
     textPhases: (concept.textPhases as unknown as ConceptTextPhase[]) ?? [],
+    // Die Regieanweisung des Konzepts steuert die Clipauswahl - genau wie im
+    // Dialog. Ohne sie waehlte jeder Lauf beliebige Hoehepunkte, und die
+    // Vorgabe "moeglichst Fails" oder "hohe Spruenge" bliebe wirkungslos.
+    themeHint: concept.theme ?? undefined,
   });
 
   // Eine ID, die Instagram nicht auflösen konnte, wird nicht weitergereicht -
