@@ -201,6 +201,38 @@ async function main() {
   pruefe("Konzept am Auftrag", auftrag.conceptId, konzept.id);
 
   await prisma.promoVideo.delete({ where: { id: auftrag.id } });
+
+  console.log("\n8. Eine Sound-ID, die Instagram nicht mehr kennt");
+  // Aus dem Betrieb: beim Test liess sich die hinterlegte audio_id nicht
+  // aufloesen - vermutlich ein Original-Sound, der fuer Unternehmenskonten
+  // gesperrt ist. Bisher merkte das nur die Posting-Routine, und das Konzept
+  // behielt die tote ID.
+  const tot = await setzen({
+    audioId: "354553290259617",
+    status: "unauffindbar",
+    note: "get_audio_metadata liefert nichts zu dieser ID",
+  });
+  pruefe("Stand wird angenommen", tot.status, 200);
+  pruefe("Stand: unauffindbar", tot.daten.soundStatus, "unauffindbar");
+  pruefe("die ID bleibt sichtbar", tot.daten.soundAudioId, "354553290259617");
+
+  const toterStand = await prisma.concept.findUnique({ where: { id: konzept.id } });
+  // Entscheidend: die Art steht weiterhin auf "original_sound" - ohne eigene
+  // Abfrage waere dieser Sound damit "verwendbar" und wuerde weiter angehaengt.
+  pruefe("die Art steht noch auf Zuschnitt", toterStand!.soundKind, "original_sound");
+  pruefe("trotzdem nicht mehr verwendbar", istVerwendbar(toterStand!), false);
+  pruefe(
+    "das Dashboard sagt, was zu tun ist",
+    soundBeschriftung(toterStand!).includes("anderen Link"),
+    true,
+  );
+
+  // Wer im Dashboard von Hand denselben Link noch einmal speichert, will es
+  // erneut versucht haben - der Stand faellt zurueck auf "offen".
+  const nochmal = await setzen({ url: "https://www.instagram.com/reels/audio/354553290259617/" });
+  pruefe("erneutes Speichern von Hand", nochmal.status, 200);
+  pruefe("setzt den Stand zurück", nochmal.daten.soundStatus, "offen");
+
   await prisma.concept.delete({ where: { id: konzept.id } });
 
   console.log(fehler === 0 ? "\nAlles wie erwartet." : `\n${fehler} Abweichung(en).`);

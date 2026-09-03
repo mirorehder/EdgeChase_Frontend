@@ -983,10 +983,24 @@ const SETUP_MAX_SECONDS = 5;
  * oder wurde sie falsch geschätzt, bliebe der Text unlesbar stehen. Lehre aus
  * dem Schwesterprojekt: Lesezeit einplanen.
  */
-function lesezeitSekunden(text: string): number {
+export function lesezeitSekunden(text: string): number {
   const woerter = text.trim().split(/\s+/).filter(Boolean).length;
-  return 0.6 + woerter * 0.32;
+  return Math.min(LESEZEIT_DECKEL, 0.6 + woerter * 0.32);
 }
+
+/**
+ * Obergrenze der eingeplanten Lesezeit.
+ *
+ * Ohne sie wächst die Eröffnungseinstellung mit jedem Wort weiter: ein Text
+ * mit vierzehn Wörtern verlangte fünf Sekunden, und die bekam er auch, weil
+ * SETUP_MAX_SECONDS genau dort liegt. Ein Reel, das fünf Sekunden lang ein
+ * Standbild mit Text zeigt, ist vorbei, bevor der erste Trick kommt.
+ *
+ * Der Wert stammt aus dem Vorgängersystem, das dort seit Langem läuft. Er
+ * deckelt nur die LESEZEIT: verlangt eine Vorlage ausdrücklich eine längere
+ * Eröffnung, gilt weiterhin ihre Angabe.
+ */
+const LESEZEIT_DECKEL = 3.2;
 
 /**
  * Schneidet eine Szene so zu, dass der Trick darin vollständig vorkommt.
@@ -1757,6 +1771,26 @@ export async function createViralJobFromConcept(
     textPhases: (concept.textPhases as unknown as ConceptTextPhase[]) ?? [],
   });
 
+  // Eine ID, die Instagram nicht auflösen konnte, wird nicht weitergereicht -
+  // der Edit bekommt dann den Trend-Sound, so wie ein Konzept ohne Sound. Im
+  // Protokoll steht, warum, damit es nicht wie ein Versehen aussieht.
+  const soundTot = !!concept.soundAudioId && concept.soundStatus === "unauffindbar";
+  if (soundTot) {
+    await logActivity(
+      `Konzept "${concept.title}": der hinterlegte Sound ist als unauffindbar vermerkt und ` +
+        "wird nicht angehängt. Beim Posten gilt der Trend-Sound - im Dashboard einen anderen " +
+        "Link einfügen.",
+      { level: "error", track },
+    );
+  }
+  const soundFuerAuftrag = soundTot
+    ? { soundAudioId: null, soundTitle: null, soundStatus: null }
+    : {
+        soundAudioId: concept.soundAudioId,
+        soundTitle: concept.soundTitle,
+        soundStatus: concept.soundAudioId ? concept.soundStatus : null,
+      };
+
   const job = await prisma.promoVideo.create({
     data: {
       track,
@@ -1776,9 +1810,11 @@ export async function createViralJobFromConcept(
       // Instagram-Zugang und weiss deshalb nicht einmal, ob hinter der ID ein
       // Zuschnitt oder ein vollstaendiger Song steckt. Sie gibt den Stand mit,
       // und wer Instagram erreicht, entscheidet.
-      soundAudioId: concept.soundAudioId,
-      soundTitle: concept.soundTitle,
-      soundStatus: concept.soundAudioId ? concept.soundStatus : null,
+      //
+      // Die eine Ausnahme: eine ID, die Instagram beim letzten Posten nicht
+      // aufloesen konnte. Die noch einmal mitzugeben hiesse, denselben
+      // Fehlschlag noch einmal zu bestellen.
+      ...soundFuerAuftrag,
       // Zeitplan und Knopf im Dashboard landen im selben Ordner. Er wird beim
       // Anlegen festgehalten, damit ein Auftrag auch dann dort landet, wenn
       // die Einstellung sich zwischen Anlegen und Render ändert.

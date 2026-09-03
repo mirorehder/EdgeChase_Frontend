@@ -19,6 +19,7 @@ import { kandidatenZeile } from "../src/lib/gemini";
 import {
   CURRENT_ANALYSIS_VERSION,
   MIN_USABLE_ANALYSIS_VERSION,
+  lesezeitSekunden,
   viralSceneWindow,
 } from "../src/lib/pipeline";
 
@@ -159,7 +160,24 @@ pruefe(
   true,
 );
 
-console.log("\n6. Der zweite Versionssprung hält die Videoerzeugung ebenfalls nicht an");
+console.log("\n6. Die Lesezeit hat jetzt eine Obergrenze");
+// Ohne Deckel wuchs die Eroeffnungseinstellung mit jedem Wort weiter, bis sie
+// bei SETUP_MAX_SECONDS = 5 anschlug. Fuenf Sekunden Standbild mit Text sind
+// bei einem Reel die halbe Aufmerksamkeitsspanne.
+const KURZER_TEXT = "Sie sagt, ich soll aufhören";
+const LANGER_TEXT =
+  "Sie sagt, ich soll aufhören, bevor mir noch etwas passiert, aber sie kennt die Strecke nicht";
+console.log(`      kurzer Text (${KURZER_TEXT.split(" ").length} Wörter): ${lesezeitSekunden(KURZER_TEXT).toFixed(2)}s`);
+console.log(`      langer Text (${LANGER_TEXT.split(" ").length} Wörter): ${lesezeitSekunden(LANGER_TEXT).toFixed(2)}s`);
+pruefe("kurzer Text rechnet wie bisher", Math.round(lesezeitSekunden(KURZER_TEXT) * 100) / 100, 2.2);
+pruefe("langer Text wird gedeckelt", lesezeitSekunden(LANGER_TEXT), 3.2);
+pruefe(
+  "ohne Deckel wären es über fünf Sekunden gewesen",
+  0.6 + LANGER_TEXT.trim().split(/\s+/).length * 0.32 > 5,
+  true,
+);
+
+console.log("\n7. Der zweite Versionssprung hält die Videoerzeugung ebenfalls nicht an");
 pruefe("Analyse-Version ist gestiegen", CURRENT_ANALYSIS_VERSION, 3);
 pruefe("verwendbar bleibt schon Version 1", MIN_USABLE_ANALYSIS_VERSION, 1);
 pruefe(

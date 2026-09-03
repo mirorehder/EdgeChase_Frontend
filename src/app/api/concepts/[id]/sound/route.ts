@@ -18,7 +18,8 @@ export const dynamic = "force-dynamic";
  * 2. Nach der Prüfung kommt { audioId, kind, title, artist, status, note }.
  *    Dann steht fest, ob der Sound an der richtigen Stelle beginnt, und das
  *    Konzept geht auf "geprueft" - oder auf "ohne", wenn sich kein
- *    brauchbarer Zuschnitt finden liess.
+ *    brauchbarer Zuschnitt finden liess, oder auf "unauffindbar", wenn
+ *    Instagram die hinterlegte ID gar nicht mehr kennt.
  */
 interface Eingang {
   url?: string | null;
@@ -30,7 +31,7 @@ interface Eingang {
   note?: string | null;
 }
 
-const STATUS: SoundStatus[] = ["offen", "geprueft", "ohne"];
+const STATUS: SoundStatus[] = ["offen", "geprueft", "ohne", "unauffindbar"];
 const ARTEN: SoundArt[] = ["original_sound", "music"];
 
 export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
@@ -85,7 +86,12 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       ? (eingang.status as SoundStatus)
       // Ohne ausdrückliche Angabe: geprüft ist nur, was schon geprüft war und
       // sich nicht geändert hat. Ein neuer Link faellt zurueck auf "offen".
-      : audioId === concept.soundAudioId
+      //
+      // "unauffindbar" wird dabei ausdruecklich NICHT uebernommen: ohne
+      // ausdrueckliche Angabe kommt der Aufruf aus dem Dashboard, und wer dort
+      // von Hand speichert, will es noch einmal versucht haben - auch mit
+      // demselben Link.
+      : audioId === concept.soundAudioId && concept.soundStatus !== "unauffindbar"
         ? (concept.soundStatus as SoundStatus)
         : "offen";
 

@@ -13,8 +13,16 @@
  * bereits die gewollte Stelle ist.
  */
 
-/** Wie weit ein Konzept mit seinem Sound ist. */
-export type SoundStatus = "offen" | "geprueft" | "ohne";
+/**
+ * Wie weit ein Konzept mit seinem Sound ist.
+ *
+ * "unauffindbar" ist der Fall aus dem Betrieb: die hinterlegte audio_id liess
+ * sich beim Posten nicht auflösen - vermutlich ein Original-Sound, der für
+ * Unternehmenskonten gesperrt ist. Ohne eigenen Stand merkt das nur die
+ * Posting-Routine, das Konzept behält die tote ID, und jeder weitere Edit
+ * scheitert am selben Sound, ohne dass es jemandem auffällt.
+ */
+export type SoundStatus = "offen" | "geprueft" | "ohne" | "unauffindbar";
 
 /** Was für ein Eintrag im Instagram-Katalog dahintersteckt. */
 export type SoundArt = "original_sound" | "music";
@@ -124,6 +132,9 @@ export function istVerwendbar(stand: {
   soundStatus: string;
 }): boolean {
   if (!stand.soundAudioId) return false;
+  // Steht vor allem anderen: eine ID, die Instagram nicht auflöst, bleibt
+  // unbrauchbar, auch wenn sie vorher einmal als Zuschnitt durchging.
+  if (stand.soundStatus === "unauffindbar") return false;
   if (stand.soundStatus === "geprueft") return true;
   return stand.soundKind === "original_sound";
 }
@@ -137,6 +148,12 @@ export function soundBeschriftung(stand: SoundStand): string {
     return "Kein brauchbarer Zuschnitt gefunden - es gilt der Trend-Sound beim Posten.";
   }
   const name = [stand.soundTitle, stand.soundArtist].filter(Boolean).join(" - ");
+  if (stand.soundStatus === "unauffindbar") {
+    return (
+      `Diesen Sound${name ? ` (${name})` : ""} findet Instagram nicht mehr - er wird nicht ` +
+      "angehängt, es gilt der Trend-Sound. Bitte einen anderen Link einfügen."
+    );
+  }
   if (istVerwendbar(stand)) {
     return name ? `Wird verwendet: ${name}` : "Wird verwendet.";
   }

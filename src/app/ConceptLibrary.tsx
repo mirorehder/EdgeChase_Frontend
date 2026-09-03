@@ -333,7 +333,16 @@ export function ConceptLibrary({ track }: { track: Track }) {
                     Link selbst. */}
                 <span
                   className="clip-meta"
-                  style={{ color: istVerwendbar(concept) ? "var(--ok)" : undefined }}
+                  style={{
+                    // Rot nur fuer den einen Fall, der etwas verlangt: die
+                    // hinterlegte ID kennt Instagram nicht mehr. Alles andere
+                    // ist ein Zustand, kein Fehler.
+                    color: concept.soundStatus === "unauffindbar"
+                      ? "var(--err)"
+                      : istVerwendbar(concept)
+                        ? "var(--ok)"
+                        : undefined,
+                  }}
                 >
                   Sound: {soundBeschriftung(concept)}
                 </span>

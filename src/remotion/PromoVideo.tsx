@@ -272,7 +272,7 @@ function fitWrappedText(
 
 /** Text-Overlay, das während des ganzen Videos sichtbar bleibt (Auftrag 5.3). */
 const HookTextOverlay: React.FC<{ text: string; spec: TextStyleSpec }> = ({ text, spec }) => {
-  const { width } = useVideoConfig();
+  const { width, height } = useVideoConfig();
   const maxWidth = width * spec.maxWidthRatio;
   const { fontSize, lines } = fitWrappedText(text, maxWidth, spec);
 
@@ -289,7 +289,12 @@ const HookTextOverlay: React.FC<{ text: string; spec: TextStyleSpec }> = ({ text
           : {
               justifyContent: "flex-start",
               alignItems: "center",
-              paddingTop: `${(spec.paddingTopRatio ?? 0.12) * 100}%`,
+              // In Pixeln und nicht in Prozent: CSS rechnet prozentuales
+              // Padding gegen die BREITE des Elternelements. Bei 1080x1920
+              // ergaben die gemeinten 22 % der Hoehe deshalb 238 px - also
+              // 12 % der Hoehe. Der Text stand in beiden Promo-Stilen ein
+              // gutes Stueck zu hoch, und die Zahl im Code log.
+              paddingTop: height * (spec.paddingTopRatio ?? 0.12),
             }
       }
     >
@@ -299,8 +304,15 @@ const HookTextOverlay: React.FC<{ text: string; spec: TextStyleSpec }> = ({ text
           textAlign: "center",
           // Aus der Bildmitte um die Differenz nach oben schieben. 0.5 waere
           // genau die Mittellinie, 0.42 sitzt knapp darueber.
+          //
+          // In Pixeln und nicht in vh: vh ist die Hoehe des SICHTFENSTERS.
+          // Beim Rendern ist das die Bildhoehe, dort stimmen beide Wege
+          // ueberein - in jeder anderen Umgebung (Vorschau im Player, Messung
+          // in einer Seite) aber nicht, und dann sitzt der Text woanders als
+          // im fertigen Video. Dieselbe Falle wie beim prozentualen Padding
+          // darunter, nur eine Ebene weiter.
           ...(ueberMitte
-            ? { transform: `translateY(${((spec.centerYRatio ?? 0.5) - 0.5) * 100}vh)` }
+            ? { transform: `translateY(${((spec.centerYRatio ?? 0.5) - 0.5) * height}px)` }
             : {}),
         }}
       >
