@@ -472,3 +472,41 @@ model TrackSchedule {
 
   updatedAt DateTime @updatedAt
 }
+
+/// Ein von Hand gewählter Ausgabeordner in Drive - je Sparte und je Herkunft.
+///
+/// Bisher stand der Zielordner fest im Code und in Umgebungsvariablen: die
+/// Tageslaeufe gingen in einen Ordner, die Handversuche in einen anderen, und
+/// aendern liess sich das nur ueber Vercel. Damit die Posting-Routinen sauber
+/// getrennt aufgestellt werden koennen, waehlt der Nutzer die Ordner jetzt
+/// selbst im Dashboard.
+///
+/// Acht Zeilen sind moeglich: vier Sparten mal zwei Herkuenfte. Fehlt eine
+/// Zeile, gilt weiterhin der bisherige Standard - die Einstellung ist ein
+/// Zusatz, kein Zwang.
+model AusgabeOrdner {
+  /// Die Sparte: "promo", "viral", "sports" oder "clothing".
+  track String
+
+  /// Woher das Video stammt, dessen Ablage hier geregelt wird:
+  /// "scheduled" (der taegliche Lauf) oder "manual" (im Dashboard oder per
+  /// Dialog ausgeloest). Genau die Zweiteilung, die auch die Videoliste zeigt.
+  kind String
+
+  /// Die Drive-Ordner-ID. Aus dem eingefuegten Link gezogen; nach ihr richtet
+  /// sich der Upload.
+  folderId String
+
+  /// Der angezeigte Name. Wird beim Speichern best-effort aus Drive geholt
+  /// (nur moeglich, wenn der Ordner fuer das Dienstkonto freigegeben ist),
+  /// laesst sich aber jederzeit von Hand ueberschreiben - er ist eine
+  /// Gedaechtnisstuetze, keine Pruefung.
+  folderName String @default("")
+
+  /// Der eingefuegte Link im Wortlaut, fuer den Verweis im Dashboard.
+  folderUrl String?
+
+  updatedAt DateTime @updatedAt
+
+  @@id([track, kind])
+}

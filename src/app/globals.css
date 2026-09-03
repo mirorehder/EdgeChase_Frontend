@@ -921,6 +921,30 @@ tr:last-child td {
   gap: 2px;
 }
 
+/* Der Ausgabeordner-Block innerhalb einer Videogruppe. */
+.ausgabe-ordner {
+  padding: 10px 12px;
+  margin: 4px 0 10px;
+  border: 1px dashed var(--line, rgba(255, 255, 255, 0.12));
+  border-radius: 8px;
+}
+
+.ausgabe-zeile {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ausgabe-zeile > .video-label {
+  margin-right: 2px;
+}
+
+/* Der Ändern/Festlegen-Knopf rückt ans Ende der Zeile. */
+.ausgabe-zeile > button {
+  margin-left: auto;
+}
+
 .video-label {
   font-size: 11px;
   text-transform: uppercase;

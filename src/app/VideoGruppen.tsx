@@ -10,6 +10,12 @@ import type { Track } from "@/lib/trackClient";
 // greifen und dem Nutzer die Liste unter den Haenden aufklappen. React behaelt
 // den Zustand dagegen, solange die Eintraege ihren Schluessel behalten.
 
+export interface AusgabeOrdnerStand {
+  folderId: string;
+  folderName: string;
+  folderUrl: string | null;
+}
+
 export interface VideoZeile {
   id: string;
   createdAt: string;
@@ -230,6 +236,105 @@ function VideoEintrag({ zeile }: { zeile: VideoZeile }) {
 }
 
 /**
+ * Der Ausgabeordner einer Gruppe - als Drive-Link einzugeben, mit anpassbarem
+ * Namen.
+ *
+ * Steht bewusst in der Videoliste und nicht in den Einstellungen daneben: hier
+ * sieht man, was wohin gegangen ist, und genau hier will man festlegen, wohin
+ * das Nächste geht. So lassen sich die Posting-Routinen sauber trennen.
+ */
+function AusgabeOrdnerFeld({
+  track,
+  kind,
+  stand,
+}: {
+  track: Track;
+  kind: "scheduled" | "manual";
+  stand: AusgabeOrdnerStand | null;
+}) {
+  const router = useRouter();
+  const [offen, setOffen] = useState(false);
+  const [url, setUrl] = useState(stand?.folderUrl ?? "");
+  const [name, setName] = useState(stand?.folderName ?? "");
+  const [laeuft, setLaeuft] = useState(false);
+  const [fehler, setFehler] = useState<string | null>(null);
+
+  async function speichern() {
+    setLaeuft(true);
+    setFehler(null);
+    try {
+      const res = await fetch("/api/output-folders", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ track, kind, url, name }),
+      });
+      const daten = await res.json();
+      if (!res.ok) throw new Error(daten.error ?? "Konnte nicht gespeichert werden.");
+      setOffen(false);
+      router.refresh();
+    } catch (err) {
+      setFehler(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLaeuft(false);
+    }
+  }
+
+  return (
+    <div className="ausgabe-ordner">
+      <div className="ausgabe-zeile">
+        <span className="video-label">Ausgabeordner</span>
+        {stand ? (
+          stand.folderUrl ? (
+            <a className="drive-link" href={stand.folderUrl} target="_blank" rel="noreferrer">
+              {stand.folderName || "Ordner in Drive"}
+            </a>
+          ) : (
+            <span>{stand.folderName || stand.folderId}</span>
+          )
+        ) : (
+          <span className="clip-meta">Standardordner der Sparte</span>
+        )}
+        <button className="secondary" onClick={() => setOffen(!offen)}>
+          {offen ? "Abbrechen" : stand ? "Ändern" : "Festlegen"}
+        </button>
+      </div>
+
+      {offen && (
+        <div className="clip-editor">
+          <label>
+            Drive-Link des Ordners
+            <input
+              value={url}
+              placeholder="https://drive.google.com/drive/folders/…"
+              onChange={(e) => setUrl(e.target.value)}
+            />
+          </label>
+          <label>
+            Angezeigter Name
+            <input
+              value={name}
+              placeholder="z.B. Doc Meiro – noch zu posten"
+              onChange={(e) => setName(e.target.value)}
+            />
+          </label>
+          <span className="clip-meta">
+            Hierher gehen künftige Videos {kind === "scheduled" ? "aus dem Tageslauf" : "von Hand"}.
+            Leeren und speichern setzt auf den Standardordner zurück. Der Name lässt sich frei
+            wählen - er muss nur für dich stimmen.
+          </span>
+          {fehler && <span className="clip-meta" style={{ color: "var(--err)" }}>{fehler}</span>}
+          <div className="actions" style={{ marginBottom: 0 }}>
+            <button onClick={speichern} disabled={laeuft}>
+              {laeuft ? "Speichert …" : "Speichern"}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
  * Eine Gruppe von Videos, die sich als Ganzes zuklappen lässt.
  *
  * Voreingestellt offen ist nur der Zeitplan: das ist die tägliche Ausbeute.
@@ -243,6 +348,8 @@ function Gruppe({
   hinweis,
   zeilen,
   offenVoreingestellt,
+  track,
+  ordner,
 }: {
   art: "scheduled" | "manual";
   titel: string;
@@ -250,6 +357,8 @@ function Gruppe({
   hinweis: string;
   zeilen: VideoZeile[];
   offenVoreingestellt: boolean;
+  track: Track;
+  ordner: AusgabeOrdnerStand | null;
 }) {
   const [offen, setOffen] = useState(offenVoreingestellt);
   const fertig = zeilen.filter((z) => z.status === "done").length;
@@ -269,37 +378,42 @@ function Gruppe({
         </span>
       </button>
 
-      {offen &&
-        (zeilen.length === 0 ? (
-          <p className="empty-state">Noch nichts.</p>
-        ) : (
-          <ul className="videos">
-            {zeilen.map((z) => (
-              <VideoEintrag key={z.id} zeile={z} />
-            ))}
-          </ul>
-        ))}
+      {offen && (
+        <>
+          <AusgabeOrdnerFeld track={track} kind={art} stand={ordner} />
+          {zeilen.length === 0 ? (
+            <p className="empty-state">Noch nichts.</p>
+          ) : (
+            <ul className="videos">
+              {zeilen.map((z) => (
+                <VideoEintrag key={z.id} zeile={z} />
+              ))}
+            </ul>
+          )}
+        </>
+      )}
     </section>
   );
 }
 
-export function VideoGruppen({ zeilen, track }: { zeilen: VideoZeile[]; track: Track }) {
+export function VideoGruppen({
+  zeilen,
+  track,
+  ausgabeOrdner,
+}: {
+  zeilen: VideoZeile[];
+  track: Track;
+  ausgabeOrdner: { scheduled: AusgabeOrdnerStand | null; manual: AusgabeOrdnerStand | null };
+}) {
   const router = useRouter();
   const [laeuft, setLaeuft] = useState(false);
   const nachZeitplan = zeilen.filter((z) => z.origin === "scheduled");
   const vonHand = zeilen.filter((z) => z.origin !== "scheduled");
   const fehlgeschlagen = zeilen.filter((z) => z.status === "failed");
 
-  if (!zeilen.length) {
-    return (
-      <p className="empty-state">
-        {track === "viral"
-          ? "Noch keine Edits erzeugt. Lade ein Referenz-Reel als Konzept hoch und starte damit."
-          : "Noch keine Videos erzeugt. Löse oben einen Lauf aus."}
-      </p>
-    );
-  }
-
+  // Kein früher Ausstieg bei leerer Liste mehr: die Ausgabeordner sollen sich
+  // festlegen lassen, bevor das erste Video existiert - genau dann braucht man
+  // sie, um die Posting-Routine aufzustellen.
   return (
     <div className="video-gruppen">
       {/* Scheitern selten einzelne Renders, sondern alle - etwa wenn das
@@ -333,6 +447,8 @@ export function VideoGruppen({ zeilen, track }: { zeilen: VideoZeile[]; track: T
         hinweis="automatisch zur festgelegten Zeit entstanden"
         zeilen={nachZeitplan}
         offenVoreingestellt
+        track={track}
+        ordner={ausgabeOrdner.scheduled}
       />
       <Gruppe
         art="manual"
@@ -341,6 +457,8 @@ export function VideoGruppen({ zeilen, track }: { zeilen: VideoZeile[]; track: T
         hinweis="im Dashboard oder per Dialog ausgelöst"
         zeilen={vonHand}
         offenVoreingestellt={nachZeitplan.length === 0}
+        track={track}
+        ordner={ausgabeOrdner.manual}
       />
     </div>
   );

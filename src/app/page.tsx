@@ -14,6 +14,7 @@ import { ConceptLibrary } from "./ConceptLibrary";
 import { ViralSchedule } from "./ViralSchedule";
 import { Sparten } from "./Sparten";
 import { VideoGruppen, type VideoZeile } from "./VideoGruppen";
+import { ausgabeOrdnerDerSparte, type AusgabeOrdnerStand } from "@/lib/ausgabeOrdner";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +24,7 @@ interface TrackData {
   total: number;
   analyzed: number;
   usable: number;
+  ausgabeOrdner: { scheduled: AusgabeOrdnerStand | null; manual: AusgabeOrdnerStand | null };
 }
 
 /** Alles, was eine Sparte für ihre Ansicht braucht - streng auf sie begrenzt. */
@@ -35,12 +37,13 @@ async function ladeSparte(track: Track): Promise<TrackData> {
       ? { track, analysisVersion: { gte: MIN_USABLE_ANALYSIS_VERSION }, stuntScore: { gte: 0.25 } }
       : { track, analysisVersion: { gte: MIN_USABLE_ANALYSIS_VERSION }, apparelScore: { gte: 0.5 } };
 
-  const [jobs, total, analyzed, usable, clips] = await Promise.all([
+  const [jobs, total, analyzed, usable, clips, ausgabeOrdner] = await Promise.all([
     prisma.promoVideo.findMany({ where: { track }, orderBy: { createdAt: "desc" }, take: 50 }),
     prisma.clip.count({ where: { track } }),
     prisma.clip.count({ where: { track, analysisVersion: CURRENT_ANALYSIS_VERSION } }),
     prisma.clip.count({ where: usableWhere }),
     prisma.clip.findMany({ where: { track }, select: { id: true, name: true } }),
+    ausgabeOrdnerDerSparte(track),
   ]);
 
   const clipNameById = new Map(clips.map((c) => [c.id, c.name]));
@@ -72,6 +75,7 @@ async function ladeSparte(track: Track): Promise<TrackData> {
     total,
     analyzed,
     usable,
+    ausgabeOrdner,
   };
 }
 
@@ -147,7 +151,7 @@ export default async function DashboardPage() {
           <ClipLibrary track={track} />
 
           <h2>Erzeugte Videos</h2>
-          <VideoGruppen zeilen={data.zeilen} track={track} />
+          <VideoGruppen zeilen={data.zeilen} track={track} ausgabeOrdner={data.ausgabeOrdner} />
         </>,
       ];
     }),

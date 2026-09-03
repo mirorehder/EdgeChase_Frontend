@@ -35,6 +35,7 @@ import { getDailySettings } from "./dailyConfig";
 import { getViralSchedule, viralOutputFolderId, viralTextStyle } from "./viralSchedule";
 import { bewertungsart, trackBeschreibung } from "./trackClient";
 import { trackFromValue } from "./trackParam";
+import { artAusHerkunft, ausgabeOrdnerId } from "./ausgabeOrdner";
 import {
   fillMissingFolderNames,
   folderDescriptions,
@@ -1631,6 +1632,9 @@ export async function createJobFromSpec(
       // Festgehalten, damit sie in ein Konzept übernommen werden kann. Aus
       // requestedVia liesse sie sich nur wieder herausraten.
       themeHint: spec.themeHint?.trim() || null,
+      // Der im Dashboard gewählte Ausgabeordner für Handversuche; null lässt
+      // den bisherigen Standard gelten.
+      driveFolderId: await ausgabeOrdnerId(track, "manual"),
     },
   });
 
@@ -1797,14 +1801,15 @@ export async function createViralJobFromSpec(
       fileTitle: composed.fileTitle || null,
       requestedVia,
       themeHint: spec.themeHint?.trim() || null,
-      // Ausdrücklich NICHT in den Ordner, aus dem gepostet wird.
+      // Der im Dashboard gewählte Ausgabeordner für Handversuche.
       //
-      // Ein Edit auf Zuruf ist ein Versuch: der Nutzer will ihn ansehen und
-      // erst dann entscheiden, ob daraus ein Konzept wird. Läge er in der
-      // Liste "noch zu posten", würde die Posting-Routine ihn am nächsten Tag
-      // veröffentlichen, bevor jemand ihn beurteilt hat. Er geht deshalb in
-      // den gewöhnlichen Ausgabeordner der Sparte.
-      driveFolderId: null,
+      // Ohne Einstellung bleibt es bei null: dann geht der Edit in den
+      // gewöhnlichen Ausgabeordner der Sparte, nicht in die Liste "noch zu
+      // posten". Ein Edit auf Zuruf ist ein Versuch - er soll nicht am
+      // nächsten Tag automatisch veröffentlicht werden, bevor jemand ihn
+      // beurteilt hat. Wer das anders will, trägt hier bewusst einen anderen
+      // Ordner ein.
+      driveFolderId: await ausgabeOrdnerId(track, "manual"),
     },
   });
 
@@ -1898,7 +1903,9 @@ export async function planViralRun(track: Track, force = false): Promise<ViralRu
     try {
       const jobId = await createViralJobFromConcept(konzept.id, {
         excludeClipIds: verbrauchteClips,
-        driveFolderId: viralOutputFolderId(track),
+        // Der im Dashboard gewählte Ordner für den Tageslauf; ohne Einstellung
+        // die bisherige Liste "noch zu posten".
+        driveFolderId: (await ausgabeOrdnerId(track, "scheduled")) ?? viralOutputFolderId(track),
         origin: "scheduled",
       });
       jobIds.push(jobId);
@@ -2015,10 +2022,15 @@ export async function createViralJobFromConcept(
       // aufloesen konnte. Die noch einmal mitzugeben hiesse, denselben
       // Fehlschlag noch einmal zu bestellen.
       ...soundFuerAuftrag,
-      // Zeitplan und Knopf im Dashboard landen im selben Ordner. Er wird beim
-      // Anlegen festgehalten, damit ein Auftrag auch dann dort landet, wenn
-      // die Einstellung sich zwischen Anlegen und Render ändert.
-      driveFolderId: options.driveFolderId ?? viralOutputFolderId(track),
+      // Der Ordner wird beim Anlegen festgehalten, damit ein Auftrag auch dann
+      // dort landet, wenn die Einstellung sich zwischen Anlegen und Render
+      // ändert. Der Tageslauf reicht seinen Ordner schon aufgelöst herein; für
+      // den Knopf im Dashboard (Herkunft "manual") gilt der eingestellte
+      // Handversuch-Ordner, sonst wie bisher die Liste "noch zu posten".
+      driveFolderId:
+        options.driveFolderId ??
+        (await ausgabeOrdnerId(track, artAusHerkunft(options.origin))) ??
+        viralOutputFolderId(track),
     },
   });
 
@@ -2098,6 +2110,9 @@ export async function planDailyJob(): Promise<string | null> {
       textStyle: settings.textStyle,
       fileTitle: composed.fileTitle || null,
       videoVolume: settings.videoVolume,
+      // Der im Dashboard gewählte Ordner für den Tageslauf; null lässt den
+      // bisherigen Standard gelten.
+      driveFolderId: await ausgabeOrdnerId("promo", "scheduled"),
     },
   });
 
