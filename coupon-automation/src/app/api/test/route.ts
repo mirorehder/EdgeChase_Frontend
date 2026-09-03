@@ -2,7 +2,7 @@ import { GoogleGenAI } from "@google/genai";
 import { NextRequest, NextResponse } from "next/server";
 import { env } from "@/lib/env";
 import { formuliereAntwort, formuliereDm } from "@/lib/instagram/antwort";
-import { ladeMedia, listeLetzteMedien } from "@/lib/instagram/graph";
+import { abonniereKommentare, ladeMedia, leseAbo, listeLetzteMedien } from "@/lib/instagram/graph";
 import {
   istAktionsReel,
   leseNameAusHandle,
@@ -24,6 +24,8 @@ import { freierCode } from "@/lib/wix/coupons";
  *
  *   ?pruefe=env                      Welche Zugangsdaten sind hinterlegt?
  *   ?pruefe=wix                      Erreicht der API-Key die Gutscheine?
+ *   ?pruefe=abo                      Ist das Konto für Kommentar-Webhooks abonniert?
+ *   ?pruefe=abo&setzen=1             Konto jetzt dafür freischalten
  *   ?pruefe=medien                   Numerische Media-IDs der letzten Reels
  *   ?pruefe=caption&mediaId=123      Gilt das Reel als Aktions-Reel?
  *   ?pruefe=name&text=Lars           Welcher Name wird gelesen?
@@ -74,6 +76,16 @@ export async function GET(request: NextRequest) {
         // und Berechtigung zusammenpassen.
         const wunsch = params.get("code") ?? "Testname";
         return NextResponse.json({ wunsch, waere: await freierCode(wunsch) });
+      }
+
+      case "abo": {
+        // Ohne "setzen=1" nur anzeigen, wofür das Konto abonniert ist - das
+        // Freischalten selbst ist ein einmaliger Schritt und soll nicht
+        // versehentlich bei jedem Prüfaufruf erneut passieren.
+        if (params.get("setzen") === "1") {
+          return NextResponse.json({ ergebnis: await abonniereKommentare() });
+        }
+        return NextResponse.json({ abo: await leseAbo() });
       }
 
       case "medien": {

@@ -186,3 +186,24 @@ export async function antworteAufKommentar(commentId: string, text: string): Pro
   });
   return antwort.id ?? "";
 }
+
+/**
+ * Ob und wofür das Konto Webhook-Ereignisse abonniert hat.
+ *
+ * Bei der Instagram-Login-Variante reicht die App-weite Webhook-Konfiguration
+ * im Meta-Dashboard allein nicht: das Konto muss zusätzlich über diesen
+ * Aufruf für das Feld "comments" freigeschaltet werden. Fehlt das, kommt beim
+ * Webhook schlicht nie etwas an, unabhängig davon, wie richtig die
+ * Konfiguration im Dashboard aussieht.
+ */
+export async function leseAbo(): Promise<unknown> {
+  return graph(`${env.igUserId}/subscribed_apps`, { method: "GET" });
+}
+
+/** Schaltet das Konto für Kommentar-Webhooks frei. */
+export async function abonniereKommentare(): Promise<unknown> {
+  return graph(`${env.igUserId}/subscribed_apps`, {
+    method: "POST",
+    query: { subscribed_fields: "comments" },
+  });
+}
