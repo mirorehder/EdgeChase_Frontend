@@ -26,6 +26,13 @@ export const GUTSCHEIN = {
 const NEGATIVBEISPIELE = 8;
 
 /**
+ * Der Hinweistext für Kommentare vom eigenen Konto - als Konstante, damit die
+ * Übersichtsseite dieselben Zeilen herausfiltern kann, die hier erzeugt
+ * werden, statt den Text an zwei Stellen synchron zu halten.
+ */
+export const EIGENES_KONTO_HINWEIS = "Kommentar stammt vom eigenen Konto.";
+
+/**
  * So lange gilt die zwischengespeicherte Einschätzung eines Reels.
  *
  * Eine Bildunterschrift ändert sich praktisch nie, deshalb wäre ein Abruf je
@@ -130,7 +137,7 @@ async function fuehreAus(zeile: {
   // löst denselben Webhook aus. Ohne diese Sperre würde die Anwendung auf ihre
   // eigene Antwort antworten, und zwar endlos.
   if (zeile.authorId && zeile.authorId === env.igUserId) {
-    return { status: "uebersprungen", hinweis: "Kommentar stammt vom eigenen Konto." };
+    return { status: "uebersprungen", hinweis: EIGENES_KONTO_HINWEIS };
   }
 
   // Wortmeldungen innerhalb eines Threads sind Gespräch, kein Namensruf. Wer

@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db";
-import { GUTSCHEIN, istEffektivAktion } from "@/lib/instagram/verarbeitung";
+import { EIGENES_KONTO_HINWEIS, GUTSCHEIN, istEffektivAktion } from "@/lib/instagram/verarbeitung";
 import { Schalter } from "./Schalter";
 import { Uebersteuerung } from "./Uebersteuerung";
 
@@ -100,6 +100,12 @@ export default async function StartSeite() {
   // durchlaufenden Reel unbegrenzt - und ein Reel von vor Wochen von Hand
   // nachzutragen ist selten eilig.
   const andereMedien = medien.filter((m) => !istEffektivAktion(m)).slice(0, 15);
+
+  // Antworten auf die eigenen Kommentare sind kein Vorgang, den es sich
+  // anzusehen lohnt - sie entstehen bei jedem Lauf von selbst und würden die
+  // Tabelle nur mit sich wiederholenden Zeilen zumüllen. Die Gesamtzahl bleibt
+  // trotzdem sichtbar, in "Warum übersprungen wurde" weiter unten.
+  const sichtbareZeilen = zeilen.filter((z) => z.hinweis !== EIGENES_KONTO_HINWEIS);
 
   const uebersprungen = zeilen.filter((z) => z.status === "uebersprungen");
   const gruende = new Map<string, number>();
@@ -276,7 +282,7 @@ export default async function StartSeite() {
       )}
 
       <h2 className="abschnitt-titel">Letzte Kommentare</h2>
-      {zeilen.length === 0 ? (
+      {sichtbareZeilen.length === 0 ? (
         <p className="empty-state">Nichts vorhanden.</p>
       ) : (
         <table className="ig-tabelle">
@@ -291,7 +297,7 @@ export default async function StartSeite() {
             </tr>
           </thead>
           <tbody>
-            {zeilen.slice(0, 40).map((zeile) => (
+            {sichtbareZeilen.slice(0, 40).map((zeile) => (
               <tr key={zeile.id} className={zeile.status === "fehler" ? "ig-zeile-fehler" : ""}>
                 <td className="ig-schwach">{zeitLesbar(zeile.createdAt)}</td>
                 <td>
