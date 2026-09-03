@@ -1,3 +1,4 @@
+import { GoogleGenAI } from "@google/genai";
 import { NextRequest, NextResponse } from "next/server";
 import { env } from "@/lib/env";
 import { formuliereAntwort, formuliereDm } from "@/lib/instagram/antwort";
@@ -26,6 +27,7 @@ import { freierCode } from "@/lib/wix/coupons";
  *   ?pruefe=caption&mediaId=123      Gilt das Reel als Aktions-Reel?
  *   ?pruefe=name&text=Lars           Welcher Name wird gelesen?
  *   ?pruefe=antwort&name=Lars        Wie klingt eine erzeugte Antwort?
+ *   ?pruefe=gemini                   Antwortet Gemini überhaupt - ohne Rückfall?
  */
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -118,6 +120,21 @@ export async function GET(request: NextRequest) {
           dm: formuliereDm(name, name.toUpperCase(), GUTSCHEIN.prozent),
           antworten,
         });
+      }
+
+      case "gemini": {
+        // Ruft Gemini direkt auf, ohne den Rückfall-Vorrat dazwischen: "antwort"
+        // fängt jeden Fehler ab und weicht still auf einen Textbaustein aus,
+        // damit ein Ausfall im Betrieb nie zu einer unbeantworteten Person
+        // führt - das macht einen Ausfall bei diesem Test aber unsichtbar.
+        // Diese Prüfung lässt den Fehler bewusst durch.
+        const ai = new GoogleGenAI({ apiKey: env.geminiApiKey });
+        const antwort = await ai.models.generateContent({
+          model: "gemini-3.1-flash-lite",
+          contents: "Antworte nur mit dem einen Wort: Test.",
+          config: { maxOutputTokens: 50 },
+        });
+        return NextResponse.json({ text: antwort.text ?? null });
       }
 
       default:
