@@ -2,7 +2,7 @@ import { GoogleGenAI } from "@google/genai";
 import { NextRequest, NextResponse } from "next/server";
 import { env } from "@/lib/env";
 import { formuliereAntwort, formuliereDm } from "@/lib/instagram/antwort";
-import { ladeMedia } from "@/lib/instagram/graph";
+import { ladeMedia, listeLetzteMedien } from "@/lib/instagram/graph";
 import {
   istAktionsReel,
   leseNameAusHandle,
@@ -24,6 +24,7 @@ import { freierCode } from "@/lib/wix/coupons";
  *
  *   ?pruefe=env                      Welche Zugangsdaten sind hinterlegt?
  *   ?pruefe=wix                      Erreicht der API-Key die Gutscheine?
+ *   ?pruefe=medien                   Numerische Media-IDs der letzten Reels
  *   ?pruefe=caption&mediaId=123      Gilt das Reel als Aktions-Reel?
  *   ?pruefe=name&text=Lars           Welcher Name wird gelesen?
  *   ?pruefe=antwort&name=Lars        Wie klingt eine erzeugte Antwort?
@@ -73,6 +74,13 @@ export async function GET(request: NextRequest) {
         // und Berechtigung zusammenpassen.
         const wunsch = params.get("code") ?? "Testname";
         return NextResponse.json({ wunsch, waere: await freierCode(wunsch) });
+      }
+
+      case "medien": {
+        // Liefert die numerischen Media-IDs der letzten Reels - die braucht
+        // "caption" als mediaId, nicht die Reel-Adresse aus dem Browser.
+        const limit = Number(params.get("limit") ?? "10");
+        return NextResponse.json({ medien: await listeLetzteMedien(limit) });
       }
 
       case "caption": {

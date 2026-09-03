@@ -137,6 +137,30 @@ export async function ladeMedia(
 }
 
 /**
+ * Die letzten Reels des Kontos mit ihrer numerischen Media-ID.
+ *
+ * Reine Einrichtungshilfe: die Graph-API verlangt überall die numerische ID,
+ * nicht die Reel-Adresse aus dem Browser - die beiden sehen für Aussenstehende
+ * gleich nützlich aus, sind es aber nicht.
+ */
+export async function listeLetzteMedien(
+  limit = 10,
+): Promise<Array<{ id: string; caption: string; permalink: string | null }>> {
+  const antwort = await graph<{
+    data?: Array<{ id: string; caption?: string; permalink?: string }>;
+  }>(`${env.igUserId}/media`, {
+    method: "GET",
+    query: { fields: "id,caption,permalink", limit: String(limit) },
+  });
+
+  return (antwort.data ?? []).map((m) => ({
+    id: m.id,
+    caption: m.caption ?? "",
+    permalink: m.permalink ?? null,
+  }));
+}
+
+/**
  * Schickt die private Antwort auf einen Kommentar.
  *
  * Das ist der einzige Weg, jemandem ungefragt zu schreiben: Meta erlaubt es
