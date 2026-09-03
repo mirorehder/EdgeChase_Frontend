@@ -83,6 +83,24 @@ export interface ClipAnalysis {
    * sondern unwaehlbar.
    */
   momentArt?: "trick" | "fail" | "kein_moment";
+  /**
+   * Was NUR im gezeigten Fenster zu sehen ist (Absprung bis Landung).
+   *
+   * Getrennt von description, weil die den ganzen Clip beschreibt - und der
+   * dauert oft eine halbe Minute, wovon eine Sekunde ins Video kommt. Wird auf
+   * die lange Beschreibung ausgewaehlt, kann ein Clip wegen etwas gewaehlt
+   * werden, das im fertigen Video gar nicht vorkommt.
+   */
+  momentDescription?: string;
+  /**
+   * Der entscheidende Augenblick innerhalb des Fensters, in Millisekunden ab
+   * Clipbeginn.
+   *
+   * Gebraucht, wenn der Trick laenger dauert als eine Einstellung zeigen darf:
+   * ohne diesen Punkt wird ab dem Absprung geschnitten, und bei einem langen
+   * Trick (Anlauf, Klettern, dann Salto) faellt die Landung hinten raus.
+   */
+  peakMs?: number;
 }
 
 /**
@@ -242,7 +260,9 @@ interface ViralRaw {
   stuntScore: number;
   takeoffMs: number;
   landingMs: number;
+  peakMs: number;
   momentArt: "trick" | "fail" | "kein_moment";
+  momentDescription: string;
 }
 
 async function analyzeViralClip(
@@ -287,15 +307,18 @@ WICHTIG: Ein Fail ist KEIN Grund für eine niedrige Bewertung. Ein harter Sturz 
 - 1 bedeutet: aussergewöhnlich - grosse Höhe, grosse Distanz, mehrfache Rotation, sichtbares Risiko, oder ein Sturz, der wehtut.
 Sei streng bei der Wucht, aber nicht streng gegen Fails.
 
-Bestimme dann die zwei entscheidenden Zeitpunkte in Millisekunden ab Clipbeginn:
+Bestimme dann die drei entscheidenden Zeitpunkte in Millisekunden ab Clipbeginn:
 - takeoffMs: der Moment, in dem der Körper den Boden oder das Hindernis verlässt und der Trick beginnt.
 - landingMs: der Moment, in dem er wieder aufkommt und der Trick vorbei ist.
+- peakMs: der eine Augenblick dazwischen, auf den es ankommt - der höchste Punkt, die Rotation, der Aufprall. Wenn jemand nur ein einziges Standbild dieses Clips sehen dürfte, wäre es dieses.
 
-Diese beiden Zeitpunkte sind das Wichtigste an dieser Aufgabe. Aus ihnen wird geschnitten - liegen sie falsch, zeigt das fertige Video den Anlauf statt den Sprung. Der Anlauf davor gehört NICHT dazu, das Weglaufen danach auch nicht.
+Diese Zeitpunkte sind das Wichtigste an dieser Aufgabe. Aus ihnen wird geschnitten - liegen sie falsch, zeigt das fertige Video den Anlauf statt den Sprung. Der Anlauf davor gehört NICHT dazu, das Weglaufen danach auch nicht.
 
-Die beiden Zeitpunkte gelten auch für einen Fail: takeoffMs, wenn die Bewegung beginnt, landingMs, wenn der Sturz vorbei ist - der Aufprall gehört unbedingt dazu, er ist der Höhepunkt.
+Sie gelten auch für einen Fail: takeoffMs, wenn die Bewegung beginnt, landingMs, wenn der Sturz vorbei ist, peakMs im Moment des Aufpralls - der gehört unbedingt dazu, er ist der Höhepunkt.
 
-Ist momentArt "kein_moment", setze stuntScore auf 0 und beide Zeitpunkte auf die auffälligste Bewegung im Clip.${ordnerHinweis}`;
+Beschreibe schliesslich in momentDescription in EINEM Satz, was zwischen takeoffMs und landingMs zu sehen ist - und nur das. Genau dieser Ausschnitt kommt ins fertige Video, alles davor und danach nicht. Nenne die Bewegung, das Hindernis und wie es ausgeht. Ist momentArt "fail", muss das in diesem Satz stehen.
+
+Ist momentArt "kein_moment", setze stuntScore auf 0 und alle Zeitpunkte auf die auffälligste Bewegung im Clip.${ordnerHinweis}`;
 
   const uploaded = await uploadForAnalysis(ai, quelle, mimeType);
 
@@ -323,12 +346,25 @@ Ist momentArt "kein_moment", setze stuntScore auf 0 und beide Zeitpunkte auf die
             stuntScore: { type: Type.NUMBER },
             takeoffMs: { type: Type.INTEGER },
             landingMs: { type: Type.INTEGER },
+            peakMs: { type: Type.INTEGER },
             // Als Aufzaehlung und nicht als freier Text: sonst kommen
             // Varianten wie "Fail", "misslungen" oder "trick (fail)" zurueck,
             // und der Vergleich im Code geht still ins Leere.
             momentArt: { type: Type.STRING, enum: ["trick", "fail", "kein_moment"] },
+            // Steht bewusst hinter den Zeitpunkten: das Modell soll erst
+            // festlegen, welches Fenster gezeigt wird, und dann beschreiben,
+            // was darin passiert - nicht umgekehrt.
+            momentDescription: { type: Type.STRING },
           },
-          required: ["description", "stuntScore", "takeoffMs", "landingMs", "momentArt"],
+          required: [
+            "description",
+            "stuntScore",
+            "takeoffMs",
+            "landingMs",
+            "peakMs",
+            "momentArt",
+            "momentDescription",
+          ],
         },
       },
     });
@@ -378,6 +414,11 @@ function correctViralAnalysis(
     landing = takeoff + 800;
   }
 
+  // Der Höhepunkt muss innerhalb des Fensters liegen - ausserhalb wäre er
+  // keiner. Fehlt er, gilt die Mitte: das ist genau das Verhalten von vorher,
+  // als es das Feld noch nicht gab.
+  const peak = clamp(raw.peakMs ?? (takeoff + landing) / 2, takeoff, landing);
+
   const startMs = Math.round(Math.max(0, takeoff - PRE_TAKEOFF_MS));
   const endMs = Math.round(Math.min(limit, landing + POST_LANDING_MS));
 
@@ -387,8 +428,12 @@ function correctViralAnalysis(
     apparelScore: 0,
     stuntScore,
     momentArt,
+    // Leer statt einer Notlösung: die Auswahl greift dann auf die lange
+    // Beschreibung zurück, und das ist ehrlicher als ein erfundener Satz.
+    momentDescription: raw.momentDescription?.trim() || undefined,
     highlightStartMs: Math.round(takeoff),
     highlightEndMs: Math.round(landing),
+    peakMs: Math.round(peak),
     startMs,
     endMs,
   };
@@ -568,6 +613,11 @@ function validateSelection(
 export interface ViralCandidate {
   id: string;
   description: string;
+  /**
+   * Was im fertigen Video davon zu sehen ist. Leer, solange der Clip nicht
+   * neu analysiert wurde - dann muss die lange Beschreibung herhalten.
+   */
+  momentDescription?: string;
   stuntScore: number;
   /** Wie lang der Trick dauert - kurze Tricks schneiden sich knackiger. */
   trickMs: number;
@@ -626,6 +676,25 @@ function ersatzReihenfolge(candidates: ViralCandidate[], desiredCount: number): 
   return [zweiter, ...rest, staerkster].map((c) => c.id);
 }
 
+/**
+ * Wie ein Kandidat in der Liste steht, die das Modell zu sehen bekommt.
+ *
+ * Ausgelagert und ausgefuehrt, damit sich nachpruefen laesst, WAS die Auswahl
+ * eigentlich liest - ohne dafuer Gemini aufrufen zu muessen.
+ */
+export function kandidatenZeile(c: ViralCandidate): string {
+  return (
+    `- id: ${c.id} | Wucht: ${c.stuntScore.toFixed(2)} | Dauer: ${(c.trickMs / 1000).toFixed(1)}s` +
+    (c.momentArt === "fail" ? " | FAIL (Sturz/Fehlversuch)" : "") +
+    (c.folderContext ? ` | Ordner: ${c.folderContext}` : "") +
+    // Wenn vorhanden, die Beschreibung des gezeigten Fensters - nicht die des
+    // ganzen Clips. Der dauert oft eine halbe Minute, davon kommt eine Sekunde
+    // ins Video: nach der langen Beschreibung auszuwaehlen heisst, einen Clip
+    // wegen etwas zu nehmen, das nie zu sehen ist.
+    ` | ${c.momentDescription?.trim() || c.description}`
+  );
+}
+
 async function selectViralScenesMitModell(
   candidates: ViralCandidate[],
   desiredCount: number,
@@ -633,15 +702,7 @@ async function selectViralScenesMitModell(
 ): Promise<string[]> {
   const ai = client();
 
-  const candidateList = candidates
-    .map(
-      (c) =>
-        `- id: ${c.id} | Wucht: ${c.stuntScore.toFixed(2)} | Dauer: ${(c.trickMs / 1000).toFixed(1)}s` +
-        (c.momentArt === "fail" ? " | FAIL (Sturz/Fehlversuch)" : "") +
-        (c.folderContext ? ` | Ordner: ${c.folderContext}` : "") +
-        ` | ${c.description}`,
-    )
-    .join("\n");
+  const candidateList = candidates.map(kandidatenZeile).join("\n");
 
   // Der Themenblock steht ganz oben und nicht als Nebensatz weiter unten: was
   // am Anfang der Anweisung steht, wird zuverlaessiger befolgt.
@@ -656,7 +717,7 @@ Jeder gewählte Clip muss zu dieser Aussage passen. Das steht über allem andere
 
   const prompt = `${themenBlock}Du stellst einen schnell geschnittenen Parkour-Edit zusammen. Jede Einstellung zeigt etwa eine Sekunde: genau den Trick, nichts davor, nichts danach.
 
-Verfügbare Clips:
+Verfügbare Clips - der Text hinter jedem Eintrag beschreibt genau diese eine Sekunde, nicht den ganzen Clip:
 ${candidateList}
 
 Wähle genau ${desiredCount} IDs aus dieser Liste und bringe sie in die Reihenfolge, in der sie im Video erscheinen sollen.

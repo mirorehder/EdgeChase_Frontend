@@ -76,6 +76,17 @@ model Clip {
   /// Parkour Bangers gewählt".
   momentArt String?
 
+  /// Nur die Reels-Sparten: was NUR im gezeigten Fenster zu sehen ist.
+  ///
+  /// Getrennt von description, weil die den ganzen Clip beschreibt - und der
+  /// dauert oft eine halbe Minute, wovon rund eine Sekunde ins Video kommt.
+  /// Wird auf die lange Beschreibung ausgewählt, kann ein Clip wegen einer
+  /// Stelle gewählt werden, die im fertigen Video gar nicht vorkommt.
+  ///
+  /// Leer, solange ein Clip nicht neu analysiert wurde; dann gilt weiter die
+  /// lange Beschreibung.
+  momentDescription String?
+
   /// Nur Sparte "viral": der eigentliche Höhepunkt, in Millisekunden ab
   /// Clipbeginn - vom Absprung bis zur Landung.
   ///
@@ -85,6 +96,14 @@ model Clip {
   /// Landung), ohne den Clip neu auswerten zu müssen.
   highlightStartMs Int?
   highlightEndMs   Int?
+
+  /// Der eine Augenblick innerhalb des Fensters, auf den es ankommt - der
+  /// höchste Punkt, die Rotation, der Aufprall.
+  ///
+  /// Gebraucht, wenn der Trick länger dauert, als eine Einstellung zeigen darf:
+  /// ohne diesen Punkt wird ab dem Absprung geschnitten, und bei einem langen
+  /// Trick (Anlauf, Klettern, dann Salto) fällt die Landung hinten heraus.
+  peakMs Int?
 
   /// Bester Ausschnitt für die Verwendung (Millisekunden im Rohclip).
   startMs Int?

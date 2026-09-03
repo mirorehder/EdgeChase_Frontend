@@ -43,7 +43,7 @@ import {
 
 // Hochzählen, wenn sich Analyse-Felder oder der Analyse-Prompt ändern -
 // Clips mit älterer Version werten sich dann automatisch neu aus.
-export const CURRENT_ANALYSIS_VERSION = 2;
+export const CURRENT_ANALYSIS_VERSION = 3;
 
 /**
  * Ab welcher Analyse-Version ein Clip WEITER VERWENDET werden darf.
@@ -290,8 +290,10 @@ function analysisFields(analysis: ClipAnalysis) {
     apparelScore: analysis.apparelScore,
     stuntScore: analysis.stuntScore ?? null,
     momentArt: analysis.momentArt ?? null,
+    momentDescription: analysis.momentDescription ?? null,
     highlightStartMs: analysis.highlightStartMs ?? null,
     highlightEndMs: analysis.highlightEndMs ?? null,
+    peakMs: analysis.peakMs ?? null,
     startMs: analysis.startMs,
     endMs: analysis.endMs,
     analysisVersion: CURRENT_ANALYSIS_VERSION,
@@ -304,11 +306,18 @@ function analysisSummary(analysis: ClipAnalysis, track: Track): string {
     `Schnitt ${(analysis.startMs / 1000).toFixed(1)}-${(analysis.endMs / 1000).toFixed(1)}s`;
 
   if (track === "viral") {
+    const hoehepunkt =
+      analysis.peakMs !== undefined ? ` (Höhepunkt ${(analysis.peakMs / 1000).toFixed(1)}s)` : "";
     const trick =
       analysis.highlightStartMs !== undefined && analysis.highlightEndMs !== undefined
-        ? `Trick ${(analysis.highlightStartMs / 1000).toFixed(1)}-${(analysis.highlightEndMs / 1000).toFixed(1)}s`
+        ? `Trick ${(analysis.highlightStartMs / 1000).toFixed(1)}-${(analysis.highlightEndMs / 1000).toFixed(1)}s${hoehepunkt}`
         : "Trick unbekannt";
-    return `Stunt ${(analysis.stuntScore ?? 0).toFixed(2)}, ${trick}, ${cut}. ${analysis.description}`;
+    // Die Beschreibung des Fensters, wenn es sie gibt: im Protokoll steht dann,
+    // was wirklich ins Video kommt, und nicht, was sonst noch im Clip liegt.
+    return (
+      `Stunt ${(analysis.stuntScore ?? 0).toFixed(2)}, ${trick}, ${cut}. ` +
+      `${analysis.momentDescription || analysis.description}`
+    );
   }
   return `Kleidung ${analysis.apparelScore.toFixed(2)}, ${cut}. ${analysis.description}`;
 }
@@ -991,6 +1000,7 @@ function lesezeitSekunden(text: string): number {
 export function viralSceneWindow(clip: {
   highlightStartMs: number | null;
   highlightEndMs: number | null;
+  peakMs?: number | null;
   startMs: number | null;
   endMs: number | null;
   durationMs: number | null;
@@ -1008,13 +1018,36 @@ export function viralSceneWindow(clip: {
     Math.max(VIRAL_MIN_SECONDS_PER_SCENE, wanted),
   );
 
-  // Der Absprung bekommt ein Fünftel der Szene als Vorlauf, der Rest gehört
-  // dem Flug und der Landung.
-  let startMs = takeoff - seconds * 1000 * 0.2;
+  // Passt der ganze Trick in eine Einstellung, entscheidet der Absprung: er
+  // bekommt ein Fünftel der Szene als Vorlauf, der Rest gehört dem Flug und
+  // der Landung. Das ist der Normalfall und bleibt unverändert.
+  //
+  // Ist der Trick dagegen länger als eine Einstellung dauern darf - Anlauf,
+  // Klettern, dann der Salto -, führt derselbe Schnitt dazu, dass die Landung
+  // hinten herausfällt: gezeigt wird der Anlauf, die Pointe fehlt. Dann
+  // entscheidet der Höhepunkt, und der Rest des Trickfensters fällt weg.
+  const peak = clip.peakMs;
+  const peakBrauchbar =
+    peak !== null && peak !== undefined && peak >= takeoff && peak <= landing;
+
+  let startMs =
+    wanted > VIRAL_MAX_SECONDS_PER_SCENE && peakBrauchbar
+      ? peak - seconds * 1000 * PEAK_VORLAUF_ANTEIL
+      : takeoff - seconds * 1000 * 0.2;
   startMs = Math.max(0, Math.min(startMs, limit - seconds * 1000));
 
   return { startMs: Math.round(Math.max(0, startMs)), seconds: Math.round(seconds * 100) / 100 };
 }
+
+/**
+ * Wie viel der Einstellung vor dem Höhepunkt liegt, wenn nach ihm geschnitten
+ * wird.
+ *
+ * Weniger als die Hälfte, weil danach mehr passieren muss als davor: der
+ * Aufprall, die Landung, das Ausrollen. Davor reicht ein kurzer Anlauf, damit
+ * der Moment nicht aus dem Nichts kommt.
+ */
+const PEAK_VORLAUF_ANTEIL = 0.4;
 
 /**
  * Schneidet die Eröffnungseinstellung zu.
@@ -1163,6 +1196,10 @@ export async function composeViralVideo(
   const payload: ViralCandidate[] = candidates.map((c) => ({
     id: c.id,
     description: c.description ?? "",
+    // Was von diesem Clip wirklich im Video landet. Solange ein Clip noch
+    // nicht neu analysiert ist, bleibt das leer und die lange Beschreibung
+    // gilt weiter - die Umstellung braucht also keinen Stichtag.
+    momentDescription: c.momentDescription ?? undefined,
     stuntScore: bewertungVon(c, track),
     trickMs: (c.highlightEndMs ?? 0) - (c.highlightStartMs ?? 0),
     folderContext: c.rootFolderId ? beschreibungen.get(c.rootFolderId) : undefined,
@@ -1255,10 +1292,15 @@ export async function composeViralVideo(
 async function beschreibungenFuer(szenen: ComposedScene[]): Promise<string[]> {
   const clips = await prisma.clip.findMany({
     where: { id: { in: szenen.map((s) => s.clipId) } },
-    select: { id: true, name: true, description: true },
+    select: { id: true, name: true, description: true, momentDescription: true },
   });
   const byId = new Map(clips.map((c) => [c.id, c]));
-  return szenen.map((s) => byId.get(s.clipId)?.description || byId.get(s.clipId)?.name || "Clip");
+  // Der Titel soll benennen, was im Video passiert - also die Beschreibung des
+  // gezeigten Fensters, wo sie vorliegt.
+  return szenen.map((s) => {
+    const c = byId.get(s.clipId);
+    return c?.momentDescription || c?.description || c?.name || "Clip";
+  });
 }
 
 /**
