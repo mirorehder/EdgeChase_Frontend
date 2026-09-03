@@ -59,11 +59,22 @@ async function medienInfo(mediaId: string) {
     sprache: spracheAusCaption(caption),
   };
 
+  // "ueberschreibung" bewusst nicht in "daten" enthalten: eine von Hand
+  // getroffene Entscheidung soll die tägliche Auffrischung der Caption
+  // überleben, nicht von ihr überschrieben werden.
   return prisma.instagramMedia.upsert({
     where: { id: mediaId },
     create: { id: mediaId, ...daten },
     update: daten,
   });
+}
+
+/** Gilt das Reel als Aktions-Reel - Übersteuerung geht vor Texterkennung. */
+export function istEffektivAktion(media: {
+  istAktion: boolean;
+  ueberschreibung: boolean | null;
+}): boolean {
+  return media.ueberschreibung ?? media.istAktion;
 }
 
 /**
@@ -131,10 +142,13 @@ async function fuehreAus(zeile: {
 
   const media = await medienInfo(zeile.mediaId);
 
-  if (!media.istAktion) {
+  if (!istEffektivAktion(media)) {
     return {
       status: "uebersprungen",
-      hinweis: "Das Reel ruft nicht zur Namens-Aktion auf.",
+      hinweis:
+        media.ueberschreibung === false
+          ? "Manuell als kein Aktions-Reel markiert."
+          : "Das Reel ruft nicht zur Namens-Aktion auf.",
     };
   }
 

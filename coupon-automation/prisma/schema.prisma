@@ -113,8 +113,20 @@ model InstagramMedia {
   caption   String
   permalink String?
 
-  /// Ruft das Reel zur Namens-Aktion auf?
+  /// Ruft das Reel zur Namens-Aktion auf, automatisch aus der Bildunterschrift
+  /// gelesen?
   istAktion Boolean
+
+  /// Von Hand gesetzte Übersteuerung der automatischen Erkennung: true
+  /// erzwingt "ist Aktions-Reel", false schliesst es aus, null (Vorgabe)
+  /// bedeutet "automatisch entscheiden".
+  ///
+  /// Die Texterkennung prüft nur, ob Caption-Wörter wie "Name" und "Code"
+  /// vorkommen - ein Reel wie "Name that trick, DM us!" erfüllt das, obwohl es
+  /// nichts mit der Aktion zu tun hat. Eine einmal von Hand getroffene
+  /// Entscheidung bleibt auch bestehen, wenn die Caption später neu gelesen
+  /// wird - siehe medienInfo() in verarbeitung.ts.
+  ueberschreibung Boolean?
 
   /// "de" oder "en" - bestimmt die Sprache der öffentlichen Antwort.
   sprache String

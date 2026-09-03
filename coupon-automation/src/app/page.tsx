@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
-import { GUTSCHEIN } from "@/lib/instagram/verarbeitung";
+import { GUTSCHEIN, istEffektivAktion } from "@/lib/instagram/verarbeitung";
 import { Schalter } from "./Schalter";
+import { Uebersteuerung } from "./Uebersteuerung";
 
 /**
  * Die Übersichtsseite des Kommentar-Automaten.
@@ -44,7 +45,9 @@ export default async function StartSeite() {
       where: { createdAt: { gte: seit } },
       orderBy: { createdAt: "desc" },
     }),
-    prisma.instagramMedia.findMany({ where: { istAktion: true } }),
+    // Alle bekannten Reels, nicht nur die automatisch erkannten - sonst liesse
+    // sich eine fälschlich übergangene Aktion nirgends von Hand nachtragen.
+    prisma.instagramMedia.findMany({ orderBy: { aktualisiertAm: "desc" } }),
     prisma.instagramComment.count({ where: { status: "empfangen" } }),
     prisma.instagramComment.count({ where: { couponCode: { not: null } } }),
   ]);
@@ -87,6 +90,16 @@ export default async function StartSeite() {
   for (const zeile of zeilen) {
     proReel.set(zeile.mediaId, [...(proReel.get(zeile.mediaId) ?? []), zeile]);
   }
+
+  // Übersteuerung geht vor Texterkennung - dieselbe Regel wie beim
+  // Verarbeiten selbst (istEffektivAktion in verarbeitung.ts), sonst würde
+  // die Übersicht etwas anderes zeigen als das, wonach tatsächlich
+  // entschieden wird.
+  const aktiveMedien = medien.filter(istEffektivAktion);
+  // Nur die zuletzt gesehenen, sonst wächst diese Liste mit jedem
+  // durchlaufenden Reel unbegrenzt - und ein Reel von vor Wochen von Hand
+  // nachzutragen ist selten eilig.
+  const andereMedien = medien.filter((m) => !istEffektivAktion(m)).slice(0, 15);
 
   const uebersprungen = zeilen.filter((z) => z.status === "uebersprungen");
   const gruende = new Map<string, number>();
@@ -194,13 +207,13 @@ export default async function StartSeite() {
       )}
 
       <h2 className="abschnitt-titel">Aktions-Reels</h2>
-      {medien.length === 0 ? (
+      {aktiveMedien.length === 0 ? (
         <p className="empty-state">
           Noch kein Reel als Aktions-Reel erkannt. Das passiert beim ersten Kommentar darunter.
         </p>
       ) : (
         <div className="ig-reels">
-          {medien
+          {aktiveMedien
             .map((media) => ({ media, eintraege: proReel.get(media.id) ?? [] }))
             .sort((a, b) => b.eintraege.length - a.eintraege.length)
             .map(({ media, eintraege }) => (
@@ -220,9 +233,46 @@ export default async function StartSeite() {
                   {eintraege.length} Kommentare · {eintraege.filter((z) => z.couponCode).length}{" "}
                   Codes · {eintraege.filter((z) => z.dmGesendet).length} DMs
                 </div>
+                <Uebersteuerung
+                  mediaId={media.id}
+                  ueberschreibung={media.ueberschreibung}
+                  automatischErkannt={media.istAktion}
+                />
               </div>
             ))}
         </div>
+      )}
+
+      {andereMedien.length > 0 && (
+        <>
+          <h2 className="abschnitt-titel">Andere zuletzt gesehene Reels</h2>
+          <p className="subtitle">
+            Diese Reels wurden nicht als Aktions-Reel erkannt. Gehört eines doch dazu, lässt es sich
+            hier von Hand nachtragen.
+          </p>
+          <div className="ig-reels">
+            {andereMedien.map((media) => (
+              <div className="ig-reel" key={media.id}>
+                <div className="ig-reel-kopf">
+                  <span className="tag">{media.sprache.toUpperCase()}</span>
+                  {media.permalink ? (
+                    <a href={media.permalink} target="_blank" rel="noreferrer">
+                      Reel öffnen ↗
+                    </a>
+                  ) : (
+                    <span className="ig-schwach">{media.id}</span>
+                  )}
+                </div>
+                <div className="ig-reel-caption">{media.caption.split("\n")[0].slice(0, 120)}</div>
+                <Uebersteuerung
+                  mediaId={media.id}
+                  ueberschreibung={media.ueberschreibung}
+                  automatischErkannt={media.istAktion}
+                />
+              </div>
+            ))}
+          </div>
+        </>
       )}
 
       <h2 className="abschnitt-titel">Letzte Kommentare</h2>
