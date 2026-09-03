@@ -1488,6 +1488,10 @@ export async function processJob(jobId: string): Promise<void> {
               job.soundTitle,
               job.requestedVia?.replace(/^Konzept:\s*/, "") ?? null,
               job.soundStatus,
+              // Kennung und Adresse gehen mit: nur so kann die Routine
+              // zurueckmelden, dass Instagram diese ID nicht kennt.
+              job.conceptId,
+              env.oeffentlicheBasisUrl,
             ),
             track,
             job.driveFolderId,

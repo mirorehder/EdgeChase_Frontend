@@ -180,7 +180,18 @@ export interface SoundBeilage {
   status: string;
   quelle: "konzept";
   konzept: string | null;
+  /**
+   * Die Kennung des Konzepts, nicht nur sein Name.
+   *
+   * Damit die Posting-Routine zurückmelden kann, was sie bei Instagram
+   * erfahren hat - vor allem, dass eine ID sich nicht auflösen liess. Mit dem
+   * Namen allein ginge das nicht: die Route wird über die Kennung angesprochen.
+   */
+  konzept_id: string | null;
   hinweis: string;
+  /** Wohin die Rückmeldung geht. Steht mit in der Datei, damit die Routine
+   *  nichts nachschlagen muss. */
+  rueckmeldung: string | null;
 }
 
 export function beilagenName(videoDateiname: string): string {
@@ -203,14 +214,33 @@ const HINWEIS_OFFEN =
   "bei 0:00 im Intro - dann nicht anhängen, sondern nach einem Zuschnitt " +
   "desselben Titels suchen oder auf den Trend-Sound ausweichen.";
 
+/**
+ * Was die Routine tun soll, wenn Instagram die ID gar nicht kennt.
+ *
+ * Steht in JEDER Beilage und nicht nur im Fehlerfall - die Routine liest die
+ * Datei, bevor sie es versucht, und muss vorher wissen, was dann zu tun ist.
+ */
+function rueckmeldeHinweis(basisUrl: string | null, konzeptId: string | null): string {
+  if (!basisUrl || !konzeptId) return "";
+  return (
+    ` Kennt Instagram diese audio_id nicht (get_audio_metadata liefert nichts oder einen Fehler): ` +
+    `nicht anhaengen, mit dem Trend-Sound posten und danach PUT ${basisUrl}/api/concepts/${konzeptId}/sound ` +
+    `mit {"audioId":"${"<dieselbe ID>"}","status":"unauffindbar","note":"<was Instagram gesagt hat>"} schicken. ` +
+    "Dann faellt es im Dashboard auf und der Sound wird ersetzt, statt dass es morgen wieder scheitert."
+  );
+}
+
 export function beilageBauen(
   videoDateiname: string,
   audioId: string,
   titel: string | null,
   konzept: string | null,
   status: string | null,
+  konzeptId: string | null = null,
+  basisUrl: string | null = null,
 ): SoundBeilage {
   const geprueft = status === "geprueft";
+  const rueckmeldung = basisUrl && konzeptId ? `${basisUrl}/api/concepts/${konzeptId}/sound` : null;
   return {
     video: videoDateiname,
     audio_id: audioId,
@@ -218,6 +248,9 @@ export function beilageBauen(
     status: geprueft ? "geprueft" : "offen",
     quelle: "konzept",
     konzept,
-    hinweis: geprueft ? HINWEIS_GEPRUEFT : HINWEIS_OFFEN,
+    konzept_id: konzeptId,
+    hinweis:
+      (geprueft ? HINWEIS_GEPRUEFT : HINWEIS_OFFEN) + rueckmeldeHinweis(basisUrl, konzeptId),
+    rueckmeldung,
   };
 }

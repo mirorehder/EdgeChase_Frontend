@@ -66,6 +66,26 @@ export const env = {
     return required("CRON_SECRET");
   },
   /**
+   * Die eigene Adresse von aussen - für Stellen, die keine laufende Anfrage
+   * haben und trotzdem sagen müssen, wohin eine Rückmeldung geht.
+   *
+   * VERCEL_PROJECT_PRODUCTION_URL ist die feste Adresse des Projekts.
+   * VERCEL_URL wäre die des einzelnen Ausrollens - die ändert sich mit jedem
+   * Ausrollen und taugt deshalb nicht für etwas, das tagelang in einer Datei
+   * in Drive steht. Nur als letzter Rückfall.
+   *
+   * Null, wenn nichts davon gesetzt ist: dann steht in der Beilage eben keine
+   * Adresse, statt einer erfundenen.
+   */
+  get oeffentlicheBasisUrl(): string | null {
+    const eigen = process.env.APP_BASE_URL?.trim();
+    if (eigen) return eigen.replace(/\/+$/, "");
+    const fest = process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim();
+    if (fest) return `https://${fest}`;
+    const fluechtig = process.env.VERCEL_URL?.trim();
+    return fluechtig ? `https://${fluechtig}` : null;
+  },
+  /**
    * Wann der tägliche Lauf startet - nur zur Anzeige.
    *
    * Der Zeitplan selbst steht in vercel.json und wird beim Ausrollen gesetzt;

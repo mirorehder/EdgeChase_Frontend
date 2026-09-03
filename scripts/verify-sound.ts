@@ -113,6 +113,29 @@ async function main() {
   pruefe("offen: warnt vor dem Intro", offeneBeilage.hinweis.includes("Intro"), true);
   pruefe("offen: nennt get_audio_metadata", offeneBeilage.hinweis.includes("get_audio_metadata"), true);
 
+  // Ohne Kennung und Adresse steht in der Datei keine Rueckmeldung - lieber
+  // gar keine als eine erfundene.
+  pruefe("ohne Kennung keine Rückmeldung", offeneBeilage.rueckmeldung, null);
+  pruefe("und kein Hinweis darauf", offeneBeilage.hinweis.includes("unauffindbar"), false);
+
+  const mitRueckweg = beilageBauen(
+    "a.mp4",
+    "123",
+    "Outro - M83",
+    "Mauersprung",
+    "geprueft",
+    "konzept-42",
+    "https://example.vercel.app",
+  );
+  pruefe("Kennung liegt bei", mitRueckweg.konzept_id, "konzept-42");
+  pruefe(
+    "Rückmeldeadresse liegt bei",
+    mitRueckweg.rueckmeldung,
+    "https://example.vercel.app/api/concepts/konzept-42/sound",
+  );
+  pruefe("der Hinweis erklärt den Fall", mitRueckweg.hinweis.includes("unauffindbar"), true);
+  pruefe("und nennt den Trend-Sound als Ausweg", mitRueckweg.hinweis.includes("Trend-Sound"), true);
+
   console.log("\n6. Die Route, an echter Datenbank und echtem HTTP");
   await prisma.concept.deleteMany({ where: { title: { startsWith: "PRUEF-SOUND" } } });
   const konzept = await prisma.concept.create({
