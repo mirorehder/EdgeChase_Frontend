@@ -106,6 +106,34 @@ export async function freierCode(wunsch: string): Promise<string> {
   return `${basis}${Math.floor(Math.random() * 900 + 100)}`;
 }
 
+/**
+ * Wie oft ein Gutschein bisher eingelöst wurde.
+ *
+ * Wix führt den Zähler auf dem Gutschein selbst - hier reicht ein Blick auf
+ * `numberOfUsages`. Die Endung "GET .../coupons/{id}" liefert genau einen
+ * Datensatz, keine Paginierung nötig.
+ */
+export async function nutzungen(couponId: string): Promise<number> {
+  const antwort = await fetch(`${COUPONS_URL}/${couponId}`, {
+    method: "GET",
+    headers: {
+      Authorization: env.wixApiKey,
+      "wix-site-id": env.wixSiteId,
+    },
+  });
+
+  const text = await antwort.text();
+
+  if (!antwort.ok) {
+    throw new Error(`Wix ${antwort.status} bei Gutschein ${couponId}: ${text.slice(0, 400)}`);
+  }
+
+  const daten = (text ? JSON.parse(text) : {}) as {
+    coupon?: { numberOfUsages?: number };
+  };
+  return daten.coupon?.numberOfUsages ?? 0;
+}
+
 export type NeuerGutschein = {
   /** Der gewünschte Code. Ist er vergeben, wird abgewandelt. */
   code: string;

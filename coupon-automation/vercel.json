@@ -1,3 +1,9 @@
 {
-  "framework": "nextjs"
+  "framework": "nextjs",
+  "crons": [
+    {
+      "path": "/api/nachfassen",
+      "schedule": "0 10 * * *"
+    }
+  ]
 }

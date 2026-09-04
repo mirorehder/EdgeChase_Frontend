@@ -62,6 +62,19 @@ model InstagramComment {
   dmGesendet      Boolean @default(false)
   antwortGesendet Boolean @default(false)
 
+  /// Wann die Nachfass-DM verschickt wurde (48 Stunden nach der Erstellung,
+  /// falls der Code bis dahin nicht eingelöst wurde).
+  ///
+  /// Doppelter Zweck: der Zeitstempel dient auch als Sperre gegen mehrfaches
+  /// Nachfassen - solange er gesetzt ist, wird die Zeile nicht mehr in die
+  /// Warteschlange aufgenommen, unabhängig davon, wie oft der Aufräumjob läuft.
+  nachgefasstAm DateTime?
+
+  /// Wann Wix meldet, dass der Code eingelöst wurde. Wird beim Nachfass-Lauf
+  /// gefüllt, wenn Wix positive Nutzungen zurückgibt - danach entfällt das
+  /// Nachfassen (und die Zeile taucht in der Umsatzstatistik auf).
+  codeEingeloestAm DateTime?
+
   /// Der Wortlaut der öffentlichen Antwort. Wird den nächsten Formulierungen
   /// als Negativbeispiel mitgegeben, damit sich die Antworten unterscheiden
   /// und nicht nach Textbaustein aussehen.

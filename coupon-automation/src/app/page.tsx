@@ -37,7 +37,7 @@ function zeitLesbar(datum: Date): string {
 export default async function StartSeite() {
   const seit = new Date(Date.now() - TAGE * 24 * 60 * 60 * 1000);
 
-  const [config, zeilen, medien, wartend, gesamtCodes] = await Promise.all([
+  const [config, zeilen, medien, wartend, gesamtCodes, gesamtEingeloest] = await Promise.all([
     prisma.instagramConfig.findUnique({ where: { id: "default" } }),
     // Die Menge ist überschaubar - ein paar Kommentare je Reel -, deshalb
     // wird im Speicher ausgewertet statt mit mehreren Aggregat-Abfragen.
@@ -50,6 +50,7 @@ export default async function StartSeite() {
     prisma.instagramMedia.findMany({ orderBy: { aktualisiertAm: "desc" } }),
     prisma.instagramComment.count({ where: { status: "empfangen" } }),
     prisma.instagramComment.count({ where: { couponCode: { not: null } } }),
+    prisma.instagramComment.count({ where: { codeEingeloestAm: { not: null } } }),
   ]);
 
   const verarbeitet = zeilen.filter((z) => z.status === "verarbeitet");
@@ -163,6 +164,15 @@ export default async function StartSeite() {
           <div className="value">{gesamtCodes}</div>
           <div className="label">Codes insgesamt</div>
         </div>
+        <div className="stat-card">
+          <div className="value">
+            {gesamtEingeloest}
+            {gesamtCodes > 0 && (
+              <span className="ig-schwach"> ({Math.round((gesamtEingeloest / gesamtCodes) * 100)}%)</span>
+            )}
+          </div>
+          <div className="label">Codes eingelöst</div>
+        </div>
       </div>
 
       <h2 className="abschnitt-titel">Verlauf</h2>
@@ -189,7 +199,7 @@ export default async function StartSeite() {
               <th>Kommentare</th>
               <th>Codes</th>
               <th>DMs</th>
-              <th>Antworten</th>
+              <th>Eingelöst</th>
               <th>Übersprungen</th>
             </tr>
           </thead>
@@ -202,7 +212,7 @@ export default async function StartSeite() {
                   <td>{eintraege.length}</td>
                   <td>{eintraege.filter((z) => z.couponCode).length}</td>
                   <td>{eintraege.filter((z) => z.dmGesendet).length}</td>
-                  <td>{eintraege.filter((z) => z.antwortGesendet).length}</td>
+                  <td>{eintraege.filter((z) => z.codeEingeloestAm).length}</td>
                   <td className="ig-schwach">
                     {eintraege.filter((z) => z.status === "uebersprungen").length}
                   </td>
@@ -310,7 +320,19 @@ export default async function StartSeite() {
                   )}
                 </td>
                 <td>{zeile.name ?? "—"}</td>
-                <td>{zeile.couponCode ? <code>{zeile.couponCode}</code> : "—"}</td>
+                <td>
+                  {zeile.couponCode ? (
+                    <>
+                      <code>{zeile.couponCode}</code>{" "}
+                      {zeile.codeEingeloestAm && <span title="Eingelöst">✅</span>}
+                      {!zeile.codeEingeloestAm && zeile.nachgefasstAm && (
+                        <span title="Nachfass-DM verschickt">🔔</span>
+                      )}
+                    </>
+                  ) : (
+                    "—"
+                  )}
+                </td>
                 <td>{zeile.couponCode ? (zeile.dmGesendet ? "✓" : "✗") : "—"}</td>
                 <td>{zeile.couponCode ? (zeile.antwortGesendet ? "✓" : "✗") : "—"}</td>
               </tr>
