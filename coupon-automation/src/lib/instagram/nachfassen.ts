@@ -1,4 +1,5 @@
 import { prisma } from "../db";
+import { env } from "../env";
 import { nutzungen } from "../wix/coupons";
 import { sendePrivateAntwort } from "./graph";
 
@@ -36,16 +37,20 @@ const FENSTER_ENDE_H = 6.5 * 24;
 /**
  * Wortlaut der Nachfass-DM.
  *
- * Bewusst kein Zwang und kein Zeitdruck - der Code läuft ohnehin nach sieben
- * Tagen ab, das reicht als Dringlichkeit. Der Ton bleibt derselbe wie in der
- * Erst-DM (englisch), damit die Nachricht wie eine Erinnerung im selben
- * Gespräch wirkt, nicht wie eine neue Aktion.
+ * Bewusst knapp - der Code läuft ohnehin nach sieben Tagen ab, das reicht als
+ * Dringlichkeit. Der Ton bleibt derselbe wie in der Erst-DM (englisch), damit
+ * die Nachricht wie eine Erinnerung im selben Gespräch wirkt.
+ *
+ * Ist ein WhatsApp-Kanal-Link hinterlegt, wird er als PS angehängt: da drüben
+ * lassen sich Personen legitim ansprechen (Opt-in nach dem Beitritt), während
+ * eine Wiederkontakt-DM auf Instagram nach Ablauf des Sieben-Tage-Fensters
+ * ohnehin nicht mehr möglich wäre.
  */
 function formuliereNachfass(name: string, code: string): string {
-  return (
-    `Hey ${name}, quick nudge — your code ${code} is still good on edgechase.com. ` +
-    `If anything caught your eye, this is your window ✨`
-  );
+  const grund = `Hey ${name}, code ${code} still good on edgechase.com ✨`;
+  const link = env.whatsappChannelUrl;
+  if (!link) return grund;
+  return `${grund}\nPS: join our WhatsApp channel for BTS + extra discount → ${link}`;
 }
 
 export type NachfassAbschluss = {

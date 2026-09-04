@@ -62,4 +62,14 @@ export const env = {
   get wixSiteId() {
     return process.env.WIX_SITE_ID || "e939c7dd-bd30-437b-8ce5-58e6c971ac95";
   },
+  /**
+   * WhatsApp-Kanal-Link, den die Nachfass-DM einbindet.
+   *
+   * Bewusst optional: fehlt der Link, geht die Nachfass-DM ohne den
+   * WhatsApp-Hinweis raus. So kann der Link jederzeit ohne Codeänderung
+   * gesetzt oder wieder entfernt werden.
+   */
+  get whatsappChannelUrl(): string | null {
+    return process.env.WHATSAPP_CHANNEL_URL || null;
+  },
 };
