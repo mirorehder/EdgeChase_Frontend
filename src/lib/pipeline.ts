@@ -26,6 +26,7 @@ import {
   bucketFromServeUrl,
   isRenderStorageConfigured,
   mirrorClipFromFile,
+  mirrorForPost,
 } from "./renderStage";
 import { env } from "./env";
 import { hookTextToFileName } from "./filename";
@@ -1521,12 +1522,29 @@ export async function processJob(jobId: string): Promise<void> {
         }
       }
 
+      // Öffentliche Kopie für das spätere Posten. In einem eigenen try: sie ist
+      // nur nötig, wenn die Sparte automatisch postet, und darf den fertigen
+      // Auftrag nie kippen. Instagram lädt das Reel von dieser Adresse - die
+      // Drive-Ansicht taugt dafür nicht.
+      let publicUrl: string | null = null;
+      if (isRenderStorageConfigured()) {
+        try {
+          publicUrl = await mirrorForPost(bucketFromServeUrl(env.remotionServeUrl), jobId, buffer);
+        } catch (err) {
+          await logActivity(
+            `Öffentliche Kopie fürs Posten nicht angelegt: ${err instanceof Error ? err.message : String(err)}.`,
+            { level: "error", videoId: jobId, track },
+          );
+        }
+      }
+
       await prisma.promoVideo.update({
         where: { id: jobId },
         data: {
           status: "done",
           driveUrl: upload.webViewLink,
           driveFileName: fileName,
+          publicUrl,
         },
       });
 

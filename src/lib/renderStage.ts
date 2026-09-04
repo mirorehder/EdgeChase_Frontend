@@ -153,6 +153,40 @@ export function clipUrl(bucket: string, driveFileId: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// Öffentliche Ablage des fertigen Videos - damit Instagram es laden kann
+//
+// Die Content-Publishing-API von Instagram holt das Reel selbst von einer
+// öffentlichen Adresse; die Drive-Ansicht taugt dafür nicht (Anmeldeseite,
+// kein direkter Datei-Stream). Der Remotion-Bucket ist ohnehin öffentlich
+// lesbar (siehe clipUrl), also wird die fertige Datei dorthin gespiegelt.
+// ---------------------------------------------------------------------------
+
+const POST_PREFIX = "post-ready";
+
+function postKey(jobId: string): string {
+  return `${POST_PREFIX}/${jobId}.mp4`;
+}
+
+/** Spiegelt das fertige Video in den öffentlichen Bucket und gibt die Adresse zurück. */
+export async function mirrorForPost(bucket: string, jobId: string, video: Buffer): Promise<string> {
+  await s3Client().send(
+    new PutObjectCommand({
+      Bucket: bucket,
+      Key: postKey(jobId),
+      Body: video,
+      ContentType: "video/mp4",
+    }),
+  );
+  return `https://${bucket}.s3.${env.remotionAwsRegion}.amazonaws.com/${postKey(jobId)}`;
+}
+
+/** Entfernt die öffentliche Kopie wieder - nötig ist sie nur bis zum Post. */
+export async function deletePostCopy(bucket: string, jobId: string): Promise<void> {
+  const { DeleteObjectCommand: Del } = await import("@aws-sdk/client-s3");
+  await s3Client().send(new Del({ Bucket: bucket, Key: postKey(jobId) })).catch(() => {});
+}
+
+// ---------------------------------------------------------------------------
 // Zwischenablage für hochgeladene Referenzvideos
 //
 // Vercel nimmt pro Anfrage nur 4,5 MB entgegen, ein Reel ist schnell groesser.

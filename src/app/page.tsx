@@ -15,6 +15,8 @@ import { ViralSchedule } from "./ViralSchedule";
 import { Sparten } from "./Sparten";
 import { VideoGruppen, type VideoZeile } from "./VideoGruppen";
 import { ausgabeOrdnerDerSparte, type AusgabeOrdnerStand } from "@/lib/ausgabeOrdner";
+import { getPostZeitplan, type PostZeitplanStand } from "@/lib/postAuto";
+import { PostAutomatik } from "./PostAutomatik";
 
 export const dynamic = "force-dynamic";
 
@@ -25,6 +27,7 @@ interface TrackData {
   analyzed: number;
   usable: number;
   ausgabeOrdner: { scheduled: AusgabeOrdnerStand | null; manual: AusgabeOrdnerStand | null };
+  postZeitplan: PostZeitplanStand;
 }
 
 /** Alles, was eine Sparte für ihre Ansicht braucht - streng auf sie begrenzt. */
@@ -37,13 +40,14 @@ async function ladeSparte(track: Track): Promise<TrackData> {
       ? { track, analysisVersion: { gte: MIN_USABLE_ANALYSIS_VERSION }, stuntScore: { gte: 0.25 } }
       : { track, analysisVersion: { gte: MIN_USABLE_ANALYSIS_VERSION }, apparelScore: { gte: 0.5 } };
 
-  const [jobs, total, analyzed, usable, clips, ausgabeOrdner] = await Promise.all([
+  const [jobs, total, analyzed, usable, clips, ausgabeOrdner, postZeitplan] = await Promise.all([
     prisma.promoVideo.findMany({ where: { track }, orderBy: { createdAt: "desc" }, take: 50 }),
     prisma.clip.count({ where: { track } }),
     prisma.clip.count({ where: { track, analysisVersion: CURRENT_ANALYSIS_VERSION } }),
     prisma.clip.count({ where: usableWhere }),
     prisma.clip.findMany({ where: { track }, select: { id: true, name: true } }),
     ausgabeOrdnerDerSparte(track),
+    getPostZeitplan(track),
   ]);
 
   const clipNameById = new Map(clips.map((c) => [c.id, c.name]));
@@ -76,6 +80,7 @@ async function ladeSparte(track: Track): Promise<TrackData> {
     analyzed,
     usable,
     ausgabeOrdner,
+    postZeitplan,
   };
 }
 
@@ -141,6 +146,7 @@ export default async function DashboardPage() {
 
           <TriggerButtons track={track} />
           {track === "promo" ? <DailySettings /> : <ViralSchedule track={track} />}
+          <PostAutomatik track={track} stand={data.postZeitplan} />
           {/* In jeder Sparte, aber dahinter stecken zwei Wege: die
               Kleider-Sparten waehlen die Clips schon im Dialog aus, die
               Reels-Sparten erst beim Zusammenstellen. Was der Nutzer tippt,

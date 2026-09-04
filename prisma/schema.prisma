@@ -254,12 +254,23 @@ model PromoVideo {
 
   /// Instagram-Media-ID des geposteten Videos, sobald bekannt.
   ///
-  /// Wird von diesem Tool nicht gefüllt - das Posten läuft anderswo. Das
-  /// Feld existiert nur, damit eine spätere Auswertung ("welche Clips und
-  /// Hook-Texte laufen am besten?") die Kennzahlen einem konkreten Video
-  /// zuordnen kann.
+  /// Wird jetzt von der Posting-Automatik gefüllt (früher nur von der externen
+  /// Routine). postedAt ist zugleich die Grundlage der Taktung: woraus sich
+  /// ergibt, wie viele Videos heute schon draussen sind und wann das letzte
+  /// ging.
   postedMediaId String?
   postedAt      DateTime?
+
+  /// Öffentlich ladbarer Link zum fertigen Video im Remotion-Bucket.
+  ///
+  /// Instagram muss das Video von einer öffentlichen Adresse holen können; die
+  /// Drive-Ansicht (driveUrl) taugt dafür nicht. Beim Posten wird die Datei
+  /// deshalb in den ohnehin öffentlich lesbaren Bucket gespiegelt und hier ihr
+  /// Link festgehalten. Nach erfolgreichem Post darf die Kopie wieder weg.
+  publicUrl String?
+
+  /// Warum ein Post zuletzt fehlgeschlagen ist - fürs Dashboard.
+  postError String?
 
   createdAt DateTime @default(now())
 
@@ -267,6 +278,7 @@ model PromoVideo {
   @@index([createdAt])
   @@index([track])
   @@index([origin])
+  @@index([track, postedAt])
 }
 
 /// Vorgaben für den täglichen Lauf. Genau eine Zeile mit fester ID, damit
@@ -509,4 +521,43 @@ model AusgabeOrdner {
   updatedAt DateTime @updatedAt
 
   @@id([track, kind])
+}
+
+/// Der Posting-Zeitplan einer Sparte - wie oft und wann fertige Videos
+/// automatisch auf Instagram veröffentlicht werden.
+///
+/// Getrennt von TrackSchedule: der plant die ERZEUGUNG von Videos, dieser ihre
+/// VERÖFFENTLICHUNG. Beides kann verschieden getaktet sein - man erzeugt
+/// vielleicht drei Edits am Morgen und postet sie über den Tag verteilt.
+///
+/// Fehlt die Zeile, ist die Automatik für die Sparte aus - dann passiert nichts
+/// von selbst, genau wie bisher.
+model PostZeitplan {
+  /// Die Sparte: "promo", "viral", "sports" oder "clothing".
+  id String @id
+
+  /// Steht das auf false, postet die Sparte nichts automatisch.
+  enabled Boolean @default(false)
+
+  /// Wie viele Videos pro Tag höchstens gepostet werden.
+  postsPerDay Int @default(1)
+
+  /// Frühester und spätester Zeitpunkt am Tag (Minuten seit Mitternacht, UTC).
+  /// Ausserhalb des Fensters wird nicht gepostet - so landet nichts nachts.
+  fensterVonMin Int @default(480)
+  fensterBisMin Int @default(1260)
+
+  /// Mindestabstand zwischen zwei Posts derselben Sparte, in Minuten. Verhindert,
+  /// dass ein Pinger, der oft anklopft, mehrere Videos hintereinander rauswirft.
+  minAbstandMin Int @default(120)
+
+  /// Werden die Videos als Trial-Reel gepostet (nur an Nicht-Follower zum Test)?
+  alsTrialReel Boolean @default(true)
+
+  /// Aus welcher Herkunft gepostet wird: "scheduled" (nur Tageslauf-Videos),
+  /// "manual" (nur Handversuche) oder "beliebig". Meist sollen nur die
+  /// Tageslauf-Videos automatisch raus, die Handversuche nicht.
+  quelle String @default("scheduled")
+
+  updatedAt DateTime @updatedAt
 }

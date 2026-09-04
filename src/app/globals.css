@@ -921,6 +921,21 @@ tr:last-child td {
   gap: 2px;
 }
 
+/* Ein Kontrollkästchen mit Beschriftung in einer Zeile. Höhere Spezifität als
+   die Grid-Regel für .clip-editor label, sonst steht der Haken über dem Text. */
+.clip-editor label.schalter {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.clip-editor label.schalter input {
+  width: auto;
+  margin: 0;
+  flex: none;
+}
+
 /* Der Ausgabeordner-Block innerhalb einer Videogruppe. */
 .ausgabe-ordner {
   padding: 10px 12px;
