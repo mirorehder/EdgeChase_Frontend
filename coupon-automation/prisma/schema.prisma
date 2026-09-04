@@ -75,6 +75,12 @@ model InstagramComment {
   /// Nachfassen (und die Zeile taucht in der Umsatzstatistik auf).
   codeEingeloestAm DateTime?
 
+  /// Wann der Code auf DM-Nachfrage der Person erneut verschickt wurde. Dient
+  /// beidem: die Chronik, damit sich hinterher nachvollziehen lässt, dass ein
+  /// erneuter Versand stattgefunden hat, und die Sperre gegen ein
+  /// Doppel-Versenden bei mehrfacher Nachfrage kurz hintereinander.
+  codeErneutGesendetAm DateTime?
+
   /// Der Wortlaut der öffentlichen Antwort. Wird den nächsten Formulierungen
   /// als Negativbeispiel mitgegeben, damit sich die Antworten unterscheiden
   /// und nicht nach Textbaustein aussehen.

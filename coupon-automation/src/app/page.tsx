@@ -37,7 +37,16 @@ function zeitLesbar(datum: Date): string {
 export default async function StartSeite() {
   const seit = new Date(Date.now() - TAGE * 24 * 60 * 60 * 1000);
 
-  const [config, zeilen, medien, wartend, gesamtCodes, gesamtEingeloest, gesamtNachgefasst] = await Promise.all([
+  const [
+    config,
+    zeilen,
+    medien,
+    wartend,
+    gesamtCodes,
+    gesamtEingeloest,
+    gesamtNachgefasst,
+    gesamtWiederversandt,
+  ] = await Promise.all([
     prisma.instagramConfig.findUnique({ where: { id: "default" } }),
     // Die Menge ist überschaubar - ein paar Kommentare je Reel -, deshalb
     // wird im Speicher ausgewertet statt mit mehreren Aggregat-Abfragen.
@@ -52,6 +61,7 @@ export default async function StartSeite() {
     prisma.instagramComment.count({ where: { couponCode: { not: null } } }),
     prisma.instagramComment.count({ where: { codeEingeloestAm: { not: null } } }),
     prisma.instagramComment.count({ where: { nachgefasstAm: { not: null } } }),
+    prisma.instagramComment.count({ where: { codeErneutGesendetAm: { not: null } } }),
   ]);
 
   const verarbeitet = zeilen.filter((z) => z.status === "verarbeitet");
@@ -177,6 +187,10 @@ export default async function StartSeite() {
         <div className="stat-card">
           <div className="value">{gesamtNachgefasst}</div>
           <div className="label">Nachgefasst</div>
+        </div>
+        <div className="stat-card">
+          <div className="value">{gesamtWiederversandt}</div>
+          <div className="label">Code erneut geschickt</div>
         </div>
       </div>
 
@@ -331,6 +345,9 @@ export default async function StartSeite() {
                   {zeile.couponCode ? (
                     <>
                       <code>{zeile.couponCode}</code>{" "}
+                      {zeile.codeErneutGesendetAm && (
+                        <span title="Code auf DM-Nachfrage erneut verschickt">📩</span>
+                      )}
                       {zeile.nachgefasstAm && !zeile.codeEingeloestAm && (
                         <span title="Nachfass-DM verschickt">🔔</span>
                       )}

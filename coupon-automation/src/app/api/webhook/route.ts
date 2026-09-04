@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { env } from "@/lib/env";
-import { kommentareAusPayload, signaturStimmt } from "@/lib/instagram/graph";
+import { kommentareAusPayload, nachrichtenAusPayload, signaturStimmt } from "@/lib/instagram/graph";
 import { nimmKommentareAuf } from "@/lib/instagram/verarbeitung";
+import { verarbeiteEingehendeNachricht } from "@/lib/instagram/wiedersendung";
 
 /**
  * Die Adresse, die Meta anruft, sobald jemand kommentiert.
@@ -83,27 +84,43 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true, hinweis: "Kein gültiges JSON." });
   }
 
+  // Meta schickt beide Ereignistypen an denselben Endpunkt. Ein Paket kann
+  // Kommentare, Nachrichten oder beides enthalten - wir verarbeiten was da ist
+  // und ignorieren den Rest still (Likes, Mentions etc.).
   const kommentare = kommentareAusPayload(payload);
-  if (kommentare.length === 0) {
-    // Meta schickt auch Ereignisse, die uns nicht betreffen (Likes, Mentions,
-    // Änderungen an anderen Feldern). Die sind kein Fehler.
-    return NextResponse.json({ ok: true, neu: 0 });
+  const nachrichten = nachrichtenAusPayload(payload);
+
+  let neu = 0;
+  if (kommentare.length > 0) {
+    try {
+      neu = await nimmKommentareAuf(kommentare, payload);
+    } catch (fehler) {
+      // Der Kommentar ist noch nirgends festgehalten. Ein 500er sorgt dafür,
+      // dass Meta es erneut versucht, statt dass die Person still leer ausgeht.
+      const text = fehler instanceof Error ? fehler.message : String(fehler);
+      return NextResponse.json({ error: text }, { status: 500 });
+    }
+    if (neu > 0) await stosseVerarbeitungAn(request);
   }
 
-  let neu: number;
-  try {
-    neu = await nimmKommentareAuf(kommentare, payload);
-  } catch (fehler) {
-    // Hier ist ein Fehlschlag anders zu bewerten als weiter unten: der
-    // Kommentar ist noch nirgends festgehalten. Ein 500er sorgt dafür, dass
-    // Meta es erneut versucht, statt dass die Person still leer ausgeht.
-    const text = fehler instanceof Error ? fehler.message : String(fehler);
-    return NextResponse.json({ error: text }, { status: 500 });
+  // Eingehende DMs werden inline behandelt: die Bearbeitung ist kurz (eine
+  // Datenbankabfrage, ein Modell-Aufruf, im Erfolgsfall eine DM), und die
+  // Antwort an die Person soll ohne Umweg über eine zweite Ausführung
+  // erfolgen. Meta hat sein "binnen Sekunden"-Ziel damit trotzdem noch drin.
+  // Fehler beim Wiederversand werden absichtlich geschluckt: Meta bekommt
+  // eine 200 zurück, damit dasselbe Paket nicht immer wieder abgeliefert und
+  // erneut verarbeitet wird - was schlimmer wäre als ein einzelner
+  // fehlgeschlagener Wiederversand.
+  const wiederversand: Awaited<ReturnType<typeof verarbeiteEingehendeNachricht>>[] = [];
+  for (const nachricht of nachrichten) {
+    try {
+      wiederversand.push(await verarbeiteEingehendeNachricht(nachricht));
+    } catch (fehler) {
+      console.error("Fehler beim Wiederversand", fehler);
+    }
   }
 
-  if (neu > 0) await stosseVerarbeitungAn(request);
-
-  return NextResponse.json({ ok: true, neu });
+  return NextResponse.json({ ok: true, neu, wiederversand });
 }
 
 async function stosseVerarbeitungAn(request: NextRequest): Promise<void> {

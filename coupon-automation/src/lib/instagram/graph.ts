@@ -188,6 +188,85 @@ export async function antworteAufKommentar(commentId: string, text: string): Pro
 }
 
 /**
+ * Schickt eine Direktnachricht innerhalb des 24-Stunden-Fensters, das
+ * eine eingehende Nachricht der Person öffnet.
+ *
+ * Anders als sendePrivateAntwort() (die eine Kommentar-ID als Empfänger
+ * nutzt und einmal pro Kommentar geht), adressiert diese Funktion die
+ * User-ID direkt - erlaubt und richtig, solange die Person uns innerhalb
+ * der letzten 24 Stunden geschrieben hat. Das ist der Weg für den erneuten
+ * Codeversand nach einer Nachfrage.
+ */
+export async function sendeDirektNachricht(userId: string, text: string): Promise<string> {
+  const antwort = await graph<{ message_id?: string }>(`${env.igUserId}/messages`, {
+    method: "POST",
+    body: { recipient: { id: userId }, message: { text } },
+  });
+  return antwort.message_id ?? "";
+}
+
+/** Eine eingehende Nachricht, wie sie der Webhook liefert. */
+export type EingehendeNachricht = {
+  senderId: string;
+  text: string;
+  messageId: string;
+  timestamp?: number;
+};
+
+type MessagingPayload = {
+  entry?: Array<{
+    messaging?: Array<{
+      sender?: { id?: string };
+      recipient?: { id?: string };
+      timestamp?: number;
+      message?: {
+        mid?: string;
+        text?: string;
+        // "is_echo": Meta spiegelt eine von uns gesendete Nachricht als
+        // Ereignis zurück. Ohne diese Prüfung würde jede von uns verschickte
+        // DM (auch der Wieder-Versand) uns wieder anstoßen und im Zweifel
+        // eine Endlos-Antwort auslösen.
+        is_echo?: boolean;
+      };
+    }>;
+  }>;
+};
+
+/**
+ * Liest eingehende DMs aus einem Webhook-Paket.
+ *
+ * Nachrichten kommen anders als Kommentare - im "messaging"-Feld je Eintrag,
+ * mit Facebook-Messenger-ähnlicher Struktur. Wir übergehen Echos und leere
+ * Texte (Sticker, Bilder ohne Text) und arbeiten nur mit reinen
+ * Textnachrichten.
+ */
+export function nachrichtenAusPayload(payload: unknown): EingehendeNachricht[] {
+  const roh = payload as MessagingPayload;
+  const nachrichten: EingehendeNachricht[] = [];
+
+  for (const eintrag of roh?.entry ?? []) {
+    for (const ereignis of eintrag.messaging ?? []) {
+      const sender = ereignis.sender?.id;
+      const message = ereignis.message;
+      if (!sender || !message?.mid || !message.text) continue;
+      if (message.is_echo) continue;
+      // Von der eigenen Seite an sich selbst ist Unsinn - der Vollständigkeit
+      // halber trotzdem prüfen.
+      if (sender === env.igUserId) continue;
+
+      nachrichten.push({
+        senderId: sender,
+        text: message.text,
+        messageId: message.mid,
+        timestamp: ereignis.timestamp,
+      });
+    }
+  }
+
+  return nachrichten;
+}
+
+/**
  * Ob und wofür das Konto Webhook-Ereignisse abonniert hat.
  *
  * Bei der Instagram-Login-Variante reicht die App-weite Webhook-Konfiguration
@@ -200,10 +279,10 @@ export async function leseAbo(): Promise<unknown> {
   return graph(`${env.igUserId}/subscribed_apps`, { method: "GET" });
 }
 
-/** Schaltet das Konto für Kommentar-Webhooks frei. */
+/** Schaltet das Konto für Kommentar- und Nachrichten-Webhooks frei. */
 export async function abonniereKommentare(): Promise<unknown> {
   return graph(`${env.igUserId}/subscribed_apps`, {
     method: "POST",
-    query: { subscribed_fields: "comments" },
+    query: { subscribed_fields: "comments,messages" },
   });
 }
