@@ -4,6 +4,7 @@ import { erstelleGutschein } from "../wix/coupons";
 import { formuliereAntwort, formuliereDm } from "./antwort";
 import { antworteAufKommentar, ladeMedia, sendePrivateAntwort, type WebhookKommentar } from "./graph";
 import { istAktionsReel, leseNameAusHandle, leseNameAusText, spracheAusCaption } from "./namen";
+import { istEchterName } from "./namenspruefung";
 
 /**
  * Der Ablauf für einen einzelnen Kommentar: Gutschein anlegen, DM schicken,
@@ -159,8 +160,46 @@ async function fuehreAus(zeile: {
     };
   }
 
+  // Zwei Kandidaten: das erste Wort des Kommentars, und der erste Teil des
+  // Handles als Rückfall. Der Kommentar hat Vorrang - er ist eine bewusste
+  // Wortmeldung, das Handle nur eine Ableitung.
   const ausText = leseNameAusText(zeile.text);
-  const name = ausText ?? leseNameAusHandle(zeile.authorUsername ?? undefined);
+  const ausHandle = leseNameAusHandle(zeile.authorUsername ?? undefined);
+
+  // Beide gehen zusätzlich durch die Ki-Prüfung: "Geile" und "Lowkey" sehen
+  // formal wie Namen aus und würden sonst Codes wie "GEILE" oder "LOWKEY"
+  // erzeugen. Der Ausfall der Prüfung (null) fällt bewusst nicht durch - lieber
+  // einen Kommentar übergehen und von Hand nachholen, als einen sinnlosen Code
+  // an eine fremde Person zu schicken.
+  let name: string | null = null;
+  let herkunft: "text" | "handle" | null = null;
+
+  if (ausText) {
+    const echt = await istEchterName(ausText);
+    if (echt === true) {
+      name = ausText;
+      herkunft = "text";
+    } else if (echt === null) {
+      return {
+        status: "uebersprungen",
+        hinweis: `Namensprüfung ausgefallen für "${ausText}".`,
+      };
+    }
+    // echt === false: ausText war Slang/Adjektiv - weiter zum Handle-Kandidat.
+  }
+
+  if (!name && ausHandle) {
+    const echt = await istEchterName(ausHandle);
+    if (echt === true) {
+      name = ausHandle;
+      herkunft = "handle";
+    } else if (echt === null) {
+      return {
+        status: "uebersprungen",
+        hinweis: `Namensprüfung ausgefallen für Handle "${ausHandle}".`,
+      };
+    }
+  }
 
   if (!name) {
     return {
@@ -219,7 +258,7 @@ async function fuehreAus(zeile: {
   const hinweise = [
     dmFehler ? `DM fehlgeschlagen: ${dmFehler}` : null,
     antwortFehler ? `Antwort fehlgeschlagen: ${antwortFehler}` : null,
-    ausText ? null : "Name aus dem Handle abgeleitet, nicht aus dem Kommentar.",
+    herkunft === "handle" ? "Name aus dem Handle abgeleitet, nicht aus dem Kommentar." : null,
   ].filter(Boolean);
 
   return {

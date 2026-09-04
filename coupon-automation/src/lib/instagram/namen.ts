@@ -21,7 +21,9 @@ const ZIERRAT =
  */
 const KEINE_NAMEN = new Set([
   "yo", "hi", "hey", "hallo", "hoi", "servus", "moin", "ciao", "yes", "yeah", "ja",
-  "no", "nein", "nice", "wow", "cool", "geil", "krass", "sick", "fire", "lit",
+  "no", "nein", "nice", "wow", "cool", "geil", "geile", "geiler", "geiles", "krass",
+  "sick", "fire", "lit", "dope", "hard", "clean", "smooth", "insane", "mad", "fresh",
+  "heavy", "slay", "banger", "vibes", "sheesh", "wild", "lowkey", "highkey", "looks",
   "love", "omg", "lol", "haha", "please", "bitte", "plz", "pls", "danke", "thanks",
   "thank", "merci", "super", "top", "mega", "beste", "best", "goat", "king",
   "queen", "bro", "digga", "alter", "ich", "mich", "me", "my", "mein", "meine",
