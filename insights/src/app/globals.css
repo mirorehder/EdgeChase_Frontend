@@ -1,0 +1,443 @@
+/*
+ * Farb- und Layout-Grundlage.
+ *
+ * Hell- und Dunkelmodus ueber CSS-Variablen: nur die Definitionen im
+ * :root-Block und im dunklen Block wechseln. Alle Komponenten nutzen die
+ * Variablen, nie feste Hex-Werte - so bleibt der Farbcode an einer Stelle.
+ */
+:root {
+  --bg: #f5f6f8;
+  --surface: #ffffff;
+  --border: #e5e7ec;
+  --text: #1a1c22;
+  --muted: #6b7280;
+  --accent: #4f7cff;
+  --ok: #10b981;
+  --warn: #f59e0b;
+  --err: #ef4444;
+
+  /* Leitfarben je Sparte - dieselben wie im Generator. */
+  --promo: #4f7cff;
+  --viral: #f5643c;
+  --sports: #3ecf8e;
+  --clothing: #c084fc;
+
+  --schatten: 0 1px 2px rgba(15, 20, 30, 0.04),
+    0 4px 12px rgba(15, 20, 30, 0.04);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1115;
+    --surface: #171a21;
+    --border: #262a34;
+    --text: #e7e9ee;
+    --muted: #9aa1ac;
+    --accent: #6b8fff;
+    --schatten: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 12px rgba(0, 0, 0, 0.35);
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #0f1115;
+  --surface: #171a21;
+  --border: #262a34;
+  --text: #e7e9ee;
+  --muted: #9aa1ac;
+  --accent: #6b8fff;
+  --schatten: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 12px rgba(0, 0, 0, 0.35);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  padding: 0;
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.app {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: max(20px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+    calc(80px + env(safe-area-inset-bottom))
+    max(16px, env(safe-area-inset-left));
+}
+
+.kopf {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.kopf h1 {
+  font-size: 20px;
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
+.kopf .marke {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, var(--promo), var(--viral));
+  flex: none;
+}
+
+.unter {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 0 0 20px;
+}
+
+.zeitraum {
+  display: inline-flex;
+  gap: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px;
+  margin-bottom: 20px;
+  box-shadow: var(--schatten);
+}
+
+.zeitraum a {
+  padding: 6px 12px;
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.zeitraum a.aktiv {
+  background: var(--accent);
+  color: white;
+}
+
+.kacheln {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.kachel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px 16px;
+  box-shadow: var(--schatten);
+  min-width: 0;
+}
+
+.kachel .label {
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-bottom: 6px;
+}
+
+.kachel .wert {
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+
+.kachel .neben {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.kachel.akzent .wert {
+  color: var(--sparte, var(--accent));
+}
+
+.karte {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 16px;
+  box-shadow: var(--schatten);
+  margin-bottom: 16px;
+}
+
+.karte h2 {
+  font-size: 15px;
+  margin: 0 0 12px;
+  letter-spacing: -0.01em;
+}
+
+.karte h2 .rand {
+  color: var(--muted);
+  font-weight: 400;
+  font-size: 12px;
+  margin-left: 6px;
+}
+
+.sparten-nav {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.sparten-nav a {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 8px;
+  text-align: center;
+  box-shadow: var(--schatten);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sparten-nav a .kurz {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.sparten-nav a .zahl {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.sparten-nav a .strich {
+  height: 3px;
+  border-radius: 3px;
+  margin-top: 8px;
+  background: var(--sparte);
+}
+
+.tab-leiste {
+  display: flex;
+  gap: 8px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 16px;
+}
+
+.tab-leiste a {
+  padding: 10px 4px;
+  font-size: 13px;
+  color: var(--muted);
+  border-bottom: 2px solid transparent;
+}
+
+.tab-leiste a.aktiv {
+  color: var(--text);
+  border-bottom-color: var(--sparte, var(--accent));
+}
+
+.video-liste {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+.video-zeile {
+  display: grid;
+  grid-template-columns: 64px 1fr auto;
+  gap: 12px;
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px;
+  box-shadow: var(--schatten);
+  min-width: 0;
+}
+
+.video-zeile .thumb {
+  width: 64px;
+  height: 96px;
+  border-radius: 8px;
+  background: var(--border);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.video-zeile .thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.video-zeile .titel {
+  font-weight: 500;
+  font-size: 14px;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.video-zeile .meta {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.video-zeile .zahlen {
+  text-align: right;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.video-zeile .zahlen b {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.leerzustand {
+  padding: 20px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+  background: var(--surface);
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+}
+
+.chart {
+  width: 100%;
+  height: 160px;
+  display: block;
+}
+
+.rangliste ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rangliste li {
+  display: grid;
+  grid-template-columns: 24px 1fr auto;
+  align-items: center;
+  padding: 8px 4px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.rangliste li:last-child {
+  border-bottom: none;
+}
+
+.rangliste .rang {
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.rangliste .hook {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-right: 8px;
+}
+
+.rangliste .zahl {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.rangliste .zahl b {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  background: color-mix(in oklab, var(--sparte, var(--accent)) 18%, transparent);
+  color: var(--sparte, var(--accent));
+  margin-right: 6px;
+}
+
+.funnel {
+  display: grid;
+  gap: 10px;
+}
+
+.funnel .stufe {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.funnel .stufe .label {
+  font-size: 13px;
+}
+
+.funnel .stufe .wert {
+  font-size: 18px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.funnel .stufe.leer .wert {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.hinweis {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.tab-inhalt {
+  min-height: 200px;
+}
+
+@media (max-width: 480px) {
+  .kacheln {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .video-zeile {
+    grid-template-columns: 48px 1fr auto;
+  }
+  .video-zeile .thumb {
+    width: 48px;
+    height: 72px;
+  }
+  .kopf h1 {
+    font-size: 18px;
+  }
+}

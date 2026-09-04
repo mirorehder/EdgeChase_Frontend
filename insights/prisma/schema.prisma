@@ -1,0 +1,50 @@
+// Insights liest aus derselben Neon-Datenbank wie der Content Generator, aber
+// AUSSCHLIESSLICH lesend - Prisma legt hier NUR den Client an ("prisma
+// generate"), keine Migrationen. Die Migrationen der Tabelle bleiben allein
+// beim Generator. Deshalb kein directUrl und keine migrationsseitigen Felder.
+//
+// Aufgenommen ist nur, was Insights fuer die Sparte-Zuordnung braucht: die
+// Bruecke zwischen Instagram (postedMediaId) und der Sparte des Videos plus
+// ein paar beschreibende Felder fuer die Ranglisten.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// Ein vom Generator erzeugtes und gepostetes Reel. Wir lesen nur den
+/// Ausschnitt, der fuer die Auswertung reicht.
+model PromoVideo {
+  id String @id
+
+  /// "promo" | "viral" | "sports" | "clothing"
+  track String @default("promo")
+
+  /// "scheduled" | "manual"
+  origin String @default("manual")
+
+  hookText  String
+  fileTitle String?
+
+  conceptId String?
+
+  /// Instagram-Media-ID (sobald gepostet). Der Schluessel, ueber den wir bei
+  /// der Graph-API nach Kennzahlen fragen.
+  postedMediaId String?
+  postedAt      DateTime?
+
+  status String @default("queued")
+
+  driveUrl  String?
+  publicUrl String?
+  createdAt DateTime @default(now())
+
+  @@index([track])
+  @@index([postedAt])
+  @@index([track, postedAt])
+  @@map("PromoVideo")
+}

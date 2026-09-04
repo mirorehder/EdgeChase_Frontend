@@ -1,0 +1,31 @@
+{
+  "name": "edgechase-insights",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 3001",
+    "build": "prisma generate && next build",
+    "start": "next start -p 3001",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "prisma:generate": "prisma generate",
+    "make-icons": "node scripts/make-icons.mjs",
+    "verify:zuordnung": "tsx scripts/verify-zuordnung.ts",
+    "verify:funnel": "tsx scripts/verify-funnel.ts",
+    "verify:aggregation": "tsx scripts/verify-aggregation.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.20.0",
+    "next": "^14.2.15",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.16.10",
+    "@types/react": "^18.3.11",
+    "@types/react-dom": "^18.3.0",
+    "prisma": "^5.20.0",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.3"
+  }
+}
