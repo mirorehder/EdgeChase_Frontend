@@ -3,6 +3,12 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { bewertungsart, type Track } from "@/lib/trackClient";
+import { audioIdAus } from "@/lib/sound";
+
+export interface TrendSoundEintrag {
+  audioId: string;
+  titel: string;
+}
 
 export interface PostZeitplanStand {
   enabled: boolean;
@@ -12,6 +18,8 @@ export interface PostZeitplanStand {
   minAbstandMin: number;
   alsTrialReel: boolean;
   quelle: string;
+  hashtags: string;
+  trendSounds: TrendSoundEintrag[];
 }
 
 /** Minuten seit Mitternacht ↔ "HH:MM" (UTC - so ist es gespeichert). */
@@ -145,11 +153,35 @@ export function PostAutomatik({ track, stand }: { track: Track; stand: PostZeitp
             Als Trial-Reel posten (nur an Nicht-Follower, zum Testen)
           </label>
 
+          <label>
+            Hashtags (fünf, auf Englisch)
+            <input
+              value={z.hashtags}
+              placeholder={
+                nachKrassheit
+                  ? "z.B. Parkour Freerunning ActionSport Madness Adrenaline"
+                  : "z.B. Streetwear OOTD Fashion Outfit Style"
+              }
+              onChange={(e) => setZ({ ...z, hashtags: e.target.value })}
+            />
+            <span className="clip-meta">
+              Freitext - mit oder ohne Raute, mit Leerzeichen oder Kommas getrennt. Werden hinter
+              die Caption gehängt.
+            </span>
+          </label>
+
+          <TrendSoundListe
+            eintraege={z.trendSounds}
+            setzen={(neu) => setZ({ ...z, trendSounds: neu })}
+          />
+
           <span className="clip-meta">
             Die Uhrzeiten sind in UTC. Gepostet wird{" "}
             {nachKrassheit ? "das älteste fertige Reel" : "das älteste fertige Video"}, das noch
             nicht draussen ist - höchstens {z.postsPerDay === 1 ? "eines" : `${z.postsPerDay}`} pro
-            Tag, mit dem eingestellten Abstand dazwischen.
+            Tag, mit dem eingestellten Abstand dazwischen. Sound-Rangfolge: eigener Sound am
+            Konzept &rarr; zufällig einer aus dem Trend-Sound-Pool &rarr; kein Post (ein stummes
+            Reel ist unerwünscht).
           </span>
 
           {meldung && (
@@ -164,5 +196,104 @@ export function PostAutomatik({ track, stand }: { track: Track; stand: PostZeitp
         </div>
       )}
     </section>
+  );
+}
+
+/**
+ * Ein pflegbarer Trend-Sound-Pool. Jeder Eintrag: Link zur Sound-Seite und ein
+ * frei wählbarer Titel zur Wiedererkennung.
+ *
+ * Der Titel bleibt Sache des Nutzers - der Server fragt Instagram nicht danach,
+ * er hat keinen Zugang.
+ */
+function TrendSoundListe({
+  eintraege,
+  setzen,
+}: {
+  eintraege: TrendSoundEintrag[];
+  setzen: (neu: TrendSoundEintrag[]) => void;
+}) {
+  const [neuerLink, setNeuerLink] = useState("");
+  const [neuerTitel, setNeuerTitel] = useState("");
+  const [fehler, setFehler] = useState<string | null>(null);
+
+  function hinzufuegen() {
+    const audioId = audioIdAus(neuerLink);
+    if (!audioId) {
+      setFehler(
+        "Kein Instagram-Sound-Link. Erwartet wird etwas wie https://www.instagram.com/reels/audio/…/",
+      );
+      return;
+    }
+    if (eintraege.some((e) => e.audioId === audioId)) {
+      setFehler("Dieser Sound ist schon im Pool.");
+      return;
+    }
+    setzen([...eintraege, { audioId, titel: neuerTitel.trim() }]);
+    setNeuerLink("");
+    setNeuerTitel("");
+    setFehler(null);
+  }
+
+  return (
+    <div className="trend-pool">
+      <span className="video-label">Trend-Sound-Pool</span>
+
+      {eintraege.length === 0 ? (
+        <span className="clip-meta">
+          Noch leer. Ohne Pool wird ein Video, das keinen eigenen Sound hat, nicht gepostet.
+        </span>
+      ) : (
+        <ul className="trend-pool-liste">
+          {eintraege.map((e) => (
+            <li key={e.audioId}>
+              <span className="trend-pool-titel">{e.titel || "(ohne Titel)"}</span>
+              <a
+                className="drive-link"
+                href={`https://www.instagram.com/reels/audio/${e.audioId}/`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                anhören
+              </a>
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => setzen(eintraege.filter((x) => x.audioId !== e.audioId))}
+              >
+                Entfernen
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <div className="field-row">
+        <label>
+          Sound-Link
+          <input
+            value={neuerLink}
+            placeholder="https://www.instagram.com/reels/audio/…/"
+            onChange={(e) => {
+              setNeuerLink(e.target.value);
+              setFehler(null);
+            }}
+          />
+        </label>
+        <label>
+          Titel (zur Wiedererkennung)
+          <input
+            value={neuerTitel}
+            placeholder="z.B. Unstoppable - Sia"
+            onChange={(e) => setNeuerTitel(e.target.value)}
+          />
+        </label>
+        <button type="button" className="secondary" onClick={hinzufuegen} disabled={!neuerLink.trim()}>
+          Zum Pool
+        </button>
+      </div>
+
+      {fehler && <span className="clip-meta" style={{ color: "var(--err)" }}>{fehler}</span>}
+    </div>
   );
 }

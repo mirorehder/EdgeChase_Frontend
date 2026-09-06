@@ -26,6 +26,12 @@ import { env } from "./env";
 
 export type PostQuelle = "scheduled" | "manual" | "beliebig";
 
+/** Ein Eintrag im Trend-Sound-Pool. */
+export interface TrendSound {
+  audioId: string;
+  titel: string;
+}
+
 export interface PostZeitplanStand {
   enabled: boolean;
   postsPerDay: number;
@@ -34,6 +40,11 @@ export interface PostZeitplanStand {
   minAbstandMin: number;
   alsTrialReel: boolean;
   quelle: PostQuelle;
+  /** Freitext-Hashtags fürs Reel - werden hinter die Caption gehängt. */
+  hashtags: string;
+  /** Trend-Sound-Pool: einer davon wird zufällig gewählt, wenn kein eigener
+   *  Sound am Video hängt. */
+  trendSounds: TrendSound[];
 }
 
 export const STANDARD_ZEITPLAN: PostZeitplanStand = {
@@ -44,6 +55,8 @@ export const STANDARD_ZEITPLAN: PostZeitplanStand = {
   minAbstandMin: 120,
   alsTrialReel: true,
   quelle: "scheduled",
+  hashtags: "",
+  trendSounds: [],
 };
 
 /**
@@ -127,7 +140,26 @@ export async function getPostZeitplan(track: Track): Promise<PostZeitplanStand> 
     minAbstandMin: z.minAbstandMin,
     alsTrialReel: z.alsTrialReel,
     quelle: z.quelle as PostQuelle,
+    hashtags: z.hashtags,
+    trendSounds: normalisierePool(z.trendSounds),
   };
+}
+
+/**
+ * Der Pool kommt aus Prisma als "unknown JSON" - hier waschen wir ihn zu einer
+ * Liste vernuenftig aufgebauter Eintraege. Alles, was fehlt oder falsch aussieht,
+ * fliegt raus - lieber ein leerer Pool als eine leere Runde ohne Grund.
+ */
+function normalisierePool(rohes: unknown): TrendSound[] {
+  if (!Array.isArray(rohes)) return [];
+  const ergebnis: TrendSound[] = [];
+  for (const e of rohes) {
+    if (!e || typeof e !== "object") continue;
+    const audioId = String((e as { audioId?: unknown }).audioId ?? "").trim();
+    const titel = String((e as { titel?: unknown }).titel ?? "").trim();
+    if (audioId) ergebnis.push({ audioId, titel });
+  }
+  return ergebnis;
 }
 
 /**
@@ -176,6 +208,98 @@ export async function spartenMitAutomatik(): Promise<Track[]> {
   return TRACKS.filter((t) => an.has(t));
 }
 
+// ---------------------------------------------------------------------------
+// Sound- und Hashtag-Wahl
+//
+// Ausgelagerte, reine Funktionen - damit sich die Rangfolge in Ruhe pruefen
+// laesst, ohne Instagram anzufassen.
+// ---------------------------------------------------------------------------
+
+export type SoundHerkunft = "konzept" | "pool" | "eigenerFilmton" | "keinSound";
+
+export interface SoundWahl {
+  audioId: string | null;
+  /** Video hat schon eigene Musik (Dateiname mit "_music") - kein Sound
+   *  drueber, Filmton in voller Lautstaerke. */
+  hatEigeneMusik: boolean;
+  herkunft: SoundHerkunft;
+  /** Titel des gewaehlten Sounds - nur fuer die Meldung. */
+  titel?: string;
+  /** Wenn keine Wahl moeglich ist. */
+  grund?: string;
+}
+
+export interface SoundEingabe {
+  dateiName: string;
+  konzeptSound: { audioId: string | null; status: string };
+  trendPool: TrendSound[];
+  /** Fuer den Test einsetzbar; sonst Math.random. */
+  zufall?: () => number;
+}
+
+/**
+ * Die Rangfolge:
+ *
+ *   1. Dateiname enthaelt "_music" → Video hat schon eigene Musik. Kein
+ *      angehaengter Sound. Der Filmton spielt in voller Lautstaerke.
+ *   2. Konzept hat einen geprueften Sound → den verwenden.
+ *   3. Der Trend-Sound-Pool der Sparte ist gefuellt → zufaellig einer daraus.
+ *   4. Nichts davon → NICHT posten. Der Nutzer will kein stummes Reel.
+ */
+export function waehleSound(eingabe: SoundEingabe): SoundWahl {
+  if (/_music\b/i.test(eingabe.dateiName)) {
+    return { audioId: null, hatEigeneMusik: true, herkunft: "eigenerFilmton" };
+  }
+
+  if (
+    eingabe.konzeptSound.audioId &&
+    istVerwendbar({
+      soundAudioId: eingabe.konzeptSound.audioId,
+      soundKind: null,
+      soundStatus: eingabe.konzeptSound.status,
+    })
+  ) {
+    return {
+      audioId: eingabe.konzeptSound.audioId,
+      hatEigeneMusik: false,
+      herkunft: "konzept",
+    };
+  }
+
+  if (eingabe.trendPool.length > 0) {
+    const zufall = eingabe.zufall ?? Math.random;
+    const gewaehlt = eingabe.trendPool[Math.floor(zufall() * eingabe.trendPool.length)];
+    return {
+      audioId: gewaehlt.audioId,
+      hatEigeneMusik: false,
+      herkunft: "pool",
+      titel: gewaehlt.titel || undefined,
+    };
+  }
+
+  return {
+    audioId: null,
+    hatEigeneMusik: false,
+    herkunft: "keinSound",
+    grund: "kein Sound verfügbar",
+  };
+}
+
+/**
+ * Haengt Hashtags an eine Caption. Der Nutzer darf Rauten setzen oder nicht,
+ * mit Kommas oder Zeilenumbruechen trennen - hier wird sauber formatiert: jedes
+ * Wort bekommt genau eine Raute, doppelte werden gestrichen.
+ */
+export function mitHashtags(caption: string, hashtagsText: string): string {
+  const tags = hashtagsText
+    .split(/[\s,;]+/)
+    .map((t) => t.replace(/^#+/, "").trim())
+    .filter(Boolean)
+    .map((t) => `#${t}`);
+  if (!tags.length) return caption;
+  return `${caption}\n\n${tags.join(" ")}`;
+}
+
 export interface PostLaufErgebnis {
   track: Track;
   gepostet: boolean;
@@ -217,21 +341,39 @@ export async function posteFaelliges(track: Track, jetzt = new Date()): Promise<
     return { track, gepostet: false, grund: "keine öffentliche Kopie" };
   }
 
-  // Der Sound nur, wenn er nachweislich brauchbar ist - sonst der Trend-Sound.
-  const audioId = istVerwendbar({
-    soundAudioId: kandidat.soundAudioId,
-    soundKind: null,
-    soundStatus: kandidat.soundStatus ?? "offen",
-  })
-    ? kandidat.soundAudioId
-    : null;
+  // Der Sound wird nach fester Rangfolge gewaehlt - siehe waehleSound.
+  const dateiName = kandidat.driveFileName ?? kandidat.fileTitle ?? "";
+  const sound = waehleSound({
+    dateiName,
+    konzeptSound: {
+      audioId: kandidat.soundAudioId,
+      status: kandidat.soundStatus ?? "offen",
+    },
+    trendPool: zeitplan.trendSounds,
+  });
 
-  const caption = kandidat.fileTitle || kandidat.hookText.replace(/\n/g, " ");
+  if (sound.grund === "kein Sound verfügbar") {
+    await logActivity(
+      `Posten übersprungen: "${kandidat.fileTitle || kandidat.hookText}" - kein eigener ` +
+        "Sound, kein _music im Dateinamen und kein Trend-Sound-Pool eingerichtet. " +
+        "Trag im Dashboard mindestens einen Trend-Sound ein.",
+      { level: "error", track, videoId: kandidat.id },
+    );
+    return { track, gepostet: false, grund: "kein Sound verfügbar" };
+  }
+
+  const caption = mitHashtags(
+    kandidat.fileTitle || kandidat.hookText.replace(/\n/g, " "),
+    zeitplan.hashtags,
+  );
 
   const ergebnis = await posteReel(track, {
     videoUrl: kandidat.publicUrl,
     caption,
-    audioId,
+    audioId: sound.audioId,
+    // "_music" heisst: das Video hat schon eigene Musik. Dann kein zweiter
+    // Ton drueber; der Originalton spielt in voller Lautstaerke.
+    hatEigeneMusik: sound.hatEigeneMusik,
     alsTrialReel: zeitplan.alsTrialReel,
   });
 
@@ -260,8 +402,17 @@ export async function posteFaelliges(track: Track, jetzt = new Date()): Promise<
     where: { id: kandidat.id },
     data: { postedMediaId: ergebnis.mediaId, postedAt: jetzt, postError: null },
   });
+  const soundText =
+    sound.herkunft === "eigenerFilmton"
+      ? "Filmton (Video mit _music)"
+      : sound.herkunft === "konzept"
+        ? `Konzept-Sound ${sound.audioId}`
+        : sound.herkunft === "pool"
+          ? `Pool-Sound "${sound.titel ?? sound.audioId}"`
+          : "kein Sound";
   await logActivity(
-    `Gepostet: "${caption}" (${trackBeschreibung(track).label}), Media-ID ${ergebnis.mediaId}.`,
+    `Gepostet: "${caption.split("\n")[0]}" (${trackBeschreibung(track).label}), ` +
+      `Media-ID ${ergebnis.mediaId}, Sound: ${soundText}.`,
     { track, videoId: kandidat.id },
   );
 

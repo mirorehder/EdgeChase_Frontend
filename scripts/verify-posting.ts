@@ -19,8 +19,10 @@
 import { prisma } from "../src/lib/db";
 import {
   istFaellig,
+  mitHashtags,
   posteFaelliges,
   STANDARD_ZEITPLAN,
+  waehleSound,
   type PostZeitplanStand,
 } from "../src/lib/postAuto";
 import { posteReelMit } from "../src/lib/instagram";
@@ -150,13 +152,35 @@ async function main() {
   pruefe("ERROR beim Verarbeiten bricht ab", ergFehler.ok, false);
 
   console.log("\n3. Die ganze Kette an echter Datenbank (Trockenlauf, keine Zugangsdaten)");
-  // Zeitplan über die Route setzen.
+  // Zeitplan über die Route setzen - mit Hashtags und einem Trend-Sound.
   const put = await fetch(`${BASIS}/api/post-schedule`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ track: "viral", enabled: true, postsPerDay: 2, minAbstandMin: 120, fensterVonMin: 0, fensterBisMin: 1439, quelle: "scheduled" }),
+    body: JSON.stringify({
+      track: "viral",
+      enabled: true,
+      postsPerDay: 2,
+      minAbstandMin: 120,
+      fensterVonMin: 0,
+      fensterBisMin: 1439,
+      quelle: "scheduled",
+      hashtags: "#Parkour Freerunning",
+      trendSounds: [
+        // Ein Link, eine nackte ID, ein Unsinn - Server filtert.
+        { link: "https://www.instagram.com/reels/audio/354553290259617/", titel: "Unstoppable" },
+        { audioId: "128365293012345" },
+        { link: "kein link" },
+      ],
+    }),
   });
-  pruefe("Zeitplan über die Route gesetzt", (await put.json()).enabled, true);
+  const zurueck = await put.json();
+  pruefe("Zeitplan über die Route gesetzt", zurueck.enabled, true);
+  pruefe("Hashtags übernommen", zurueck.hashtags, "#Parkour Freerunning");
+  pruefe(
+    "Trend-Pool: zwei brauchbare, ein unbrauchbarer verworfen",
+    Array.isArray(zurueck.trendSounds) ? zurueck.trendSounds.length : -1,
+    2,
+  );
 
   // Zwei fertige, unpostete Videos - das ältere zuerst.
   const aelter = await prisma.promoVideo.create({
@@ -213,7 +237,115 @@ async function main() {
   const ohneKopie = await posteFaelliges("viral", JETZT);
   pruefe("übersprungen", ohneKopie.grund, "keine öffentliche Kopie");
 
-  console.log("\n6. Der Pinger weist ohne Geheimnis ab");
+  console.log("\n6a. Sound-Wahl: die Rangfolge");
+  // _music schlaegt alles.
+  const musik = waehleSound({
+    dateiName: "Skate at Sundown_music.mp4",
+    konzeptSound: { audioId: "12345", status: "geprueft" },
+    trendPool: [{ audioId: "trend-1", titel: "T" }],
+  });
+  pruefe("_music: keine audio_id", musik.audioId, null);
+  pruefe("_music: Herkunft", musik.herkunft, "eigenerFilmton");
+  pruefe("_music: Filmton laut", musik.hatEigeneMusik, true);
+
+  // Konzept schlaegt Pool.
+  const konzept = waehleSound({
+    dateiName: "Der Sprung.mp4",
+    konzeptSound: { audioId: "kz-1", status: "geprueft" },
+    trendPool: [{ audioId: "trend-1", titel: "T" }],
+  });
+  pruefe("Konzept-Sound gewinnt", konzept.audioId, "kz-1");
+  pruefe("Herkunft: konzept", konzept.herkunft, "konzept");
+
+  // Ohne Konzept: Pool.
+  const pool = waehleSound({
+    dateiName: "Der Sprung.mp4",
+    konzeptSound: { audioId: null, status: "ohne" },
+    trendPool: [{ audioId: "trend-1", titel: "Unstoppable" }],
+    zufall: () => 0, // deterministisch fürs Testen
+  });
+  pruefe("aus dem Pool gezogen", pool.audioId, "trend-1");
+  pruefe("Herkunft: pool", pool.herkunft, "pool");
+
+  // Konzept-Sound offen, Art unbekannt → gilt als nicht verwendbar → Pool.
+  const offenPool = waehleSound({
+    dateiName: "x.mp4",
+    konzeptSound: { audioId: "kz-2", status: "offen" },
+    trendPool: [{ audioId: "trend-2", titel: "T" }],
+    zufall: () => 0,
+  });
+  pruefe("offener Konzept-Sound fällt auf Pool", offenPool.audioId, "trend-2");
+
+  // Nichts verfügbar: verweigert.
+  const nichts = waehleSound({
+    dateiName: "x.mp4",
+    konzeptSound: { audioId: null, status: "ohne" },
+    trendPool: [],
+  });
+  pruefe("ohne alles: nicht postbar", nichts.audioId, null);
+  pruefe("Grund gemeldet", nichts.grund, "kein Sound verfügbar");
+
+  console.log("\n6b. Hashtags sauber angehängt");
+  pruefe(
+    "Kommas und mehrere Rauten werden geglättet",
+    mitHashtags("Caption", "#Madness, ##Parkour Freerunning"),
+    "Caption\n\n#Madness #Parkour #Freerunning",
+  );
+  pruefe("Ohne Hashtags bleibt Caption unverändert", mitHashtags("Nur der Text", ""), "Nur der Text");
+
+  console.log("\n6c. Der Poster mischt Sound und Filmton, verlangt via_facebook");
+  const rufeParams: string[] = [];
+  const nurCode = (async (url: string | URL, init?: RequestInit) => {
+    const u = String(url);
+    if (init?.body instanceof URLSearchParams) {
+      rufeParams.push([...init.body.entries()].map(([k, v]) => `${k}=${v}`).join("&"));
+    }
+    rufeParams.push(u);
+    if (u.includes("/media_publish")) return new Response(JSON.stringify({ id: "m-9" }), { status: 200 });
+    if (u.includes("status_code"))
+      return new Response(JSON.stringify({ status_code: "FINISHED" }), { status: 200 });
+    return new Response(JSON.stringify({ id: "c-1" }), { status: 200 });
+  }) as unknown as typeof fetch;
+  const soundPost = await posteReelMit(
+    { token: "t", igUserId: "ig1" },
+    { videoUrl: "https://x/y.mp4", caption: "Test", audioId: "s-1", alsTrialReel: true },
+    nurCode,
+    { abstandMs: 0, schlaf: async () => {} },
+  );
+  pruefe("Sound-Post erfolgreich", soundPost.ok, true);
+  const alleParams = rufeParams.join(" | ");
+  pruefe("audio_name gesetzt", alleParams.includes("audio_name=s-1"), true);
+  pruefe("audio_volume=100", alleParams.includes("audio_volume=100"), true);
+  pruefe("video_volume=50", alleParams.includes("video_volume=50"), true);
+  pruefe("is_trial=true", alleParams.includes("is_trial=true"), true);
+  pruefe("as_trial_reel=true", alleParams.includes("as_trial_reel=true"), true);
+  pruefe("graduation_strategy=MANUAL", alleParams.includes("graduation_strategy=MANUAL"), true);
+  pruefe("Status-Abfrage mit via_facebook", alleParams.includes("via_facebook=true"), true);
+
+  // _music-Fall: kein audio_name, kein audio_volume, aber video_volume=100.
+  const rufe2: string[] = [];
+  const nurCode2 = (async (url: string | URL, init?: RequestInit) => {
+    const u = String(url);
+    if (init?.body instanceof URLSearchParams) {
+      rufe2.push([...init.body.entries()].map(([k, v]) => `${k}=${v}`).join("&"));
+    }
+    if (u.includes("/media_publish")) return new Response(JSON.stringify({ id: "m-10" }), { status: 200 });
+    if (u.includes("status_code"))
+      return new Response(JSON.stringify({ status_code: "FINISHED" }), { status: 200 });
+    return new Response(JSON.stringify({ id: "c-2" }), { status: 200 });
+  }) as unknown as typeof fetch;
+  await posteReelMit(
+    { token: "t", igUserId: "ig1" },
+    { videoUrl: "x", caption: "c", hatEigeneMusik: true, alsTrialReel: false },
+    nurCode2,
+    { abstandMs: 0, schlaf: async () => {} },
+  );
+  const p2 = rufe2.join(" | ");
+  pruefe("_music: kein audio_name", p2.includes("audio_name="), false);
+  pruefe("_music: video_volume=100", p2.includes("video_volume=100"), true);
+  pruefe("_music: kein Trial-Reel", p2.includes("is_trial=true"), false);
+
+  console.log("\n7. Der Pinger weist ohne Geheimnis ab");
   const ohneGeheimnis = await fetch(`${BASIS}/api/post/run`);
   pruefe("401 ohne Geheimnis", ohneGeheimnis.status, 401);
   const mitGeheimnis = await fetch(`${BASIS}/api/post/run?secret=${process.env.CRON_SECRET}`);

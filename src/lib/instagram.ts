@@ -42,8 +42,18 @@ export function igZugang(track: Track): IgZugang | null {
 export interface PostAuftrag {
   videoUrl: string;
   caption: string;
-  /** Zugeschnittener Original-Sound; ohne Angabe der Trend-Sound. */
+  /** Angehängter Sound; ohne Angabe wird der Filmton verwendet. */
   audioId?: string | null;
+  /**
+   * Video hat bereits eigene Musik (Dateiname mit _music).
+   *
+   * Dann wird KEIN zweiter Sound drübergemischt, und der Filmton spielt in
+   * voller Lautstärke. Wichtig, weil die Rangfolge in postAuto ausdrücklich
+   * unterscheidet zwischen "kein Sound gewünscht" und "das Video hat schon
+   * eigene Musik" - beim ersten Fall wäre das kein Zustand, bei dem gepostet
+   * werden dürfte.
+   */
+  hatEigeneMusik?: boolean;
   alsTrialReel: boolean;
 }
 
@@ -81,8 +91,12 @@ export async function posteReelMit(
   opt: WartenOptionen = {},
 ): Promise<PostErgebnis> {
   const { token, igUserId } = zugang;
+  // Instagrams Videoverarbeitung dauert bei einem 15-s-Reel ein bis zwei Minuten;
+  // 60 s zwischen den Abfragen ist die dokumentierte Empfehlung und schont die
+  // Aufrufquote. 30 Versuche = bis zu 30 Minuten Wartezeit - reicht auch für
+  // längere Videos, ohne dass die Route in Vercels Zeitgrenze läuft.
   const versuche = opt.versuche ?? 30;
-  const abstandMs = opt.abstandMs ?? 5000;
+  const abstandMs = opt.abstandMs ?? 60_000;
   const schlaf = opt.schlaf ?? schlafStandard;
 
   // 1. Container anlegen.
@@ -92,9 +106,26 @@ export async function posteReelMit(
     caption: auftrag.caption,
     access_token: token,
   });
-  if (auftrag.audioId) anlegen.set("audio_name", auftrag.audioId);
+  if (auftrag.audioId) {
+    // audio_name ist der dokumentierte Parameter für angehängte Sounds
+    // (Original-Sound-ID oder Music-Katalog-ID gleichermassen).
+    anlegen.set("audio_name", auftrag.audioId);
+    // 50 % Filmton unter voller Musik: der Originalton bleibt hörbar, mischt
+    // sich aber unter den Sound. Wert stammt aus dem bewährten Posting-Prompt.
+    anlegen.set("audio_volume", "100");
+    anlegen.set("video_volume", "50");
+  } else if (auftrag.hatEigeneMusik) {
+    // Video hat schon eigene Musik: kein zweiter Sound, Filmton laut.
+    anlegen.set("video_volume", "100");
+  }
   // Trial-Reels: nur an Nicht-Follower zum Test. Der dokumentierte Schalter.
-  if (auftrag.alsTrialReel) anlegen.set("is_trial", "true");
+  // graduation_strategy: MANUAL heisst, das Reel wird nicht automatisch für
+  // Follower freigegeben - es bleibt Trial, bis der Nutzer es promoted.
+  if (auftrag.alsTrialReel) {
+    anlegen.set("is_trial", "true");
+    anlegen.set("as_trial_reel", "true");
+    anlegen.set("graduation_strategy", "MANUAL");
+  }
 
   const containerRes = await netz(`${GRAPH}/${igUserId}/media`, {
     method: "POST",
@@ -107,9 +138,14 @@ export async function posteReelMit(
   const containerId = containerDaten.id;
 
   // 2. Warten, bis Instagram das Video verarbeitet hat.
+  //
+  // via_facebook: true - bei Containern mit angehaengtem Sound ist das
+  // ausdruecklich noetig, sonst antwortet die Graph-API "container not found".
+  // Setzen wir es einheitlich, es schadet auch ohne Sound nicht.
+  const viaFacebook = "&via_facebook=true";
   for (let i = 0; i < versuche; i++) {
     const statusRes = await netz(
-      `${GRAPH}/${containerId}?fields=status_code&access_token=${encodeURIComponent(token)}`,
+      `${GRAPH}/${containerId}?fields=status_code&access_token=${encodeURIComponent(token)}${viaFacebook}`,
     );
     const status = (await statusRes.json()) as { status_code?: string; error?: { message?: string } };
     if (status.status_code === "FINISHED") break;
@@ -123,7 +159,11 @@ export async function posteReelMit(
   }
 
   // 3. Veröffentlichen.
-  const publish = new URLSearchParams({ creation_id: containerId, access_token: token });
+  const publish = new URLSearchParams({
+    creation_id: containerId,
+    access_token: token,
+    via_facebook: "true",
+  });
   const pubRes = await netz(`${GRAPH}/${igUserId}/media_publish`, { method: "POST", body: publish });
   const pubDaten = (await pubRes.json()) as { id?: string; error?: { message?: string } };
   if (!pubRes.ok || !pubDaten.id) {

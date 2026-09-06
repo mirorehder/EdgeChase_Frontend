@@ -559,5 +559,22 @@ model PostZeitplan {
   /// Tageslauf-Videos automatisch raus, die Handversuche nicht.
   quelle String @default("scheduled")
 
+  /// Hashtags fürs Reel - werden hinter die Caption gehängt.
+  ///
+  /// Frei geschriebene Zeichenkette, im Dashboard mit Rauten oder ohne
+  /// eintragbar; das Anzeige-Format wird beim Anhängen sauber gemacht (jedes
+  /// Wort bekommt genau eine Raute). Fünf Stück sind der Richtwert; erzwungen
+  /// wird die Anzahl nicht.
+  hashtags String @default("")
+
+  /// Trend-Sound-Pool: wird gezogen, wenn ein Video keinen eigenen Sound hat.
+  ///
+  /// Format: JSON-Liste [{ audioId, titel }]. Der Nutzer trägt im Dashboard
+  /// Instagram-Sound-Links ein (die eingelesene ID plus einen optionalen
+  /// Namen zur Wiedererkennung); beim Posten wird per Zufall einer daraus
+  /// gewählt. Ohne Pool und ohne eigenen Sound wird das Video NICHT gepostet -
+  /// stumme Reels sind ausgeschlossen.
+  trendSounds Json @default("[]")
+
   updatedAt DateTime @updatedAt
 }

@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { trackFromRequest, trackFromValue } from "@/lib/trackParam";
 import { logActivity } from "@/lib/activity";
-import { getPostZeitplan, type PostQuelle } from "@/lib/postAuto";
+import { getPostZeitplan, type PostQuelle, type TrendSound } from "@/lib/postAuto";
+import { audioIdAus } from "@/lib/sound";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +22,10 @@ interface Eingang {
   minAbstandMin?: number;
   alsTrialReel?: boolean;
   quelle?: string;
+  hashtags?: string;
+  /** Frei eingegebene Einträge: entweder audioId oder ein IG-Sound-Link,
+   *  jeweils mit optionalem Titel. Der Server liest die ID sauber heraus. */
+  trendSounds?: { link?: string; audioId?: string; titel?: string }[];
 }
 
 const QUELLEN: PostQuelle[] = ["scheduled", "manual", "beliebig"];
@@ -39,7 +44,28 @@ function begrenzen(e: Eingang) {
     minAbstandMin: klemme(Math.round(e.minAbstandMin ?? 120), 0, 1440),
     alsTrialReel: e.alsTrialReel !== false,
     quelle: QUELLEN.includes(e.quelle as PostQuelle) ? (e.quelle as PostQuelle) : "scheduled",
+    hashtags: (e.hashtags ?? "").trim(),
+    trendSounds: leseTrendPool(e.trendSounds),
   };
+}
+
+/**
+ * Aus den frei eingegebenen Trend-Sound-Zeilen die brauchbaren Eintraege
+ * ziehen. Jeder Eintrag kann als Instagram-Link oder als nackte ID kommen;
+ * unlesbare Zeilen werden still verworfen (die Oberflaeche zeigt sie ohnehin
+ * mit einem Hinweis, sobald sie geschickt werden).
+ */
+function leseTrendPool(rohes: Eingang["trendSounds"]): TrendSound[] {
+  if (!Array.isArray(rohes)) return [];
+  const ergebnis: TrendSound[] = [];
+  for (const e of rohes) {
+    const roh = (e?.audioId ?? e?.link ?? "").trim();
+    if (!roh) continue;
+    const audioId = audioIdAus(roh);
+    if (!audioId) continue;
+    ergebnis.push({ audioId, titel: (e?.titel ?? "").trim() });
+  }
+  return ergebnis;
 }
 
 function klemme(n: number, min: number, max: number): number {
@@ -52,10 +78,16 @@ export async function PUT(request: NextRequest) {
     const track = trackFromValue(eingang.track);
     const werte = begrenzen(eingang);
 
+    // Prisma erwartet fuer JSON-Felder InputJsonValue - eine Liste von Objekten
+    // ist strukturell passend, TypeScript sieht sie aber als engeren Typ.
+    const daten = {
+      ...werte,
+      trendSounds: werte.trendSounds as unknown as object,
+    };
     const gespeichert = await prisma.postZeitplan.upsert({
       where: { id: track },
-      create: { id: track, ...werte },
-      update: werte,
+      create: { id: track, ...daten },
+      update: daten,
     });
 
     await logActivity(

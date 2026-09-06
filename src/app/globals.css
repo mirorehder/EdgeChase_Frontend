@@ -921,6 +921,37 @@ tr:last-child td {
   gap: 2px;
 }
 
+/* Trend-Sound-Pool: Liste der eingetragenen Sounds. */
+.trend-pool {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.trend-pool-liste {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.trend-pool-liste li {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.08));
+  border-radius: 6px;
+}
+
+.trend-pool-titel {
+  flex: 1;
+  min-width: 140px;
+}
+
 /* Ein Kontrollkästchen mit Beschriftung in einer Zeile. Höhere Spezifität als
    die Grid-Regel für .clip-editor label, sonst steht der Haken über dem Text. */
 .clip-editor label.schalter {
