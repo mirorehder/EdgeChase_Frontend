@@ -60,7 +60,18 @@ export function Sparten({ inhalte }: { inhalte: Record<Track, ReactNode> }) {
         ))}
       </nav>
 
-      <div className={`sparte-inhalt sparte-inhalt-${aktiv}`}>{inhalte[aktiv]}</div>
+      {/*
+        key={aktiv}: sonst behaelt React den lokalen State der
+        Kind-Komponenten beim Sparten-Wechsel bei. Das DOM enthaelt zwar immer
+        nur eine Sparte, aber an derselben Position stehen jeweils Komponenten
+        desselben Typs (PostAutomatik, ConceptLibrary, ...) - React verwendet
+        sie wieder. Ein useState, das mit einem Server-Prop initialisiert war,
+        bleibt dann beim alten Wert der zuletzt geoeffneten Sparte, und der
+        Nutzer sieht in allen vier Sparten denselben Stand statt ihres eigenen.
+      */}
+      <div key={aktiv} className={`sparte-inhalt sparte-inhalt-${aktiv}`}>
+        {inhalte[aktiv]}
+      </div>
 
       <nav className="tableiste" role="tablist" aria-label="Sparte">
         {TRACK_LISTE.map((sparte) => (
