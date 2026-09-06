@@ -69,12 +69,32 @@ export async function GET(request: NextRequest) {
     }),
   );
 
+  // Nur die NAMEN, keine Werte - damit sich sofort sehen laesst, ob die
+  // Variablen unter den erwarteten Bezeichnern angekommen sind oder unter
+  // welchen anderen.
+  const alleIgVariablen = Object.keys(process.env)
+    .filter((k) => k.startsWith("IG_"))
+    .sort();
+
   return NextResponse.json({
     allgemeinerRueckfall: {
       hatToken: !!process.env.IG_TOKEN,
       hatUserId: !!process.env.IG_USER_ID,
       variablen: { token: "IG_TOKEN", userId: "IG_USER_ID" },
     },
+    alleIgVariablenImProzess: alleIgVariablen,
+    erwarteteVariablen: [
+      "IG_TOKEN_VIRAL",
+      "IG_USER_ID_VIRAL",
+      "IG_TOKEN_PROMO",
+      "IG_USER_ID_PROMO",
+      "IG_TOKEN_SPORTS",
+      "IG_USER_ID_SPORTS",
+      "IG_TOKEN_CLOTHING",
+      "IG_USER_ID_CLOTHING",
+      "IG_TOKEN (Rueckfall)",
+      "IG_USER_ID (Rueckfall)",
+    ],
     cronGeheimnis: { hatCronSecret: !!process.env.CRON_SECRET },
     // Vercel setzt diese beim Build - dann laesst sich am Commit ablesen, ob
     // die neue Version wirklich live ist.
