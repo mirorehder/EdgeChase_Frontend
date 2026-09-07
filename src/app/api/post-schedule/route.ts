@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { trackFromRequest, trackFromValue } from "@/lib/trackParam";
 import { logActivity } from "@/lib/activity";
-import { getPostZeitplan, type PostQuelle, type TrendSound } from "@/lib/postAuto";
+import { getPostZeitplan, parsePostingTimes, type PostQuelle, type TrendSound } from "@/lib/postAuto";
 import { audioIdAus } from "@/lib/sound";
+import { formatUhrzeit } from "@/lib/zeit";
 
 export const dynamic = "force-dynamic";
 
@@ -26,6 +27,9 @@ interface Eingang {
   /** Frei eingegebene Einträge: entweder audioId oder ein IG-Sound-Link,
    *  jeweils mit optionalem Titel. Der Server liest die ID sauber heraus. */
   trendSounds?: { link?: string; audioId?: string; titel?: string }[];
+  /** Feste Uhrzeiten in CH-Zeit als "HH:MM"-Liste (oder eine Zeichenkette
+   *  wie "17:00,20:00" - beides wird angenommen). */
+  postingTimes?: string | string[];
 }
 
 const QUELLEN: PostQuelle[] = ["scheduled", "manual", "beliebig"];
@@ -46,7 +50,19 @@ function begrenzen(e: Eingang) {
     quelle: QUELLEN.includes(e.quelle as PostQuelle) ? (e.quelle as PostQuelle) : "scheduled",
     hashtags: (e.hashtags ?? "").trim(),
     trendSounds: leseTrendPool(e.trendSounds),
+    postingTimes: leseUhrzeiten(e.postingTimes),
   };
+}
+
+/**
+ * Aus der Eingabe (Zeichenkette oder Liste) die gueltigen HH:MM-Zeiten
+ * herausziehen und aufsteigend geordnet als kommagetrennte Zeichenkette
+ * zurueckgeben - so wird sie in der DB abgelegt.
+ */
+function leseUhrzeiten(rohes: Eingang["postingTimes"]): string {
+  const text = Array.isArray(rohes) ? rohes.join(",") : (rohes ?? "");
+  const minuten = parsePostingTimes(text);
+  return minuten.map(formatUhrzeit).join(",");
 }
 
 /**
@@ -90,10 +106,12 @@ export async function PUT(request: NextRequest) {
       update: daten,
     });
 
+    const modus = werte.postingTimes
+      ? `feste Uhrzeiten ${werte.postingTimes} CH`
+      : `Fenster ${formatUhrzeit(werte.fensterVonMin)}–${formatUhrzeit(werte.fensterBisMin)} CH, ${werte.postsPerDay}×/Tag, Abstand ${werte.minAbstandMin} min`;
     await logActivity(
       werte.enabled
-        ? `Posting-Automatik an: ${werte.postsPerDay}×/Tag, Abstand ${werte.minAbstandMin} min, ` +
-            `Quelle ${werte.quelle}${werte.alsTrialReel ? ", als Trial-Reel" : ""}.`
+        ? `Posting-Automatik an: ${modus}, Quelle ${werte.quelle}${werte.alsTrialReel ? ", als Trial-Reel" : ""}.`
         : "Posting-Automatik aus.",
       { track },
     );

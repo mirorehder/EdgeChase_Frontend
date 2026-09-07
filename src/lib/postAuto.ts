@@ -23,6 +23,14 @@ import {
   isRenderStorageConfigured,
 } from "./renderStage";
 import { env } from "./env";
+import {
+  chGleicherTag,
+  chMinutenImTag,
+  chTagesBeginn,
+  chFormatUhrzeit,
+  formatUhrzeit,
+  parseUhrzeit,
+} from "./zeit";
 
 export type PostQuelle = "scheduled" | "manual" | "beliebig";
 
@@ -35,6 +43,12 @@ export interface TrendSound {
 export interface PostZeitplanStand {
   enabled: boolean;
   postsPerDay: number;
+  /**
+   * Frueheste/spaeteste Post-Uhrzeit, in MINUTEN SEIT MITTERNACHT DER
+   * SCHWEIZER ZEIT. Unter der alten Semantik waren das UTC-Minuten - die neue
+   * Semantik ist Schweizer Zeit. Der Nutzer soll seine bestehenden Werte
+   * einmal ueberpruefen; im Log wird darauf hingewiesen.
+   */
   fensterVonMin: number;
   fensterBisMin: number;
   minAbstandMin: number;
@@ -45,11 +59,20 @@ export interface PostZeitplanStand {
   /** Trend-Sound-Pool: einer davon wird zufällig gewählt, wenn kein eigener
    *  Sound am Video hängt. */
   trendSounds: TrendSound[];
+  /**
+   * Feste Uhrzeiten in Schweizer Zeit, zu denen gepostet wird.
+   *
+   * Ist die Liste nicht leer, gilt diese Regel AUSSCHLIESSLICH - Fenster und
+   * Mindestabstand werden ignoriert. Die Werte stehen als Minuten seit
+   * Mitternacht der Schweizer Zeit (z.B. 17:00 CH = 1020).
+   */
+  postingTimes: number[];
 }
 
 export const STANDARD_ZEITPLAN: PostZeitplanStand = {
   enabled: false,
   postsPerDay: 1,
+  // Standard-Fenster: 8 bis 21 Uhr Schweizer Zeit.
   fensterVonMin: 8 * 60,
   fensterBisMin: 21 * 60,
   minAbstandMin: 120,
@@ -57,6 +80,7 @@ export const STANDARD_ZEITPLAN: PostZeitplanStand = {
   quelle: "scheduled",
   hashtags: "",
   trendSounds: [],
+  postingTimes: [],
 };
 
 /**
@@ -82,31 +106,37 @@ export interface FaelligkeitsUrteil {
   grund?: string;
 }
 
-/** Minuten seit Mitternacht (UTC) - dieselbe Basis wie das gespeicherte Fenster. */
-function minutenImTag(d: Date): number {
-  return d.getUTCHours() * 60 + d.getUTCMinutes();
-}
-
-function gleicherTag(a: Date, b: Date): boolean {
-  return (
-    a.getUTCFullYear() === b.getUTCFullYear() &&
-    a.getUTCMonth() === b.getUTCMonth() &&
-    a.getUTCDate() === b.getUTCDate()
-  );
-}
-
 export function istFaellig(frage: FaelligkeitsFrage): FaelligkeitsUrteil {
   const { zeitplan, jetzt, heuteGepostet, hatKandidat } = frage;
 
   if (!zeitplan.enabled) return { faellig: false, grund: "Automatik aus" };
   if (!hatKandidat) return { faellig: false, grund: "kein postbares Video" };
 
-  const jetztMin = minutenImTag(jetzt);
+  // Zwei Betriebsarten. Feste Uhrzeiten schlagen alles - sie sind ausdruecklich
+  // dazu da, sich nicht mit Fenster und Abstand auseinandersetzen zu muessen.
+  if (zeitplan.postingTimes.length > 0) {
+    return istFaelligNachUhrzeit(zeitplan.postingTimes, jetzt, heuteGepostet);
+  }
+  return istFaelligNachFenster(zeitplan, jetzt, heuteGepostet);
+}
+
+/**
+ * Klassisch: Fenster in CH-Zeit, Tageslimit, Mindestabstand.
+ */
+function istFaelligNachFenster(
+  zeitplan: PostZeitplanStand,
+  jetzt: Date,
+  heuteGepostet: Date[],
+): FaelligkeitsUrteil {
+  const jetztMin = chMinutenImTag(jetzt);
   if (jetztMin < zeitplan.fensterVonMin || jetztMin > zeitplan.fensterBisMin) {
-    return { faellig: false, grund: "ausserhalb des Zeitfensters" };
+    return {
+      faellig: false,
+      grund: `ausserhalb des Zeitfensters (${formatUhrzeit(zeitplan.fensterVonMin)}–${formatUhrzeit(zeitplan.fensterBisMin)} CH)`,
+    };
   }
 
-  const heute = heuteGepostet.filter((d) => gleicherTag(d, jetzt));
+  const heute = heuteGepostet.filter((d) => chGleicherTag(d, jetzt));
   if (heute.length >= zeitplan.postsPerDay) {
     return { faellig: false, grund: `Tageslimit erreicht (${zeitplan.postsPerDay})` };
   }
@@ -120,6 +150,49 @@ export function istFaellig(frage: FaelligkeitsFrage): FaelligkeitsUrteil {
         grund: `Mindestabstand nicht erreicht (${Math.round(abstandMin)}/${zeitplan.minAbstandMin} min)`,
       };
     }
+  }
+
+  return { faellig: true };
+}
+
+/**
+ * Feste Uhrzeiten in CH-Zeit.
+ *
+ * Faellig ist, sobald eine geplante Uhrzeit bereits erreicht ist und seit
+ * dieser Uhrzeit noch kein Post rausging. Kommt der Pinger 15 Minuten nach
+ * 17:00, wird jetzt gepostet; kommt er um 16:55, noch nicht. Nach dem Post
+ * ist die 17:00-Slot fuer heute weg, und die Regel greift erst wieder bei
+ * der naechsten geplanten Uhrzeit (z.B. 20:00).
+ */
+function istFaelligNachUhrzeit(
+  zeitenMin: number[],
+  jetzt: Date,
+  heuteGepostet: Date[],
+): FaelligkeitsUrteil {
+  const jetztMin = chMinutenImTag(jetzt);
+  const sortiert = [...zeitenMin].sort((a, b) => a - b);
+
+  // Der letzte Post heute - relevant, damit ein Slot nicht doppelt greift.
+  const heuteSortiert = heuteGepostet
+    .filter((d) => chGleicherTag(d, jetzt))
+    .sort((a, b) => b.getTime() - a.getTime());
+  const letzterHeute = heuteSortiert[0] ?? null;
+  const letzterMin = letzterHeute ? chMinutenImTag(letzterHeute) : -1;
+
+  // Der spaeteste geplante Slot, der bereits erreicht ist und noch nach dem
+  // letzten Post liegt.
+  const faelligerSlot = sortiert
+    .filter((slot) => slot <= jetztMin && slot > letzterMin)
+    .slice(-1)[0];
+
+  if (faelligerSlot === undefined) {
+    const naechster = sortiert.find((slot) => slot > jetztMin);
+    return {
+      faellig: false,
+      grund: naechster !== undefined
+        ? `naechster Slot ${formatUhrzeit(naechster)} CH`
+        : "keine offenen Slots mehr heute",
+    };
   }
 
   return { faellig: true };
@@ -142,7 +215,24 @@ export async function getPostZeitplan(track: Track): Promise<PostZeitplanStand> 
     quelle: z.quelle as PostQuelle,
     hashtags: z.hashtags,
     trendSounds: normalisierePool(z.trendSounds),
+    postingTimes: parsePostingTimes(z.postingTimes),
   };
+}
+
+/**
+ * Wandelt die gespeicherte Zeichenkette (z.B. "17:00,20:00") in eine
+ * aufsteigend sortierte, entduplizierte Minutenliste. Ungueltige Eintraege
+ * werden still verworfen - der Grund fuer eine Zeile, die es nicht war, ist
+ * schon beim Speichern gemeldet worden.
+ */
+export function parsePostingTimes(text: string | null | undefined): number[] {
+  if (!text) return [];
+  const eindeutig = new Set<number>();
+  for (const teil of text.split(/[,;\s]+/)) {
+    const min = parseUhrzeit(teil);
+    if (min !== null) eindeutig.add(min);
+  }
+  return [...eindeutig].sort((a, b) => a - b);
 }
 
 /**
@@ -196,9 +286,16 @@ export async function naechstesVideo(track: Track, quelle: PostQuelle) {
   });
 }
 
-/** Der Beginn des heutigen Tages in UTC - Stichtag für die Taktung. */
+/**
+ * Der Beginn des heutigen Tages in Schweizer Zeit - Stichtag für die Taktung.
+ *
+ * Muss zur Zeitzone der Faelligkeitslogik passen: gepostet wird zu CH-Zeit,
+ * also muss auch das "heute" in CH gerechnet werden. Sonst zaehlten Posts,
+ * die abends kurz vor Mitternacht (CH) rausgingen, in UTC noch zum selben Tag
+ * und schluckten den morgigen ersten Slot.
+ */
 export function tagesBeginn(jetzt: Date): Date {
-  return new Date(Date.UTC(jetzt.getUTCFullYear(), jetzt.getUTCMonth(), jetzt.getUTCDate()));
+  return chTagesBeginn(jetzt);
 }
 
 /** Alle Sparten mit eingeschalteter Automatik. */
@@ -411,8 +508,8 @@ export async function posteFaelliges(track: Track, jetzt = new Date()): Promise<
           ? `Pool-Sound "${sound.titel ?? sound.audioId}"`
           : "kein Sound";
   await logActivity(
-    `Gepostet: "${caption.split("\n")[0]}" (${trackBeschreibung(track).label}), ` +
-      `Media-ID ${ergebnis.mediaId}, Sound: ${soundText}.`,
+    `Gepostet um ${chFormatUhrzeit(jetzt)} CH: "${caption.split("\n")[0]}" ` +
+      `(${trackBeschreibung(track).label}), Media-ID ${ergebnis.mediaId}, Sound: ${soundText}.`,
     { track, videoId: kandidat.id },
   );
 

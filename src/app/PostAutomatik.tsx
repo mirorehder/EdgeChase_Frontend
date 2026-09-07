@@ -20,9 +20,12 @@ export interface PostZeitplanStand {
   quelle: string;
   hashtags: string;
   trendSounds: TrendSoundEintrag[];
+  /** Feste Uhrzeiten in Schweizer Zeit (Minuten seit Mitternacht),
+   *  aufsteigend sortiert. Leer = alte Betriebsart mit Fenster/Abstand. */
+  postingTimes: number[];
 }
 
-/** Minuten seit Mitternacht ↔ "HH:MM" (UTC - so ist es gespeichert). */
+/** Minuten seit Mitternacht ↔ "HH:MM" (Schweizer Zeit). */
 function zuZeit(min: number): string {
   const h = Math.floor(min / 60);
   const m = min % 60;
@@ -55,7 +58,12 @@ export function PostAutomatik({ track, stand }: { track: Track; stand: PostZeitp
       const res = await fetch("/api/post-schedule", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ track, ...z }),
+        body: JSON.stringify({
+          track,
+          ...z,
+          // Der Server erwartet HH:MM-Strings; die UI haelt Minuten.
+          postingTimes: z.postingTimes.map(zuZeit),
+        }),
       });
       const daten = await res.json();
       if (!res.ok) throw new Error(daten.error ?? "Konnte nicht gespeichert werden.");
@@ -68,8 +76,11 @@ export function PostAutomatik({ track, stand }: { track: Track; stand: PostZeitp
     }
   }
 
+  const nachUhrzeiten = z.postingTimes.length > 0;
   const zusammenfassung = z.enabled
-    ? `${z.postsPerDay}×/Tag · ${zuZeit(z.fensterVonMin)}–${zuZeit(z.fensterBisMin)} UTC · Abstand ${z.minAbstandMin} min`
+    ? nachUhrzeiten
+      ? `Uhrzeiten: ${z.postingTimes.map(zuZeit).join(", ")} CH`
+      : `${z.postsPerDay}×/Tag · ${zuZeit(z.fensterVonMin)}–${zuZeit(z.fensterBisMin)} CH · Abstand ${z.minAbstandMin} min`
     : "aus";
 
   return (
@@ -93,47 +104,56 @@ export function PostAutomatik({ track, stand }: { track: Track; stand: PostZeitp
             Automatik an - diese Sparte postet fertige Videos selbst
           </label>
 
-          <div className="field-row">
-            <label>
-              Wie oft pro Tag
-              <input
-                type="number"
-                min={1}
-                max={20}
-                value={z.postsPerDay}
-                onChange={(e) => setZ({ ...z, postsPerDay: Number(e.target.value) })}
-              />
-            </label>
-            <label>
-              Mindestabstand (Min.)
-              <input
-                type="number"
-                min={0}
-                step={15}
-                value={z.minAbstandMin}
-                onChange={(e) => setZ({ ...z, minAbstandMin: Number(e.target.value) })}
-              />
-            </label>
-          </div>
+          <UhrzeitenListe
+            uhrzeiten={z.postingTimes}
+            setzen={(neu) => setZ({ ...z, postingTimes: neu })}
+          />
 
-          <div className="field-row">
-            <label>
-              Frühestens (UTC)
-              <input
-                type="time"
-                value={zuZeit(z.fensterVonMin)}
-                onChange={(e) => setZ({ ...z, fensterVonMin: zuMinuten(e.target.value) })}
-              />
-            </label>
-            <label>
-              Spätestens (UTC)
-              <input
-                type="time"
-                value={zuZeit(z.fensterBisMin)}
-                onChange={(e) => setZ({ ...z, fensterBisMin: zuMinuten(e.target.value) })}
-              />
-            </label>
-          </div>
+          {!nachUhrzeiten && (
+            <>
+              <div className="field-row">
+                <label>
+                  Wie oft pro Tag
+                  <input
+                    type="number"
+                    min={1}
+                    max={20}
+                    value={z.postsPerDay}
+                    onChange={(e) => setZ({ ...z, postsPerDay: Number(e.target.value) })}
+                  />
+                </label>
+                <label>
+                  Mindestabstand (Min.)
+                  <input
+                    type="number"
+                    min={0}
+                    step={15}
+                    value={z.minAbstandMin}
+                    onChange={(e) => setZ({ ...z, minAbstandMin: Number(e.target.value) })}
+                  />
+                </label>
+              </div>
+
+              <div className="field-row">
+                <label>
+                  Frühestens (CH-Zeit)
+                  <input
+                    type="time"
+                    value={zuZeit(z.fensterVonMin)}
+                    onChange={(e) => setZ({ ...z, fensterVonMin: zuMinuten(e.target.value) })}
+                  />
+                </label>
+                <label>
+                  Spätestens (CH-Zeit)
+                  <input
+                    type="time"
+                    value={zuZeit(z.fensterBisMin)}
+                    onChange={(e) => setZ({ ...z, fensterBisMin: zuMinuten(e.target.value) })}
+                  />
+                </label>
+              </div>
+            </>
+          )}
 
           <label>
             Welche Videos
@@ -176,12 +196,13 @@ export function PostAutomatik({ track, stand }: { track: Track; stand: PostZeitp
           />
 
           <span className="clip-meta">
-            Die Uhrzeiten sind in UTC. Gepostet wird{" "}
+            Alle Uhrzeiten in Schweizer Zeit. Gepostet wird{" "}
             {nachKrassheit ? "das älteste fertige Reel" : "das älteste fertige Video"}, das noch
-            nicht draussen ist - höchstens {z.postsPerDay === 1 ? "eines" : `${z.postsPerDay}`} pro
-            Tag, mit dem eingestellten Abstand dazwischen. Sound-Rangfolge: eigener Sound am
-            Konzept &rarr; zufällig einer aus dem Trend-Sound-Pool &rarr; kein Post (ein stummes
-            Reel ist unerwünscht).
+            nicht draussen ist. {nachUhrzeiten
+              ? "Beim ersten Pinger-Klopfer nach einer geplanten Uhrzeit geht der Post raus - je nach Pinger-Rhythmus mit bis zu einer Stunde Verspätung."
+              : `Höchstens ${z.postsPerDay === 1 ? "eines" : z.postsPerDay} pro Tag, mit dem eingestellten Abstand dazwischen.`}{" "}
+            Sound-Rangfolge: eigener Sound am Konzept &rarr; zufällig einer aus dem
+            Trend-Sound-Pool &rarr; kein Post (ein stummes Reel ist unerwünscht).
           </span>
 
           {meldung && (
@@ -294,6 +315,90 @@ function TrendSoundListe({
       </div>
 
       {fehler && <span className="clip-meta" style={{ color: "var(--err)" }}>{fehler}</span>}
+    </div>
+  );
+}
+
+/**
+ * Feste Post-Uhrzeiten in Schweizer Zeit.
+ *
+ * Ist die Liste nicht leer, gelten diese Uhrzeiten ausschliesslich - Fenster
+ * und Mindestabstand darunter blenden dann aus.
+ */
+function UhrzeitenListe({
+  uhrzeiten,
+  setzen,
+}: {
+  uhrzeiten: number[];
+  setzen: (neu: number[]) => void;
+}) {
+  const [neue, setNeue] = useState("");
+
+  function hinzufuegen() {
+    const treffer = /^(\d{1,2}):(\d{2})$/.exec(neue.trim());
+    if (!treffer) return;
+    const stunde = Number(treffer[1]);
+    const minute = Number(treffer[2]);
+    if (stunde < 0 || stunde > 23 || minute < 0 || minute > 59) return;
+    const min = stunde * 60 + minute;
+    if (uhrzeiten.includes(min)) {
+      setNeue("");
+      return;
+    }
+    setzen([...uhrzeiten, min].sort((a, b) => a - b));
+    setNeue("");
+  }
+
+  return (
+    <div className="trend-pool">
+      <span className="video-label">Feste Post-Uhrzeiten (CH-Zeit)</span>
+
+      {uhrzeiten.length === 0 ? (
+        <span className="clip-meta">
+          Keine gesetzt - es gilt die Fenster/Abstand-Betriebsart unten. Sobald hier auch nur eine
+          Uhrzeit steht, ersetzt sie Fenster und Abstand vollständig.
+        </span>
+      ) : (
+        <ul className="trend-pool-liste">
+          {uhrzeiten.map((min) => {
+            const h = Math.floor(min / 60);
+            const m = min % 60;
+            return (
+              <li key={min}>
+                <span className="trend-pool-titel">
+                  {String(h).padStart(2, "0")}:{String(m).padStart(2, "0")} CH
+                </span>
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => setzen(uhrzeiten.filter((x) => x !== min))}
+                >
+                  Entfernen
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      <div className="field-row">
+        <label>
+          Neue Uhrzeit (HH:MM)
+          <input
+            type="time"
+            value={neue}
+            onChange={(e) => setNeue(e.target.value)}
+          />
+        </label>
+        <button
+          type="button"
+          className="secondary"
+          onClick={hinzufuegen}
+          disabled={!/^\d{1,2}:\d{2}$/.test(neue.trim())}
+        >
+          Hinzufügen
+        </button>
+      </div>
     </div>
   );
 }

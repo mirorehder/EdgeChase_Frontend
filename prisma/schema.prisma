@@ -567,6 +567,18 @@ model PostZeitplan {
   /// wird die Anzahl nicht.
   hashtags String @default("")
 
+  /// Feste Uhrzeiten (Schweizer Zeit), zu denen gepostet wird.
+  ///
+  /// Kommagetrennte Liste im Format "HH:MM" (z.B. "17:00,20:00"). Ist das Feld
+  /// gefuellt, gelten AUSSCHLIESSLICH diese Uhrzeiten - fensterVonMin,
+  /// fensterBisMin und minAbstandMin werden dann ignoriert. Bei jedem
+  /// Pinger-Aufruf wird geprueft, ob heute eine geplante Uhrzeit erreicht ist,
+  /// zu der noch nichts gepostet wurde. Die tatsaechliche Post-Zeit liegt
+  /// zwischen der geplanten Uhrzeit und dem naechsten Pinger-Klopfer.
+  ///
+  /// Leer = alte Betriebsart mit Fenster und Mindestabstand.
+  postingTimes String @default("")
+
   /// Trend-Sound-Pool: wird gezogen, wenn ein Video keinen eigenen Sound hat.
   ///
   /// Format: JSON-Liste [{ audioId, titel }]. Der Nutzer trägt im Dashboard
