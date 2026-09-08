@@ -590,3 +590,44 @@ model PostZeitplan {
 
   updatedAt DateTime @updatedAt
 }
+
+/// Protokoll jeder Prüfung der Posting-Automatik - was der Pinger bei jedem
+/// Anklopfen für eine Sparte entschieden hat.
+///
+/// Warum eine eigene Tabelle und nicht das allgemeine ActivityLog: bisher
+/// hinterliess ein Lauf, der NICHTS zu posten fand, keine Spur. Damit war von
+/// aussen nicht zu unterscheiden, ob der Pinger gar nicht lief, ob es kein
+/// postbares Video gab oder ob die Uhrzeit noch nicht erreicht war - genau die
+/// Frage, die "um 10:00 wurde nichts gepostet" aufwirft. Diese Tabelle hält
+/// den Ausgang jeder Prüfung fest, auch den ergebnislosen.
+///
+/// Aufeinanderfolgende gleiche Ergebnisse derselben Sparte werden zu einer
+/// Zeile zusammengefasst (nur ihr Zeitstempel wandert mit), damit ein
+/// stündlich klopfender Pinger vor der ersten Post-Uhrzeit nicht Dutzende
+/// gleicher "noch nicht fällig"-Zeilen erzeugt. Ein tatsächlicher Post bekommt
+/// immer eine eigene Zeile.
+model PostLauf {
+  id String @id @default(cuid())
+
+  /// Wann diese Prüfung stattfand (bei zusammengefassten Zeilen: die letzte).
+  at DateTime @default(now())
+
+  /// Die Sparte: "promo", "viral", "sports" oder "clothing".
+  track String
+
+  /// Wurde tatsächlich gepostet?
+  gepostet Boolean @default(false)
+
+  /// Warum nicht gepostet wurde (bzw. der Hinweis beim Trockenlauf). Leer bei
+  /// einem erfolgreichen Post.
+  grund String?
+
+  /// Instagram-Media-ID bei einem erfolgreichen Post.
+  mediaId String?
+
+  /// Titel des betroffenen Videos, soweit bekannt - fürs Dashboard.
+  videoTitel String?
+
+  @@index([at])
+  @@index([track, at])
+}

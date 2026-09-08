@@ -31,6 +31,9 @@ export async function pruneActivity(keepDays = 14): Promise<void> {
   try {
     const cutoff = new Date(Date.now() - keepDays * 24 * 60 * 60 * 1000);
     await prisma.activityLog.deleteMany({ where: { at: { lt: cutoff } } });
+    // Das Posting-Protokoll wächst langsamer (aufeinanderfolgende gleiche
+    // Ausgänge werden zusammengefasst), soll aber nicht ewig wachsen.
+    await prisma.postLauf.deleteMany({ where: { at: { lt: cutoff } } });
   } catch {
     // Absichtlich verschluckt.
   }

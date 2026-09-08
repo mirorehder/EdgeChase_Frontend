@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { env } from "@/lib/env";
 import { TRACK_LISTE } from "@/lib/trackClient";
 import { igZugang } from "@/lib/instagram";
-import { getPostZeitplan, naechstesVideo } from "@/lib/postAuto";
+import { getPostZeitplan, naechstesVideo, letzteLaeufe } from "@/lib/postAuto";
+import { formatUhrzeit, chFormatZeitstempel } from "@/lib/zeit";
 
 export const dynamic = "force-dynamic";
 
@@ -36,6 +37,8 @@ export async function GET(request: NextRequest) {
       const zeitplan = await getPostZeitplan(b.key);
       const kandidat = zeitplan.enabled ? await naechstesVideo(b.key, zeitplan.quelle) : null;
       const zugang = igZugang(b.key);
+      const laeufe = await letzteLaeufe(b.key, 1);
+      const letzterLauf = laeufe[0] ?? null;
 
       return {
         sparte: b.key,
@@ -52,6 +55,10 @@ export async function GET(request: NextRequest) {
         wuerdeEchtePosten: !!zugang, // Zugang aufloesbar? (Trockenlauf sonst)
         zeitplan: {
           an: zeitplan.enabled,
+          // Welche Betriebsart greift - genau das war bei "10:00 hat nicht
+          // gepostet" die Frage: feste Uhrzeiten oder das alte Fenster?
+          modus: zeitplan.postingTimes.length > 0 ? "uhrzeiten" : "fenster",
+          uhrzeiten: zeitplan.postingTimes.map(formatUhrzeit),
           postsProTag: zeitplan.postsPerDay,
           fensterVon: zeitplan.fensterVonMin,
           fensterBis: zeitplan.fensterBisMin,
@@ -63,6 +70,15 @@ export async function GET(request: NextRequest) {
               id: kandidat.id,
               titel: kandidat.fileTitle ?? kandidat.hookText.slice(0, 60),
               hatOeffentlicheKopie: !!kandidat.publicUrl,
+            }
+          : null,
+        // Der letzte protokollierte Ausgang der Automatik - beweist, ob der
+        // Pinger überhaupt läuft, und nennt den Grund fürs Nichtstun.
+        letzterLauf: letzterLauf
+          ? {
+              wann: chFormatZeitstempel(letzterLauf.at),
+              gepostet: letzterLauf.gepostet,
+              grund: letzterLauf.grund,
             }
           : null,
       };

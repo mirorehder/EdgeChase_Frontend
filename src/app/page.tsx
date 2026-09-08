@@ -15,8 +15,19 @@ import { ViralSchedule } from "./ViralSchedule";
 import { Sparten } from "./Sparten";
 import { VideoGruppen, type VideoZeile } from "./VideoGruppen";
 import { ausgabeOrdnerDerSparte, type AusgabeOrdnerStand } from "@/lib/ausgabeOrdner";
-import { getPostZeitplan, type PostZeitplanStand } from "@/lib/postAuto";
+import {
+  getPostZeitplan,
+  postHistorie,
+  letzteLaeufe,
+  type PostZeitplanStand,
+} from "@/lib/postAuto";
 import { PostAutomatik } from "./PostAutomatik";
+import {
+  PostHistorie,
+  type PostHistorieEintrag,
+  type PostLaufEintrag,
+} from "./PostHistorie";
+import { chFormatZeitstempel } from "@/lib/zeit";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +39,8 @@ interface TrackData {
   usable: number;
   ausgabeOrdner: { scheduled: AusgabeOrdnerStand | null; manual: AusgabeOrdnerStand | null };
   postZeitplan: PostZeitplanStand;
+  postHistorie: PostHistorieEintrag[];
+  postLaeufe: PostLaufEintrag[];
 }
 
 /** Alles, was eine Sparte für ihre Ansicht braucht - streng auf sie begrenzt. */
@@ -40,15 +53,18 @@ async function ladeSparte(track: Track): Promise<TrackData> {
       ? { track, analysisVersion: { gte: MIN_USABLE_ANALYSIS_VERSION }, stuntScore: { gte: 0.25 } }
       : { track, analysisVersion: { gte: MIN_USABLE_ANALYSIS_VERSION }, apparelScore: { gte: 0.5 } };
 
-  const [jobs, total, analyzed, usable, clips, ausgabeOrdner, postZeitplan] = await Promise.all([
-    prisma.promoVideo.findMany({ where: { track }, orderBy: { createdAt: "desc" }, take: 50 }),
-    prisma.clip.count({ where: { track } }),
-    prisma.clip.count({ where: { track, analysisVersion: CURRENT_ANALYSIS_VERSION } }),
-    prisma.clip.count({ where: usableWhere }),
-    prisma.clip.findMany({ where: { track }, select: { id: true, name: true } }),
-    ausgabeOrdnerDerSparte(track),
-    getPostZeitplan(track),
-  ]);
+  const [jobs, total, analyzed, usable, clips, ausgabeOrdner, postZeitplan, historie, laeufe] =
+    await Promise.all([
+      prisma.promoVideo.findMany({ where: { track }, orderBy: { createdAt: "desc" }, take: 50 }),
+      prisma.clip.count({ where: { track } }),
+      prisma.clip.count({ where: { track, analysisVersion: CURRENT_ANALYSIS_VERSION } }),
+      prisma.clip.count({ where: usableWhere }),
+      prisma.clip.findMany({ where: { track }, select: { id: true, name: true } }),
+      ausgabeOrdnerDerSparte(track),
+      getPostZeitplan(track),
+      postHistorie(track),
+      letzteLaeufe(track),
+    ]);
 
   const clipNameById = new Map(clips.map((c) => [c.id, c.name]));
 
@@ -73,6 +89,27 @@ async function ladeSparte(track: Track): Promise<TrackData> {
     })),
   }));
 
+  // Alles auf einfache, serialisierbare Werte herunterbrechen und die Zeiten
+  // schon hier in Schweizer Zeit formatieren - die Anzeige ist eine
+  // Server-Komponente und bekommt fertige Zeichenketten.
+  const postHistorieEintraege: PostHistorieEintrag[] = historie.map((p) => ({
+    id: p.id,
+    zeit: p.postedAt ? chFormatZeitstempel(p.postedAt) : "",
+    titel: p.fileTitle || p.hookText.split("\n")[0] || "(ohne Titel)",
+    mediaId: p.postedMediaId,
+    sound: p.soundTitle || p.soundAudioId || null,
+    herkunft: p.origin,
+    driveUrl: p.driveUrl,
+  }));
+
+  const postLaufEintraege: PostLaufEintrag[] = laeufe.map((l) => ({
+    id: l.id,
+    zeit: chFormatZeitstempel(l.at),
+    gepostet: l.gepostet,
+    grund: l.grund,
+    titel: l.videoTitel,
+  }));
+
   return {
     zeilen,
     fertig: jobs.filter((j) => j.status === "done").length,
@@ -81,6 +118,8 @@ async function ladeSparte(track: Track): Promise<TrackData> {
     usable,
     ausgabeOrdner,
     postZeitplan,
+    postHistorie: postHistorieEintraege,
+    postLaeufe: postLaufEintraege,
   };
 }
 
@@ -147,6 +186,11 @@ export default async function DashboardPage() {
           <TriggerButtons track={track} />
           {track === "promo" ? <DailySettings /> : <ViralSchedule track={track} />}
           <PostAutomatik track={track} stand={data.postZeitplan} />
+          <PostHistorie
+            track={track}
+            posts={data.postHistorie}
+            laeufe={data.postLaeufe}
+          />
           {/* In jeder Sparte, aber dahinter stecken zwei Wege: die
               Kleider-Sparten waehlen die Clips schon im Dialog aus, die
               Reels-Sparten erst beim Zusammenstellen. Was der Nutzer tippt,

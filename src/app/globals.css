@@ -270,6 +270,101 @@ tr:last-child td {
   color: var(--err);
 }
 
+/* Posting-Übersicht: was automatisch gepostet wurde und was die Automatik
+   zuletzt geprüft hat. Bewusst nah am Log-Stil, es ist dieselbe Art Liste. */
+.post-historie {
+  margin: 28px 0 8px;
+}
+
+.post-historie h2 {
+  margin-bottom: 10px;
+}
+
+.historie-unter {
+  margin: 22px 0 8px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.empty-state.small {
+  font-size: 13px;
+  padding: 12px 0;
+}
+
+.historie-liste,
+.lauf-liste {
+  list-style: none;
+  margin: 0;
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 13px;
+}
+
+.lauf-liste {
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.historie-zeile,
+.lauf-liste li {
+  display: flex;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  line-height: 1.45;
+}
+
+.historie-zeile:last-child,
+.lauf-liste li:last-child {
+  border-bottom: none;
+}
+
+.historie-zeit,
+.lauf-zeit {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+  min-width: 118px;
+}
+
+.historie-mitte {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.historie-titel {
+  font-weight: 600;
+}
+
+.historie-titel a {
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 1px solid var(--border);
+}
+
+.historie-titel a:hover {
+  border-bottom-color: var(--accent);
+}
+
+.historie-details {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* Ein tatsächlich geposteter Lauf hebt sich vom „nichts zu tun“ ab - so
+   springt in der Prüfliste sofort ins Auge, wann wirklich etwas rausging. */
+.lauf-post .lauf-text {
+  color: var(--ok);
+}
+
+.lauf-leer .lauf-text {
+  color: var(--muted);
+}
+
 .chat {
   margin: 28px 0;
 }

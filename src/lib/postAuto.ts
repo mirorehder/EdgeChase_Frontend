@@ -406,6 +406,58 @@ export interface PostLaufErgebnis {
 }
 
 /**
+ * Hält den Ausgang einer Prüfung im PostLauf-Protokoll fest und gibt das
+ * Ergebnis unverändert zurück - so lässt sich jeder Ausstiegspunkt von
+ * posteFaelliges mit einer Zeile abschliessen.
+ *
+ * Warum das Protokoll überhaupt: fand ein Lauf nichts zu posten, hinterliess
+ * er bisher keine Spur. "Um 10:00 wurde nichts gepostet" war damit von aussen
+ * nicht zu erklären. Jetzt steht der Grund (kein Video, noch nicht fällig,
+ * keine öffentliche Kopie ...) im Dashboard.
+ *
+ * Aufeinanderfolgende gleiche Ergebnisse werden zusammengefasst: erzeugt der
+ * Pinger stündlich denselben "naechster Slot 10:00"-Ausgang, wandert nur der
+ * Zeitstempel der bestehenden Zeile mit, statt Dutzende gleicher Zeilen
+ * anzulegen. Ein Post bekommt immer eine eigene Zeile.
+ */
+async function abschluss(
+  track: Track,
+  jetzt: Date,
+  ergebnis: Omit<PostLaufErgebnis, "track">,
+  videoTitel?: string | null,
+): Promise<PostLaufErgebnis> {
+  try {
+    const grund = ergebnis.grund ?? null;
+    if (!ergebnis.gepostet) {
+      const letzter = await prisma.postLauf.findFirst({
+        where: { track },
+        orderBy: { at: "desc" },
+      });
+      // Gleicher ergebnisloser Ausgang wie zuletzt → nur den Zeitstempel
+      // nachführen. So bleibt sichtbar "seit wann" dieser Zustand gilt, ohne
+      // die Tabelle zu fluten.
+      if (letzter && !letzter.gepostet && letzter.grund === grund) {
+        await prisma.postLauf.update({ where: { id: letzter.id }, data: { at: jetzt } });
+        return { track, ...ergebnis };
+      }
+    }
+    await prisma.postLauf.create({
+      data: {
+        track,
+        at: jetzt,
+        gepostet: !!ergebnis.gepostet,
+        grund,
+        mediaId: ergebnis.mediaId ?? null,
+        videoTitel: videoTitel ?? null,
+      },
+    });
+  } catch {
+    // Das Protokoll darf einen Post nie zu Fall bringen - Fehler verschlucken.
+  }
+  return { track, ...ergebnis };
+}
+
+/**
  * Prüft eine Sparte und postet höchstens EIN fälliges Video.
  *
  * Bewusst nur eines pro Aufruf: der Mindestabstand soll greifen, und ein
@@ -423,8 +475,10 @@ export async function posteFaelliges(track: Track, jetzt = new Date()): Promise<
     hatKandidat: !!kandidat,
   });
   if (!urteil.faellig || !kandidat) {
-    return { track, gepostet: false, grund: urteil.grund };
+    return abschluss(track, jetzt, { gepostet: false, grund: urteil.grund });
   }
+
+  const kandidatTitel = kandidat.fileTitle || kandidat.hookText.split("\n")[0];
 
   if (!kandidat.publicUrl) {
     // Ohne öffentliche Kopie kann Instagram das Video nicht laden. Das ist der
@@ -435,7 +489,7 @@ export async function posteFaelliges(track: Track, jetzt = new Date()): Promise<
       `Posten übersprungen: "${kandidat.fileTitle || kandidat.hookText}" hat keine öffentliche Kopie.`,
       { level: "error", track, videoId: kandidat.id },
     );
-    return { track, gepostet: false, grund: "keine öffentliche Kopie" };
+    return abschluss(track, jetzt, { gepostet: false, grund: "keine öffentliche Kopie" }, kandidatTitel);
   }
 
   // Der Sound wird nach fester Rangfolge gewaehlt - siehe waehleSound.
@@ -456,7 +510,7 @@ export async function posteFaelliges(track: Track, jetzt = new Date()): Promise<
         "Trag im Dashboard mindestens einen Trend-Sound ein.",
       { level: "error", track, videoId: kandidat.id },
     );
-    return { track, gepostet: false, grund: "kein Sound verfügbar" };
+    return abschluss(track, jetzt, { gepostet: false, grund: "kein Sound verfügbar" }, kandidatTitel);
   }
 
   const caption = mitHashtags(
@@ -479,7 +533,12 @@ export async function posteFaelliges(track: Track, jetzt = new Date()): Promise<
       `Posten (Trockenlauf, keine Zugangsdaten): "${caption}" wäre jetzt an der Reihe.`,
       { track, videoId: kandidat.id },
     );
-    return { track, gepostet: false, trockenlauf: true, grund: ergebnis.fehler };
+    return abschluss(
+      track,
+      jetzt,
+      { gepostet: false, trockenlauf: true, grund: ergebnis.fehler ?? "Trockenlauf: keine Zugangsdaten" },
+      kandidatTitel,
+    );
   }
 
   if (!ergebnis.ok) {
@@ -492,7 +551,12 @@ export async function posteFaelliges(track: Track, jetzt = new Date()): Promise<
       track,
       videoId: kandidat.id,
     });
-    return { track, gepostet: false, grund: ergebnis.fehler };
+    return abschluss(
+      track,
+      jetzt,
+      { gepostet: false, grund: ergebnis.fehler ?? "unbekannter Fehler" },
+      kandidatTitel,
+    );
   }
 
   await prisma.promoVideo.update({
@@ -518,7 +582,47 @@ export async function posteFaelliges(track: Track, jetzt = new Date()): Promise<
     await deletePostCopy(bucketFromServeUrl(env.remotionServeUrl), kandidat.id).catch(() => {});
   }
 
-  return { track, gepostet: true, mediaId: ergebnis.mediaId };
+  return abschluss(
+    track,
+    jetzt,
+    { gepostet: true, mediaId: ergebnis.mediaId },
+    kandidatTitel,
+  );
+}
+
+/**
+ * Die zuletzt automatisch geposteten Videos einer Sparte - für die
+ * Dashboard-Ansicht "wann was gepostet wurde". Das jüngste zuerst.
+ */
+export async function postHistorie(track: Track, anzahl = 20) {
+  return prisma.promoVideo.findMany({
+    where: { track, postedAt: { not: null } },
+    orderBy: { postedAt: "desc" },
+    take: anzahl,
+    select: {
+      id: true,
+      postedAt: true,
+      postedMediaId: true,
+      fileTitle: true,
+      hookText: true,
+      soundTitle: true,
+      soundAudioId: true,
+      driveUrl: true,
+      origin: true,
+    },
+  });
+}
+
+/**
+ * Die letzten Prüfungen der Posting-Automatik einer Sparte - damit sichtbar
+ * ist, dass der Pinger läuft und warum er ggf. nichts postet.
+ */
+export async function letzteLaeufe(track: Track, anzahl = 12) {
+  return prisma.postLauf.findMany({
+    where: { track },
+    orderBy: { at: "desc" },
+    take: anzahl,
+  });
 }
 
 /** Geht alle Sparten mit Automatik durch - der Einstieg für den Pinger. */

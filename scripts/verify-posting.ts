@@ -41,6 +41,7 @@ function pruefe(frage: string, ist: unknown, soll: unknown) {
 
 async function aufraeumen() {
   await prisma.postZeitplan.deleteMany({});
+  await prisma.postLauf.deleteMany({});
   await prisma.promoVideo.deleteMany({ where: { hookText: { startsWith: MARKE } } });
 }
 
@@ -236,6 +237,48 @@ async function main() {
   });
   const ohneKopie = await posteFaelliges("viral", JETZT);
   pruefe("übersprungen", ohneKopie.grund, "keine öffentliche Kopie");
+
+  console.log("\n5b. Jeder Ausgang wird protokolliert, gleiche Ausgänge zusammengefasst");
+  // Sauberer Ausgangspunkt fürs Protokoll und die Videoliste.
+  await prisma.postLauf.deleteMany({});
+  await prisma.promoVideo.deleteMany({ where: { hookText: { startsWith: MARKE } } });
+
+  // Kein Kandidat: der Ausgang "kein postbares Video" soll protokolliert werden.
+  await posteFaelliges("viral", new Date("2026-09-04T12:00:00Z"));
+  await posteFaelliges("viral", new Date("2026-09-04T13:00:00Z"));
+  const nachZwei = await prisma.postLauf.findMany({ where: { track: "viral" } });
+  pruefe(
+    "zwei gleiche Ausgänge → eine Zeile (zusammengefasst)",
+    nachZwei.length,
+    1,
+  );
+  pruefe("Grund festgehalten", nachZwei[0]?.grund, "kein postbares Video");
+  pruefe("nicht als gepostet vermerkt", nachZwei[0]?.gepostet, false);
+  pruefe(
+    "Zeitstempel wandert auf die spätere Prüfung",
+    nachZwei[0]?.at.toISOString(),
+    "2026-09-04T13:00:00.000Z",
+  );
+
+  // Ein anderer Ausgang bekommt eine eigene Zeile.
+  await prisma.promoVideo.create({
+    data: {
+      track: "viral", status: "done", origin: "scheduled",
+      hookText: `${MARKE} ohne kopie 2`, driveUrl: "https://drive/x2",
+      scenes: [] as unknown as object,
+      publicUrl: null,
+    },
+  });
+  await posteFaelliges("viral", new Date("2026-09-04T14:00:00Z"));
+  const nachDrittem = await prisma.postLauf.findMany({
+    where: { track: "viral" },
+    orderBy: { at: "asc" },
+  });
+  pruefe("neuer Grund → neue Zeile", nachDrittem.length, 2);
+  pruefe("jüngste Zeile nennt den neuen Grund", nachDrittem[1]?.grund, "keine öffentliche Kopie");
+
+  await prisma.postLauf.deleteMany({});
+  await prisma.promoVideo.deleteMany({ where: { hookText: { startsWith: MARKE } } });
 
   console.log("\n6a. Sound-Wahl: die Rangfolge");
   // _music schlaegt alles.
