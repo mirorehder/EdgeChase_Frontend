@@ -321,6 +321,44 @@ export async function downloadFile(fileId: string): Promise<Buffer> {
   return Buffer.from(res.data as ArrayBuffer);
 }
 
+/**
+ * Zieht die Drive-Datei-ID aus dem, was in driveUrl gespeichert ist.
+ *
+ * Beim Upload legen wir den webViewLink ab - "https://drive.google.com/file/
+ * d/<ID>/view?usp=drivesdk". Fürs Nachladen (etwa um die öffentliche Kopie
+ * nachträglich anzulegen) brauchen wir die nackte ID daraus. Die üblichen
+ * Formen abgedeckt: ".../d/<ID>/...", "?id=<ID>", oder schon die nackte ID.
+ * Nichts Passendes → null, der Aufrufer entscheidet.
+ */
+export function driveFileIdAus(urlOderId: string | null | undefined): string | null {
+  const roh = (urlOderId ?? "").trim();
+  if (!roh) return null;
+  const ausPfad = /\/d\/([-\w]{20,})/.exec(roh);
+  if (ausPfad) return ausPfad[1];
+  const ausQuery = /[?&]id=([-\w]{20,})/.exec(roh);
+  if (ausQuery) return ausQuery[1];
+  if (/^[-\w]{20,}$/.test(roh)) return roh;
+  return null;
+}
+
+/**
+ * Lädt eine vom Tool selbst angelegte Ausgabedatei in den Speicher - über den
+ * OAuth-Client, der sie erzeugt hat.
+ *
+ * Warum nicht downloadFile (Dienstkonto): die fertigen Videos gehören dem
+ * Nutzer (OAuth-Upload), nicht dem Dienstkonto. Der OAuth-Bereich "drive.file"
+ * deckt genau die Dateien ab, die die App angelegt hat - also diese hier -,
+ * und ist damit der verlässliche Weg, sie zurückzuholen.
+ */
+export async function downloadOutputFile(fileId: string): Promise<Buffer> {
+  const drive = getWriteClient();
+  const res = await drive.files.get(
+    { fileId, alt: "media" },
+    { responseType: "arraybuffer" },
+  );
+  return Buffer.from(res.data as ArrayBuffer);
+}
+
 // ---------------------------------------------------------------------------
 // Schreiben: OAuth im Namen des Nutzers
 //

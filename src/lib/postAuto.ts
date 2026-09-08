@@ -614,6 +614,29 @@ export async function postHistorie(track: Track, anzahl = 20) {
 }
 
 /**
+ * Fertige, noch nicht gepostete Videos einer Sparte, die in Drive liegen, aber
+ * keine öffentliche Kopie haben - die Kandidaten fürs Nachrüsten.
+ *
+ * Genau die, die die Automatik mit "keine öffentliche Kopie" überspringt: vor
+ * der S3-Spiegelung entstanden oder deren Spiegelung scheiterte. Das älteste
+ * zuerst, passend zur Auswahlreihenfolge beim Posten.
+ */
+export async function videosOhneOeffentlicheKopie(track: Track, limit = 10) {
+  return prisma.promoVideo.findMany({
+    where: {
+      track,
+      status: "done",
+      postedAt: null,
+      publicUrl: null,
+      driveUrl: { not: null },
+    },
+    orderBy: { createdAt: "asc" },
+    take: limit,
+    select: { id: true, driveUrl: true, fileTitle: true, hookText: true },
+  });
+}
+
+/**
  * Die letzten Prüfungen der Posting-Automatik einer Sparte - damit sichtbar
  * ist, dass der Pinger läuft und warum er ggf. nichts postet.
  */
