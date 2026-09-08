@@ -25,7 +25,7 @@ import {
   waehleSound,
   type PostZeitplanStand,
 } from "../src/lib/postAuto";
-import { posteReelMit } from "../src/lib/instagram";
+import { posteReelMit, pruefeZugang } from "../src/lib/instagram";
 
 const BASIS = process.env.BASIS_URL ?? "http://127.0.0.1:3100";
 const MARKE = "PRUEF-POST";
@@ -225,7 +225,7 @@ async function main() {
   const nurHand = await posteFaelliges("viral", JETZT);
   pruefe("kein Kandidat, weil nur Handversuch da ist", nurHand.grund, "kein postbares Video");
 
-  console.log("\n5. Ohne öffentliche Kopie wird übersprungen, nicht gepostet");
+  console.log("\n5. Ein Video ohne öffentliche Kopie ist kein Kandidat");
   await prisma.promoVideo.deleteMany({ where: { hookText: { startsWith: MARKE } } });
   await prisma.promoVideo.create({
     data: {
@@ -235,8 +235,36 @@ async function main() {
       publicUrl: null,
     },
   });
+  // Ohne öffentliche Kopie ist ein Video nicht postbar - es zählt gar nicht
+  // erst als Kandidat, statt den Lauf mit einem Sonderfall abzubrechen.
   const ohneKopie = await posteFaelliges("viral", JETZT);
-  pruefe("übersprungen", ohneKopie.grund, "keine öffentliche Kopie");
+  pruefe("kein postbares Video", ohneKopie.grund, "kein postbares Video");
+
+  console.log("\n5a. Ein altes Video ohne Kopie blockiert nicht die jüngeren MIT Kopie");
+  await prisma.promoVideo.deleteMany({ where: { hookText: { startsWith: MARKE } } });
+  // Das ältere hat KEINE Kopie ...
+  await prisma.promoVideo.create({
+    data: {
+      track: "viral", status: "done", origin: "scheduled",
+      hookText: `${MARKE} alt ohne kopie`, driveUrl: "https://drive/alt",
+      scenes: [] as unknown as object,
+      publicUrl: null,
+      createdAt: new Date("2026-09-04T06:00:00Z"),
+    },
+  });
+  // ... das jüngere schon. Es soll trotzdem drankommen.
+  await prisma.promoVideo.create({
+    data: {
+      track: "viral", status: "done", origin: "scheduled",
+      hookText: `${MARKE} jung mit kopie`, driveUrl: "https://drive/jung",
+      scenes: [] as unknown as object,
+      publicUrl: "https://bucket/jung.mp4",
+      createdAt: new Date("2026-09-04T08:00:00Z"),
+    },
+  });
+  const trotzdem = await posteFaelliges("viral", JETZT);
+  pruefe("das jüngere mit Kopie kommt dran (Trockenlauf)", trotzdem.trockenlauf, true);
+  pruefe("nicht an der fehlenden Kopie hängengeblieben", trotzdem.grund !== "keine öffentliche Kopie", true);
 
   console.log("\n5b. Jeder Ausgang wird protokolliert, gleiche Ausgänge zusammengefasst");
   // Sauberer Ausgangspunkt fürs Protokoll und die Videoliste.
@@ -260,22 +288,28 @@ async function main() {
     "2026-09-04T13:00:00.000Z",
   );
 
-  // Ein anderer Ausgang bekommt eine eigene Zeile.
+  // Ein anderer Ausgang bekommt eine eigene Zeile: jetzt liegt ein postbares
+  // Video bereit (mit Kopie), also greift der Trockenlauf statt "kein Video".
   await prisma.promoVideo.create({
     data: {
       track: "viral", status: "done", origin: "scheduled",
-      hookText: `${MARKE} ohne kopie 2`, driveUrl: "https://drive/x2",
+      hookText: `${MARKE} mit kopie 2`, driveUrl: "https://drive/x2",
       scenes: [] as unknown as object,
-      publicUrl: null,
+      publicUrl: "https://bucket/x2.mp4",
     },
   });
-  await posteFaelliges("viral", new Date("2026-09-04T14:00:00Z"));
+  const dritter = await posteFaelliges("viral", new Date("2026-09-04T14:00:00Z"));
+  pruefe("jetzt Trockenlauf (postbares Video da)", dritter.trockenlauf, true);
   const nachDrittem = await prisma.postLauf.findMany({
     where: { track: "viral" },
     orderBy: { at: "asc" },
   });
-  pruefe("neuer Grund → neue Zeile", nachDrittem.length, 2);
-  pruefe("jüngste Zeile nennt den neuen Grund", nachDrittem[1]?.grund, "keine öffentliche Kopie");
+  pruefe("neuer Ausgang → neue Zeile", nachDrittem.length, 2);
+  pruefe(
+    "jüngste Zeile ist nicht mehr 'kein postbares Video'",
+    nachDrittem[1]?.grund !== "kein postbares Video",
+    true,
+  );
 
   await prisma.postLauf.deleteMany({});
   await prisma.promoVideo.deleteMany({ where: { hookText: { startsWith: MARKE } } });
@@ -393,6 +427,24 @@ async function main() {
   pruefe("401 ohne Geheimnis", ohneGeheimnis.status, 401);
   const mitGeheimnis = await fetch(`${BASIS}/api/post/run?secret=${process.env.CRON_SECRET}`);
   pruefe("mit Geheimnis 200", mitGeheimnis.status, 200);
+
+  console.log("\n8. Token-Prüfung meldet gültig/ungültig");
+  const netzOk = (async () =>
+    new Response(JSON.stringify({ id: "17841400000000000", username: "edgechase" }), {
+      status: 200,
+    })) as unknown as typeof fetch;
+  const gut = await pruefeZugang({ token: "t", igUserId: "ig1" }, netzOk);
+  pruefe("gültiger Token: ok", gut.ok, true);
+  pruefe("nennt das Konto", gut.konto, "edgechase");
+
+  const netzFehler2 = (async () =>
+    new Response(
+      JSON.stringify({ error: { message: "Invalid OAuth access token - Cannot parse access token" } }),
+      { status: 400 },
+    )) as unknown as typeof fetch;
+  const schlecht = await pruefeZugang({ token: "t", igUserId: "ig1" }, netzFehler2);
+  pruefe("ungültiger Token: nicht ok", schlecht.ok, false);
+  pruefe("reicht die Instagram-Meldung durch", /Invalid OAuth/.test(schlecht.fehler ?? ""), true);
 
   await aufraeumen();
   console.log(fehler === 0 ? "\nAlles wie erwartet." : `\n${fehler} Abweichung(en).`);

@@ -24,6 +24,37 @@ export interface IgZugang {
 }
 
 /**
+ * Prüft live, ob ein Zugang bei Instagram wirklich gültig ist.
+ *
+ * Warum nötig: dass eine Token-Variable gesetzt IST, heisst nicht, dass der
+ * Token noch GILT. Ein abgelaufener oder rotierter Token quittiert erst der
+ * echte Aufruf mit "Invalid OAuth access token". Diese Prüfung stellt genau
+ * eine harmlose Frage an die Graph-API (die eigene Konto-ID) und meldet, ob
+ * der Zugang trägt - ohne je den Token preiszugeben.
+ */
+export async function pruefeZugang(
+  zugang: IgZugang,
+  netz: typeof fetch = fetch,
+): Promise<{ ok: boolean; konto?: string; fehler?: string }> {
+  try {
+    const res = await netz(
+      `${GRAPH}/${zugang.igUserId}?fields=id,username&access_token=${encodeURIComponent(zugang.token)}`,
+    );
+    const daten = (await res.json()) as {
+      id?: string;
+      username?: string;
+      error?: { message?: string };
+    };
+    if (!res.ok || daten.error) {
+      return { ok: false, fehler: daten.error?.message ?? `HTTP ${res.status}` };
+    }
+    return { ok: true, konto: daten.username ?? daten.id };
+  } catch (err) {
+    return { ok: false, fehler: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/**
  * Die Zugangsdaten einer Sparte, oder null.
  *
  * Erwartet werden je Sparte zwei Variablen, z.B. IG_TOKEN_VIRAL und

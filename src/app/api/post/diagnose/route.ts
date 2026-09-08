@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { env } from "@/lib/env";
 import { TRACK_LISTE } from "@/lib/trackClient";
-import { igZugang } from "@/lib/instagram";
+import { igZugang, pruefeZugang } from "@/lib/instagram";
 import { getPostZeitplan, naechstesVideo, letzteLaeufe, bestandDerSparte } from "@/lib/postAuto";
 import { formatUhrzeit, chFormatZeitstempel } from "@/lib/zeit";
 
@@ -40,6 +40,8 @@ export async function GET(request: NextRequest) {
       const laeufe = await letzteLaeufe(b.key, 1);
       const letzterLauf = laeufe[0] ?? null;
       const bestand = await bestandDerSparte(b.key);
+      // Live prüfen, ob der Token wirklich trägt - nicht nur, ob er gesetzt ist.
+      const tokenPruefung = zugang ? await pruefeZugang(zugang) : null;
 
       return {
         sparte: b.key,
@@ -54,6 +56,10 @@ export async function GET(request: NextRequest) {
           (!process.env[varUserId] && !!process.env.IG_USER_ID),
         erwarteteVariablen: { token: varToken, userId: varUserId },
         wuerdeEchtePosten: !!zugang, // Zugang aufloesbar? (Trockenlauf sonst)
+        // Die entscheidende Auskunft: gilt der Token bei Instagram wirklich?
+        tokenGueltig: tokenPruefung ? tokenPruefung.ok : null,
+        tokenKonto: tokenPruefung?.konto ?? null,
+        tokenFehler: tokenPruefung && !tokenPruefung.ok ? tokenPruefung.fehler : null,
         zeitplan: {
           an: zeitplan.enabled,
           // Welche Betriebsart greift - genau das war bei "10:00 hat nicht

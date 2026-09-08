@@ -269,9 +269,17 @@ export async function letzteGepostet(track: Track, seit: Date): Promise<Date[]> 
 /**
  * Das nächste zu postende Video einer Sparte - oder null.
  *
- * Fertig gerendert, noch nicht gepostet, in Drive vorhanden, und zur
- * eingestellten Quelle passend. Das älteste zuerst: was am längsten
- * bereitliegt, soll nicht liegen bleiben.
+ * Fertig gerendert, noch nicht gepostet, in Drive vorhanden, MIT öffentlicher
+ * Kopie, und zur eingestellten Quelle passend. Das älteste zuerst: was am
+ * längsten bereitliegt, soll nicht liegen bleiben.
+ *
+ * Warum publicUrl hier zur Bedingung gehört und nicht erst später geprüft
+ * wird: sonst wählt die Auswahl das älteste Video auch dann, wenn es keine
+ * öffentliche Kopie hat - und der Lauf bricht daran ab, OHNE zum nächsten,
+ * postbaren Video zu springen. Ein einziges altes Video ohne Kopie ganz vorn
+ * blockiert so alle jüngeren dahinter für immer. Nur wirklich postbare Videos
+ * sind Kandidaten; die ohne Kopie zeigt die Bestandsaufnahme (ohneKopie), und
+ * die Nachrüst-Route legt sie an.
  */
 export async function naechstesVideo(track: Track, quelle: PostQuelle) {
   return prisma.promoVideo.findFirst({
@@ -280,6 +288,7 @@ export async function naechstesVideo(track: Track, quelle: PostQuelle) {
       status: "done",
       postedAt: null,
       driveUrl: { not: null },
+      publicUrl: { not: null },
       ...(quelle === "beliebig" ? {} : { origin: quelle }),
     },
     orderBy: { createdAt: "asc" },
