@@ -648,6 +648,56 @@ export async function letzteLaeufe(track: Track, anzahl = 12) {
   });
 }
 
+/**
+ * Bestandsaufnahme einer Sparte für die Diagnose: wie viele Videos in welchem
+ * Zustand sind, und welche fertigen noch nicht gepostet wurden.
+ *
+ * Beantwortet die Frage "ich habe X Videos generiert, warum postet nichts?":
+ * Dateien im Drive-Ordner und postbare DB-Zeilen sind nicht dasselbe. Ein Video
+ * ist nur postbar, wenn seine Zeile track=diese Sparte, status=done, postedAt
+ * leer UND eine öffentliche Kopie hat. Diese Aufstellung macht sichtbar, woran
+ * es im Einzelfall fehlt (falscher Track, nie fertig geworden, keine Kopie).
+ */
+export async function bestandDerSparte(track: Track) {
+  const [nachStatus, doneUnpostet, gepostet] = await Promise.all([
+    prisma.promoVideo.groupBy({ by: ["status"], where: { track }, _count: true }),
+    prisma.promoVideo.findMany({
+      where: { track, status: "done", postedAt: null },
+      orderBy: { createdAt: "asc" },
+      select: {
+        id: true,
+        fileTitle: true,
+        hookText: true,
+        publicUrl: true,
+        driveUrl: true,
+        origin: true,
+        createdAt: true,
+      },
+    }),
+    prisma.promoVideo.count({ where: { track, postedAt: { not: null } } }),
+  ]);
+
+  const zahl = (s: string) => nachStatus.find((g) => g.status === s)?._count ?? 0;
+  return {
+    gesamt: nachStatus.reduce((a, g) => a + (g._count as number), 0),
+    fertig: zahl("done"),
+    offen: zahl("queued") + zahl("rendering"),
+    fehlgeschlagen: zahl("failed"),
+    gepostet,
+    doneUnpostet: doneUnpostet.length,
+    ohneKopie: doneUnpostet.filter((v) => !v.publicUrl).length,
+    mitKopie: doneUnpostet.filter((v) => !!v.publicUrl).length,
+    // Die einzelnen unposteten fertigen Videos - der aussagekräftige Teil.
+    unpostet: doneUnpostet.slice(0, 25).map((v) => ({
+      titel: v.fileTitle || v.hookText.split("\n")[0],
+      hatKopie: !!v.publicUrl,
+      inDrive: !!v.driveUrl,
+      origin: v.origin,
+      erstellt: v.createdAt.toISOString(),
+    })),
+  };
+}
+
 /** Geht alle Sparten mit Automatik durch - der Einstieg für den Pinger. */
 export async function posteAlleFaelligen(jetzt = new Date()): Promise<PostLaufErgebnis[]> {
   const sparten = await spartenMitAutomatik();

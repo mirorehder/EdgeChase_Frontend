@@ -17,7 +17,7 @@
  */
 import { prisma } from "../src/lib/db";
 import { driveFileIdAus } from "../src/lib/drive";
-import { videosOhneOeffentlicheKopie } from "../src/lib/postAuto";
+import { bestandDerSparte, videosOhneOeffentlicheKopie } from "../src/lib/postAuto";
 
 const BASIS = process.env.BASIS_URL ?? "http://127.0.0.1:3100";
 const GEHEIM = process.env.CRON_SECRET ?? "testsecret";
@@ -113,6 +113,19 @@ async function main() {
   const markeKandidaten = kandidaten.filter((k) => k.hookText.startsWith(MARKE));
   pruefe("genau zwei Videos zum Nachrüsten", markeKandidaten.length, 2);
   pruefe("das ältere zuerst", markeKandidaten[0]?.id, aelter.id);
+
+  console.log("\n2b. Bestandsaufnahme zählt die Zustände richtig");
+  const bestand = await bestandDerSparte("promo");
+  const meine = bestand.unpostet.filter((u) => u.titel.startsWith(MARKE));
+  // Vier fertige, unpostete: älter, neuer, "hat schon kopie", "nicht in drive".
+  pruefe("vier fertige unpostete (dieser Test)", meine.length, 4);
+  pruefe("davon drei ohne Kopie", meine.filter((u) => !u.hatKopie).length, 3);
+  pruefe("davon eines mit Kopie", meine.filter((u) => u.hatKopie).length, 1);
+  pruefe(
+    "eines liegt nicht in Drive",
+    meine.filter((u) => !u.inDrive).length,
+    1,
+  );
 
   console.log("\n3. Die Route: Schutz und klare Absage ohne S3");
   const ohneGeheimnis = await fetch(`${BASIS}/api/post/backfill-public`);

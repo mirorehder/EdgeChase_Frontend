@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { env } from "@/lib/env";
 import { TRACK_LISTE } from "@/lib/trackClient";
 import { igZugang } from "@/lib/instagram";
-import { getPostZeitplan, naechstesVideo, letzteLaeufe } from "@/lib/postAuto";
+import { getPostZeitplan, naechstesVideo, letzteLaeufe, bestandDerSparte } from "@/lib/postAuto";
 import { formatUhrzeit, chFormatZeitstempel } from "@/lib/zeit";
 
 export const dynamic = "force-dynamic";
@@ -39,6 +39,7 @@ export async function GET(request: NextRequest) {
       const zugang = igZugang(b.key);
       const laeufe = await letzteLaeufe(b.key, 1);
       const letzterLauf = laeufe[0] ?? null;
+      const bestand = await bestandDerSparte(b.key);
 
       return {
         sparte: b.key,
@@ -72,6 +73,10 @@ export async function GET(request: NextRequest) {
               hatOeffentlicheKopie: !!kandidat.publicUrl,
             }
           : null,
+        // Bestandsaufnahme: wie viele Videos in welchem Zustand, und welche
+        // fertigen noch offen sind. Zeigt, warum "ich habe X generiert" und
+        // "Y sind postbar" auseinanderfallen.
+        bestand,
         // Der letzte protokollierte Ausgang der Automatik - beweist, ob der
         // Pinger überhaupt läuft, und nennt den Grund fürs Nichtstun.
         letzterLauf: letzterLauf
