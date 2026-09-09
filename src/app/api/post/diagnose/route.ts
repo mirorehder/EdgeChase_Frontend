@@ -1,11 +1,47 @@
 import { NextRequest, NextResponse } from "next/server";
 import { env } from "@/lib/env";
-import { TRACK_LISTE } from "@/lib/trackClient";
+import { prisma } from "@/lib/db";
+import { TRACK_LISTE, bewertungsart, type Track } from "@/lib/trackClient";
 import { igZugang, pruefeZugang } from "@/lib/instagram";
 import { getPostZeitplan, naechstesVideo, letzteLaeufe, bestandDerSparte } from "@/lib/postAuto";
+import { getViralSchedule } from "@/lib/viralSchedule";
+import { MIN_USABLE_ANALYSIS_VERSION } from "@/lib/pipeline";
 import { formatUhrzeit, chFormatZeitstempel } from "@/lib/zeit";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * Warum in einer Sparte (nichts) generiert wird.
+ *
+ * "Ich habe 1/Tag eingestellt, es kommt aber nichts" hat bei den Reels-Sparten
+ * genau drei mögliche Ursachen, und der tägliche Lauf bricht an der ersten ab:
+ * Zeitplan aus, kein Konzept (ohne Konzept kein Text), oder keine tauglichen
+ * Clips. Diese Aufstellung macht alle drei auf einen Blick sichtbar.
+ *
+ * Promo generiert über eine eigene Einstellung (DailyConfig), nicht über diesen
+ * Reels-Zeitplan - deshalb der Hinweis istReelsSparte.
+ */
+async function generierungsDiagnose(track: Track) {
+  const plan = await getViralSchedule(track);
+  const nachKrassheit = bewertungsart(track) === "krassheit";
+  const clipWhere = nachKrassheit
+    ? { track, analysisVersion: { gte: MIN_USABLE_ANALYSIS_VERSION }, stuntScore: { gte: 0.25 } }
+    : { track, analysisVersion: { gte: MIN_USABLE_ANALYSIS_VERSION }, apparelScore: { gte: 0.5 } };
+  const [konzepte, quellordnerAktiv, tauglicheClips] = await Promise.all([
+    prisma.concept.count({ where: { track } }),
+    prisma.sourceFolder.count({ where: { track, useInVideos: true } }),
+    prisma.clip.count({ where: clipWhere }),
+  ]);
+  return {
+    istReelsSparte: track !== "promo",
+    zeitplanAn: plan.enabled,
+    videosProTag: plan.videosPerDay,
+    conceptMode: plan.conceptMode,
+    konzepte,
+    quellordnerAktiv,
+    tauglicheClips,
+  };
+}
 
 /**
  * Selbstauskunft der Posting-Automatik.
@@ -40,6 +76,7 @@ export async function GET(request: NextRequest) {
       const laeufe = await letzteLaeufe(b.key, 1);
       const letzterLauf = laeufe[0] ?? null;
       const bestand = await bestandDerSparte(b.key);
+      const generierung = await generierungsDiagnose(b.key);
       // Live prüfen, ob der Token wirklich trägt - nicht nur, ob er gesetzt ist.
       const tokenPruefung = zugang ? await pruefeZugang(zugang) : null;
 
@@ -83,6 +120,8 @@ export async function GET(request: NextRequest) {
         // fertigen noch offen sind. Zeigt, warum "ich habe X generiert" und
         // "Y sind postbar" auseinanderfallen.
         bestand,
+        // Warum (nichts) generiert wird: Zeitplan an? Konzepte? taugliche Clips?
+        generierung,
         // Der letzte protokollierte Ausgang der Automatik - beweist, ob der
         // Pinger überhaupt läuft, und nennt den Grund fürs Nichtstun.
         letzterLauf: letzterLauf
