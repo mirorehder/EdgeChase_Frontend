@@ -122,6 +122,10 @@ async function main() {
         { status: 200 },
       );
     }
+    // Feed-Abfrage des Sicherheitsnetzes: leer = Reel NICHT öffentlich = Trial.
+    if (methode === "GET" && u.includes("/media?fields=id")) {
+      return new Response(JSON.stringify({ data: [] }), { status: 200 });
+    }
     // Container anlegen.
     return new Response(JSON.stringify({ id: "container-1" }), { status: 200 });
   }) as unknown as typeof fetch;
@@ -130,13 +134,14 @@ async function main() {
     { token: "t", igUserId: "ig1" },
     { videoUrl: "https://bucket/x.mp4", caption: "Test", audioId: "123", alsTrialReel: true },
     netz,
-    { abstandMs: 0, schlaf: async () => {} },
+    { abstandMs: 0, schlaf: async () => {}, verifyVersuche: 1 },
   );
   pruefe("Post erfolgreich", erg.ok, true);
   pruefe("Media-ID durchgereicht", erg.mediaId, "media-999");
   pruefe("Reihenfolge: erst Container, dann Status, dann publish", rufe[0], "POST media");
   pruefe("es wurde wirklich gewartet (mehr als eine Statusabfrage)", statusAbfragen >= 2, true);
-  pruefe("zuletzt veröffentlicht", rufe[rufe.length - 1], "POST media_publish");
+  pruefe("veröffentlicht wurde", rufe.includes("POST media_publish"), true);
+  pruefe("Sicherheitsnetz hat den Feed geprüft", rufe.includes("GET media"), true);
 
   // Ein ERROR-Status bricht sauber ab.
   const netzFehler = (async (url: string | URL) => {
@@ -381,22 +386,25 @@ async function main() {
     if (u.includes("/media_publish")) return new Response(JSON.stringify({ id: "m-9" }), { status: 200 });
     if (u.includes("status_code"))
       return new Response(JSON.stringify({ status_code: "FINISHED" }), { status: 200 });
+    // Sicherheitsnetz-Feedabfrage: leer = nicht öffentlich = Trial bestätigt.
+    if (u.includes("/media?fields=id")) return new Response(JSON.stringify({ data: [] }), { status: 200 });
     return new Response(JSON.stringify({ id: "c-1" }), { status: 200 });
   }) as unknown as typeof fetch;
   const soundPost = await posteReelMit(
     { token: "t", igUserId: "ig1" },
     { videoUrl: "https://x/y.mp4", caption: "Test", audioId: "s-1", alsTrialReel: true },
     nurCode,
-    { abstandMs: 0, schlaf: async () => {} },
+    { abstandMs: 0, schlaf: async () => {}, verifyVersuche: 1 },
   );
   pruefe("Sound-Post erfolgreich", soundPost.ok, true);
   const alleParams = rufeParams.join(" | ");
   pruefe("audio_name gesetzt", alleParams.includes("audio_name=s-1"), true);
   pruefe("audio_volume=100", alleParams.includes("audio_volume=100"), true);
   pruefe("video_volume=50", alleParams.includes("video_volume=50"), true);
-  pruefe("is_trial=true", alleParams.includes("is_trial=true"), true);
-  pruefe("as_trial_reel=true", alleParams.includes("as_trial_reel=true"), true);
-  pruefe("graduation_strategy=MANUAL", alleParams.includes("graduation_strategy=MANUAL"), true);
+  // Der korrekte Trial-Parameter - und NICHT mehr die alten, wirkungslosen Flags.
+  pruefe("trial_params gesetzt", alleParams.includes('trial_params={"graduation_strategy":"MANUAL"}'), true);
+  pruefe("alte Flag is_trial NICHT mehr gesendet", alleParams.includes("is_trial=true"), false);
+  pruefe("alte Flag as_trial_reel NICHT mehr gesendet", alleParams.includes("as_trial_reel=true"), false);
   pruefe("Status-Abfrage mit via_facebook", alleParams.includes("via_facebook=true"), true);
 
   // _music-Fall: kein audio_name, kein audio_volume, aber video_volume=100.
@@ -420,7 +428,59 @@ async function main() {
   const p2 = rufe2.join(" | ");
   pruefe("_music: kein audio_name", p2.includes("audio_name="), false);
   pruefe("_music: video_volume=100", p2.includes("video_volume=100"), true);
-  pruefe("_music: kein Trial-Reel", p2.includes("is_trial=true"), false);
+  pruefe("_music: kein Trial-Reel", p2.includes("trial_params"), false);
+
+  console.log("\n6d. Sicherheitsnetz: öffentlich gewordenes Reel wird gelöscht");
+  const rufe3: string[] = [];
+  let geloescht = false;
+  const netzOeffentlich = (async (url: string | URL, init?: RequestInit) => {
+    const u = String(url);
+    const methode = init?.method ?? "GET";
+    rufe3.push(`${methode} ${u.split("?")[0].split("/").slice(-1)[0]}`);
+    if (methode === "DELETE") {
+      geloescht = true;
+      return new Response(JSON.stringify({ success: true }), { status: 200 });
+    }
+    if (u.includes("/media_publish")) return new Response(JSON.stringify({ id: "m-oeff" }), { status: 200 });
+    if (u.includes("status_code")) return new Response(JSON.stringify({ status_code: "FINISHED" }), { status: 200 });
+    // Der Feed zeigt das gerade gepostete Reel → es ist ÖFFENTLICH geworden.
+    if (u.includes("/media?fields=id"))
+      return new Response(JSON.stringify({ data: [{ id: "m-oeff" }] }), { status: 200 });
+    return new Response(JSON.stringify({ id: "c-oeff" }), { status: 200 });
+  }) as unknown as typeof fetch;
+  const oeffentlichErg = await posteReelMit(
+    { token: "t", igUserId: "ig1" },
+    { videoUrl: "https://x/y.mp4", caption: "Test", audioId: "s-1", alsTrialReel: true },
+    netzOeffentlich,
+    { abstandMs: 0, schlaf: async () => {}, verifyVersuche: 1 },
+  );
+  pruefe("öffentlich erkannt → NICHT als Erfolg gewertet", oeffentlichErg.ok, false);
+  pruefe("öffentlich erkannt → Reel wurde gelöscht (DELETE)", geloescht, true);
+  pruefe("Fehlermeldung nennt die Sicherheitsabschaltung", /SICHERHEIT/.test(oeffentlichErg.fehler ?? ""), true);
+
+  console.log("\n6e. Sicherheitsnetz: unklarer Feed (Fehler) → vorsorglich gelöscht");
+  let geloescht2 = false;
+  const netzUnklar = (async (url: string | URL, init?: RequestInit) => {
+    const u = String(url);
+    const methode = init?.method ?? "GET";
+    if (methode === "DELETE") {
+      geloescht2 = true;
+      return new Response(JSON.stringify({ success: true }), { status: 200 });
+    }
+    if (u.includes("/media_publish")) return new Response(JSON.stringify({ id: "m-unklar" }), { status: 200 });
+    if (u.includes("status_code")) return new Response(JSON.stringify({ status_code: "FINISHED" }), { status: 200 });
+    // Feedabfrage schlägt fehl → Trial-Status nicht bestätigbar.
+    if (u.includes("/media?fields=id")) return new Response(JSON.stringify({ error: { message: "kaputt" } }), { status: 500 });
+    return new Response(JSON.stringify({ id: "c-unklar" }), { status: 200 });
+  }) as unknown as typeof fetch;
+  const unklarErg = await posteReelMit(
+    { token: "t", igUserId: "ig1" },
+    { videoUrl: "https://x/y.mp4", caption: "Test", audioId: "s-1", alsTrialReel: true },
+    netzUnklar,
+    { abstandMs: 0, schlaf: async () => {}, verifyVersuche: 2 },
+  );
+  pruefe("unklarer Status → NICHT als Erfolg gewertet", unklarErg.ok, false);
+  pruefe("unklarer Status → vorsorglich gelöscht", geloescht2, true);
 
   console.log("\n7. Der Pinger weist ohne Geheimnis ab");
   const ohneGeheimnis = await fetch(`${BASIS}/api/post/run`);
