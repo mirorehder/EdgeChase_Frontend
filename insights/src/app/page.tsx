@@ -14,12 +14,14 @@ import { SpartenNav } from "../components/SpartenNav";
 import { Kachel } from "../components/Kachel";
 import { BalkenDiagramm } from "../components/BalkenDiagramm";
 import { Zeitraumleiste } from "../components/Zeitraumleiste";
+import { QuellenBanner } from "../components/QuellenBanner";
 import { anzahlJeSparte, gepostetImZeitraum } from "../lib/mapping";
-import { kennzahlenViele } from "../lib/instagram";
+import { igZugang, kennzahlenViele } from "../lib/instagram";
 import { umsatzLetzteTage } from "../lib/wix";
 import { fasseSparteZusammen } from "../lib/aggregation";
 import { alsGeld, alsZahl } from "../lib/format";
 import { SPARTEN, type Track } from "../lib/tracks";
+import { dbVerbunden } from "../lib/db";
 
 // Die Uebersicht laeuft immer serverseitig frisch - die Zwischenspeicherung
 // steckt in `zwischengespeichert`, nicht in der Seite.
@@ -58,9 +60,20 @@ export default async function UebersichtSeite({
     .map((p) => ({ key: p.track, wert: p.zusammenfassung.summen.reichweite }))
     .sort((a, b) => b.wert - a.wert)[0];
 
+  const igStatus = SPARTEN.map((s) => ({
+    label: s.kurz,
+    verbunden: igZugang(s.key) !== null,
+  }));
+
   return (
     <>
       <Kopf />
+      <QuellenBanner
+        db={dbVerbunden()}
+        wix={wix.verbunden}
+        igTracks={igStatus}
+        igGesamt={igStatus.some((t) => t.verbunden)}
+      />
       <Zeitraumleiste aktiv={tage} basisPfad="/" />
 
       <div className="kacheln">
