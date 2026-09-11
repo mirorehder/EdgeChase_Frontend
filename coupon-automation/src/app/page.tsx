@@ -36,6 +36,88 @@ function zeitLesbar(datum: Date): string {
   });
 }
 
+/**
+ * Ausklappbare Kommentar-Liste eines einzelnen Reels.
+ *
+ * Bewusst als native <details>: kein JavaScript nötig, funktioniert offline, in
+ * der PWA und mit Screenreadern. Der offene Zustand wird nicht gespeichert -
+ * bei jedem Nachladen des Dashboards sind alle Reels wieder eingeklappt.
+ */
+type KommentarZeile = {
+  id: string;
+  createdAt: Date;
+  text: string;
+  status: string;
+  hinweis: string | null;
+  authorUsername: string | null;
+  name: string | null;
+  couponCode: string | null;
+  dmGesendet: boolean;
+  antwortGesendet: boolean;
+  nachgefasstAm: Date | null;
+  codeEingeloestAm: Date | null;
+  codeErneutGesendetAm: Date | null;
+};
+
+function KommentarListe({ eintraege }: { eintraege: KommentarZeile[] }) {
+  if (eintraege.length === 0) return null;
+  return (
+    <details className="ig-reel-kommentare">
+      <summary>
+        {eintraege.length} {eintraege.length === 1 ? "Kommentar" : "Kommentare"} anzeigen
+      </summary>
+      <table className="ig-tabelle ig-tabelle-eingebettet">
+        <thead>
+          <tr>
+            <th>Zeit</th>
+            <th>Kommentar</th>
+            <th>Code</th>
+            <th>DM</th>
+            <th>Antw.</th>
+          </tr>
+        </thead>
+        <tbody>
+          {eintraege.map((zeile) => (
+            <tr key={zeile.id} className={zeile.status === "fehler" ? "ig-zeile-fehler" : ""}>
+              <td className="ig-schwach">{zeitLesbar(zeile.createdAt)}</td>
+              <td>
+                {zeile.text.slice(0, 40) || "—"}
+                {zeile.authorUsername && (
+                  <div className="ig-schwach">@{zeile.authorUsername}</div>
+                )}
+                {zeile.name && !zeile.couponCode && (
+                  <div className="ig-schwach">Name: {zeile.name}</div>
+                )}
+                {zeile.status !== "verarbeitet" && zeile.hinweis && (
+                  <div className="ig-schwach">{zeile.hinweis.slice(0, 90)}</div>
+                )}
+              </td>
+              <td>
+                {zeile.couponCode ? (
+                  <>
+                    <code>{zeile.couponCode}</code>{" "}
+                    {zeile.codeErneutGesendetAm && (
+                      <span title="Code auf DM-Nachfrage erneut verschickt">📩</span>
+                    )}
+                    {zeile.nachgefasstAm && !zeile.codeEingeloestAm && (
+                      <span title="Nachfass-DM verschickt">🔔</span>
+                    )}
+                    {zeile.codeEingeloestAm && <span title="Eingelöst">✅</span>}
+                  </>
+                ) : (
+                  "—"
+                )}
+              </td>
+              <td>{zeile.couponCode ? (zeile.dmGesendet ? "✓" : "✗") : "—"}</td>
+              <td>{zeile.couponCode ? (zeile.antwortGesendet ? "✓" : "✗") : "—"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </details>
+  );
+}
+
 export default async function StartSeite() {
   const seit = new Date(Date.now() - TAGE * 24 * 60 * 60 * 1000);
 
@@ -105,6 +187,18 @@ export default async function StartSeite() {
     proReel.set(zeile.mediaId, [...(proReel.get(zeile.mediaId) ?? []), zeile]);
   }
 
+  // Sichtbar heisst: ohne eigene Antworten. Sie zählen in den Roh-Statistiken
+  // (proReel), sollen aber in der ausklappbaren Kommentar-Liste nicht auftauchen,
+  // sonst wiederholt sich das Bild bei jedem beantworteten Kommentar.
+  const sichtbareProReel = new Map<string, typeof zeilen>();
+  for (const zeile of zeilen) {
+    if (zeile.hinweis === EIGENES_KONTO_HINWEIS) continue;
+    sichtbareProReel.set(zeile.mediaId, [
+      ...(sichtbareProReel.get(zeile.mediaId) ?? []),
+      zeile,
+    ]);
+  }
+
   // Übersteuerung geht vor Texterkennung - dieselbe Regel wie beim
   // Verarbeiten selbst (istEffektivAktion in verarbeitung.ts), sonst würde
   // die Übersicht etwas anderes zeigen als das, wonach tatsächlich
@@ -114,12 +208,6 @@ export default async function StartSeite() {
   // durchlaufenden Reel unbegrenzt - und ein Reel von vor Wochen von Hand
   // nachzutragen ist selten eilig.
   const andereMedien = medien.filter((m) => !istEffektivAktion(m)).slice(0, 15);
-
-  // Antworten auf die eigenen Kommentare sind kein Vorgang, den es sich
-  // anzusehen lohnt - sie entstehen bei jedem Lauf von selbst und würden die
-  // Tabelle nur mit sich wiederholenden Zeilen zumüllen. Die Gesamtzahl bleibt
-  // trotzdem sichtbar, in "Warum übersprungen wurde" weiter unten.
-  const sichtbareZeilen = zeilen.filter((z) => z.hinweis !== EIGENES_KONTO_HINWEIS);
 
   const uebersprungen = zeilen.filter((z) => z.status === "uebersprungen");
   const gruende = new Map<string, number>();
@@ -279,6 +367,7 @@ export default async function StartSeite() {
                   ueberschreibung={media.ueberschreibung}
                   automatischErkannt={media.istAktion}
                 />
+                <KommentarListe eintraege={sichtbareProReel.get(media.id) ?? []} />
               </div>
             ))}
         </div>
@@ -310,63 +399,11 @@ export default async function StartSeite() {
                   ueberschreibung={media.ueberschreibung}
                   automatischErkannt={media.istAktion}
                 />
+                <KommentarListe eintraege={sichtbareProReel.get(media.id) ?? []} />
               </div>
             ))}
           </div>
         </>
-      )}
-
-      <h2 className="abschnitt-titel">Letzte Kommentare</h2>
-      {sichtbareZeilen.length === 0 ? (
-        <p className="empty-state">Nichts vorhanden.</p>
-      ) : (
-        <table className="ig-tabelle">
-          <thead>
-            <tr>
-              <th>Zeit</th>
-              <th>Kommentar</th>
-              <th>Name</th>
-              <th>Code</th>
-              <th>DM</th>
-              <th>Antwort</th>
-            </tr>
-          </thead>
-          <tbody>
-            {sichtbareZeilen.slice(0, 40).map((zeile) => (
-              <tr key={zeile.id} className={zeile.status === "fehler" ? "ig-zeile-fehler" : ""}>
-                <td className="ig-schwach">{zeitLesbar(zeile.createdAt)}</td>
-                <td>
-                  {zeile.text.slice(0, 30) || "—"}
-                  {zeile.authorUsername && (
-                    <div className="ig-schwach">@{zeile.authorUsername}</div>
-                  )}
-                  {zeile.status !== "verarbeitet" && zeile.hinweis && (
-                    <div className="ig-schwach">{zeile.hinweis.slice(0, 90)}</div>
-                  )}
-                </td>
-                <td>{zeile.name ?? "—"}</td>
-                <td>
-                  {zeile.couponCode ? (
-                    <>
-                      <code>{zeile.couponCode}</code>{" "}
-                      {zeile.codeErneutGesendetAm && (
-                        <span title="Code auf DM-Nachfrage erneut verschickt">📩</span>
-                      )}
-                      {zeile.nachgefasstAm && !zeile.codeEingeloestAm && (
-                        <span title="Nachfass-DM verschickt">🔔</span>
-                      )}
-                      {zeile.codeEingeloestAm && <span title="Eingelöst">✅</span>}
-                    </>
-                  ) : (
-                    "—"
-                  )}
-                </td>
-                <td>{zeile.couponCode ? (zeile.dmGesendet ? "✓" : "✗") : "—"}</td>
-                <td>{zeile.couponCode ? (zeile.antwortGesendet ? "✓" : "✗") : "—"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
       )}
 
       {gruende.size > 0 && (

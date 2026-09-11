@@ -279,6 +279,48 @@ button {
   border-top: 1px solid var(--border);
 }
 
+/* Ausklappbare Kommentar-Liste innerhalb einer Reel-Karte. */
+.ig-reel-kommentare {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.ig-reel-kommentare summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--muted);
+  list-style: none;
+  /* Chevron rechts angedeutet - dezenter als der native Marker. */
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ig-reel-kommentare summary::before {
+  content: "▸";
+  font-size: 10px;
+  transition: transform 0.15s;
+}
+
+.ig-reel-kommentare[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.ig-reel-kommentare summary::-webkit-details-marker {
+  display: none;
+}
+
+.ig-tabelle-eingebettet {
+  margin-top: 8px;
+  font-size: 12px;
+}
+
+.ig-tabelle-eingebettet th,
+.ig-tabelle-eingebettet td {
+  padding: 6px 8px;
+}
+
 .ig-knopf-klein {
   padding: 3px 10px;
   font-size: 12px;

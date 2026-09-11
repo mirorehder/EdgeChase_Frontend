@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { env } from "@/lib/env";
+import { nachfasseOffene } from "@/lib/instagram/nachfassen";
 import { verarbeiteOffene } from "@/lib/instagram/verarbeitung";
 
 /**
@@ -40,11 +41,26 @@ async function lauf(request: NextRequest) {
 
   const ergebnisse = await verarbeiteOffene();
 
+  // Nachfass-Lauf gleich mit erledigen. Der Vercel-Zeitplan feuert alleine
+  // nicht zuverlässig (auf Hobby-Plänen streckenweise gar nicht), aber jeder
+  // neue Kommentar löst diese Route aus - so wird auch bei stillem Cron
+  // regelmässig gegen die 48-h-Fälligkeit geprüft. Die eingebaute
+  // Idempotenz (nachgefasstAm) sorgt dafür, dass keine Zeile doppelt
+  // angeschrieben wird, auch wenn diese Route zehnmal am Tag läuft. Ein
+  // Fehler beim Nachfassen darf die Antwort für die neuen Kommentare nicht
+  // gefährden.
+  const nachfass = await nachfasseOffene().catch((fehler) => {
+    console.error("Nachfass im process-Lauf fehlgeschlagen", fehler);
+    return [] as Awaited<ReturnType<typeof nachfasseOffene>>;
+  });
+
   return NextResponse.json({
     verarbeitet: ergebnisse.filter((e) => e.status === "verarbeitet").length,
     uebersprungen: ergebnisse.filter((e) => e.status === "uebersprungen").length,
     fehler: ergebnisse.filter((e) => e.status === "fehler").length,
     einzelheiten: ergebnisse,
+    nachgefasst: nachfass.filter((e) => e.ergebnis === "nachgefasst").length,
+    eingeloest: nachfass.filter((e) => e.ergebnis === "eingeloest").length,
   });
 }
 
