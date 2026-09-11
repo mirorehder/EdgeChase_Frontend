@@ -1,5 +1,6 @@
 import { prisma } from "../db";
 import { env } from "../env";
+import { sendePush } from "../push";
 import { erstelleGutschein } from "../wix/coupons";
 import { formuliereAntwort, formuliereDm } from "./antwort";
 import { antworteAufKommentar, ladeMedia, sendePrivateAntwort, type WebhookKommentar } from "./graph";
@@ -67,6 +68,9 @@ export async function istEingeschaltet(): Promise<boolean> {
 
 /**
  * Einschätzung eines Reels, aus dem Zwischenspeicher oder frisch von Meta.
+ *
+ * Zusatzwirkung bei einem noch nie gesehenen Reel: eine Push-Nachricht ans
+ * Dashboard, damit du direkt kurz drauf schauen und ggf. übersteuern kannst.
  */
 async function medienInfo(mediaId: string) {
   const bekannt = await prisma.instagramMedia.findUnique({ where: { id: mediaId } });
@@ -86,11 +90,34 @@ async function medienInfo(mediaId: string) {
   // "ueberschreibung" bewusst nicht in "daten" enthalten: eine von Hand
   // getroffene Entscheidung soll die tägliche Auffrischung der Caption
   // überleben, nicht von ihr überschrieben werden.
-  return prisma.instagramMedia.upsert({
+  const media = await prisma.instagramMedia.upsert({
     where: { id: mediaId },
     create: { id: mediaId, ...daten },
     update: daten,
   });
+
+  // Nur beim ersten Auftauchen benachrichtigen. bekannt === null bedeutet: es
+  // gab vor diesem Aufruf keine Zeile - also gerade angelegt.
+  if (bekannt === null) {
+    const kopfzeile = caption.split("\n")[0].slice(0, 80).trim() || "(ohne Text)";
+    const status = daten.istAktion ? "als Promo-Reel erkannt" : "nicht als Promo-Reel erkannt";
+    // Push soll die Verarbeitung nie zum Fall bringen - der Kommentar-
+    // Workflow ist wichtiger als die Benachrichtigung.
+    // Bewusst awaiten: auf Vercel wird eine Serverless-Funktion nach der
+    // Antwort abgeschnitten - ein fire-and-forget würde den Push je nach
+    // Timing killen. Fehler werden abgefangen, damit ein Push-Ausfall die
+    // Kommentar-Verarbeitung nie zum Scheitern bringt.
+    await sendePush({
+      titel: `Neues Reel: ${status}`,
+      rumpf: kopfzeile,
+      // Tippt der Nutzer die Benachrichtigung an, soll das Dashboard aufgehen -
+      // dort steht die volle Caption, die Klassifizierung und der Knopf zum
+      // Übersteuern. Der Permalink zum Reel selbst liegt einen Klick weiter.
+      url: "/",
+    }).catch((fehler) => console.error("Push für neues Reel fehlgeschlagen", fehler));
+  }
+
+  return media;
 }
 
 /** Gilt das Reel als Aktions-Reel - Übersteuerung geht vor Texterkennung. */

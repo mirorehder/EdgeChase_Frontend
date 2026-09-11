@@ -152,3 +152,19 @@ model InstagramMedia {
 
   aktualisiertAm DateTime @updatedAt
 }
+
+/// Ein Web-Push-Abonnement: die Adresse und die Schlüssel, die der Browser
+/// beim Erlauben der Benachrichtigungen ausgehändigt hat. Jedes Gerät je
+/// Person hat sein eigenes.
+///
+/// Es steht kein "Nutzer" dran, weil hier ohnehin nur eine Person das
+/// Dashboard bedient - kommt ein zweites Gerät dazu, soll auch das
+/// benachrichtigt werden. Alte Abos, die der Push-Dienst als abgelaufen
+/// zurückweist, werden vom Sende-Code weggeputzt.
+model PushSubscription {
+  id        String   @id @default(cuid())
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+}

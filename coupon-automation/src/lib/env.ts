@@ -72,4 +72,28 @@ export const env = {
   get whatsappChannelUrl(): string | null {
     return process.env.WHATSAPP_CHANNEL_URL || null;
   },
+  /**
+   * VAPID-Schlüssel für Web-Push. Werden einmal je Projekt erzeugt und in
+   * Vercel hinterlegt. Bewusst optional, damit die App auch dann läuft, wenn
+   * Push nie eingerichtet wurde - dann werden schlicht keine Benachrichtigungen
+   * verschickt und der Abo-Knopf im Dashboard bleibt aus.
+   *
+   * Public gehört zum Öffentlichen: den bekommt der Browser beim Abonnieren,
+   * er wird nicht geheim gehalten. Deshalb NEXT_PUBLIC_-Präfix - Next macht ihn
+   * damit im Client verfügbar.
+   */
+  get vapidPublicKey(): string | null {
+    return process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || null;
+  },
+  get vapidPrivateKey(): string | null {
+    return process.env.VAPID_PRIVATE_KEY || null;
+  },
+  /**
+   * Der VAPID-Subject ist eine mailto:- oder https:-Adresse, mit der Push-
+   * Dienste den Absender im Streitfall erreichen können. Kein Geheimnis,
+   * aber Pflicht.
+   */
+  get vapidSubject(): string {
+    return process.env.VAPID_SUBJECT || "mailto:info@edgechase.com";
+  },
 };

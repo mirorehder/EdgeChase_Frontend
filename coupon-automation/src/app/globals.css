@@ -284,6 +284,39 @@ button {
   font-size: 12px;
 }
 
+.push-einrichten {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  margin: 0 0 20px;
+  font-size: 13px;
+}
+
+.push-einrichten.push-an {
+  color: var(--ok);
+}
+
+.push-einrichten.push-verboten {
+  color: var(--warn);
+}
+
+.push-titel {
+  font-weight: 600;
+  margin-bottom: 2px;
+  color: var(--text);
+  font-size: 14px;
+}
+
+.push-text {
+  font-size: 12px;
+}
+
 .ig-gruende {
   font-size: 13px;
   color: var(--muted);

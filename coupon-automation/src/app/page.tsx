@@ -1,5 +1,7 @@
 import { prisma } from "@/lib/db";
+import { env } from "@/lib/env";
 import { EIGENES_KONTO_HINWEIS, GUTSCHEIN, istEffektivAktion } from "@/lib/instagram/verarbeitung";
+import { PushEinrichten } from "./PushEinrichten";
 import { Schalter } from "./Schalter";
 import { Uebersteuerung } from "./Uebersteuerung";
 
@@ -136,6 +138,8 @@ export default async function StartSeite() {
       </p>
 
       <Schalter start={config?.enabled ?? true} wartend={wartend} />
+
+      {env.vapidPublicKey && <PushEinrichten vapidPublicKey={env.vapidPublicKey} />}
 
       {fehlerhafte.length > 0 && (
         <div className="ig-fehlerkasten">
