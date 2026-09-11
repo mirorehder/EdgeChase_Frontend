@@ -22,10 +22,12 @@ export function Uebersteuerung({
   const [wert, setWert] = useState(ueberschreibung);
   const [busy, setBusy] = useState(false);
   const [fehler, setFehler] = useState<string | null>(null);
+  const [rueckmeldung, setRueckmeldung] = useState<string | null>(null);
 
   async function setzen(neu: boolean | null) {
     setBusy(true);
     setFehler(null);
+    setRueckmeldung(null);
 
     try {
       const res = await fetch(`/api/medien/${mediaId}`, {
@@ -33,8 +35,27 @@ export function Uebersteuerung({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ueberschreibung: neu }),
       });
-      if (!res.ok) throw new Error((await res.json()).error ?? "Fehlgeschlagen.");
+      const daten = (await res.json()) as {
+        error?: string;
+        nachbearbeitet?: number;
+        externSchonBearbeitet?: number;
+        pruefungFehlgeschlagen?: number;
+      };
+      if (!res.ok) throw new Error(daten.error ?? "Fehlgeschlagen.");
       setWert(neu);
+
+      // Nur beim Aktivieren gibt der Server Rückmeldung zu re-queued /
+      // externen / gescheiterten Kommentaren - bei den anderen Aktionen
+      // bleibt die Anzeige leer.
+      if (neu === true) {
+        const teile: string[] = [];
+        if (daten.nachbearbeitet) teile.push(`${daten.nachbearbeitet} neu freigegeben`);
+        if (daten.externSchonBearbeitet)
+          teile.push(`${daten.externSchonBearbeitet} bereits extern erledigt`);
+        if (daten.pruefungFehlgeschlagen)
+          teile.push(`${daten.pruefungFehlgeschlagen} Prüfung fehlgeschlagen`);
+        if (teile.length > 0) setRueckmeldung(teile.join(", ") + ".");
+      }
     } catch (err) {
       setFehler(err instanceof Error ? err.message : String(err));
     } finally {
@@ -68,6 +89,7 @@ export function Uebersteuerung({
         </button>
       )}
 
+      {rueckmeldung && <div className="ig-schwach">{rueckmeldung}</div>}
       {fehler && <div className="error-text">{fehler}</div>}
     </div>
   );

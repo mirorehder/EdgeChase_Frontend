@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { env } from "@/lib/env";
+import { ladeAntworten } from "@/lib/instagram/graph";
 import { REEL_KLASSIFIKATION_HINWEISE } from "@/lib/instagram/verarbeitung";
 
 /**
@@ -12,15 +13,27 @@ import { REEL_KLASSIFIKATION_HINWEISE } from "@/lib/instagram/verarbeitung";
  * Schalter reicht.
  *
  * Zusatzwirkung beim Aktivieren als Promo-Reel: alle Kommentare, die früher
- * genau wegen der Reel-Klassifikation übersprungen wurden, werden zurück auf
- * "empfangen" gesetzt und in die Warteschlange geschoben - so als wären sie
- * gerade erst reingekommen. Andere Skip-Gründe (eigenes Konto, Thread-Antwort,
- * kein Name erkennbar) bleiben unangetastet.
+ * genau wegen der Reel-Klassifikation übersprungen wurden, werden für die
+ * Nachbearbeitung freigegeben - aber nur, wenn nicht bereits eine Antwort
+ * unseres eigenen Kontos unter dem Kommentar steht. Steht sie da (etwa von
+ * einer früheren manuellen Route), wird der Kommentar als extern behandelt
+ * markiert und bleibt liegen. So werden Kommentare, die schon von Hand
+ * abgearbeitet wurden, nicht doppelt verarbeitet.
  */
 export const dynamic = "force-dynamic";
 
+/**
+ * Der Doppel-Verarbeitungs-Check macht pro Kandidat einen Graph-API-Aufruf.
+ * Bei vielen zu prüfenden Kommentaren summiert sich das - deshalb der
+ * grosszügigere Rahmen für die Route.
+ */
+export const maxDuration = 60;
+
 /** So lange warten wir auf den Anstoss, bevor wir antworten. */
 const ANSTOSS_MS = 1200;
+
+const EXTERN_HINWEIS =
+  "Extern verarbeitet - Antwort unseres Kontos steht bereits unter dem Kommentar.";
 
 export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
   try {
@@ -39,20 +52,49 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     });
 
     let nachbearbeitet = 0;
-    // Nur beim Aktivieren als Promo-Reel bringt es etwas, die alten
-    // übersprungenen Zeilen zurückzuholen. Ein Zurücksetzen (null) oder
-    // Ausschliessen (false) ist keine neue Information für sie - die Zeilen
-    // waren aus demselben oder einem strengeren Grund schon übersprungen.
+    let externSchonBearbeitet = 0;
+    let pruefungFehlgeschlagen = 0;
+
     if (ueberschreibung === true) {
-      const wieder = await prisma.instagramComment.updateMany({
+      const kandidaten = await prisma.instagramComment.findMany({
         where: {
           mediaId: params.id,
           status: "uebersprungen",
           hinweis: { in: REEL_KLASSIFIKATION_HINWEISE },
         },
-        data: { status: "empfangen", hinweis: null },
       });
-      nachbearbeitet = wieder.count;
+
+      for (const kandidat of kandidaten) {
+        try {
+          const antworten = await ladeAntworten(kandidat.id);
+          const eigeneAntwort = antworten.some((a) => a.fromId === env.igUserId);
+
+          if (eigeneAntwort) {
+            // Sperren, damit der Kommentar auch bei einer erneuten
+            // Reaktivierung nicht wieder in die Warteschlange fällt.
+            await prisma.instagramComment.update({
+              where: { id: kandidat.id },
+              data: { hinweis: EXTERN_HINWEIS },
+            });
+            externSchonBearbeitet++;
+          } else {
+            await prisma.instagramComment.update({
+              where: { id: kandidat.id },
+              data: { status: "empfangen", hinweis: null },
+            });
+            nachbearbeitet++;
+          }
+        } catch (fehler) {
+          // Die Prüfung ist fehlgeschlagen - sicherheitshalber nicht
+          // re-queuen. Lieber einen Kommentar von Hand nachschauen als
+          // einen doppelten Code auf ein bereits erledigtes Reel raushauen.
+          pruefungFehlgeschlagen++;
+          console.error("Prüfung auf eigene Antwort fehlgeschlagen", {
+            commentId: kandidat.id,
+            fehler,
+          });
+        }
+      }
 
       if (nachbearbeitet > 0) await stosseVerarbeitungAn(request);
     }
@@ -61,6 +103,8 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       id: media.id,
       ueberschreibung: media.ueberschreibung,
       nachbearbeitet,
+      externSchonBearbeitet,
+      pruefungFehlgeschlagen,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -68,11 +112,6 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
   }
 }
 
-/**
- * Feuert die Verarbeitungsroute an. Fire-and-forget, denselben Mustern wie in
- * der Webhook-Route folgend: wir warten kurz, damit die Anfrage die Plattform
- * sicher erreicht, aber nie bis zum Ende der Verarbeitung.
- */
 async function stosseVerarbeitungAn(request: NextRequest): Promise<void> {
   const host = request.headers.get("host");
   const proto = request.headers.get("x-forwarded-proto") ?? "https";

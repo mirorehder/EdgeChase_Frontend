@@ -178,6 +178,27 @@ export async function sendePrivateAntwort(commentId: string, text: string): Prom
   return antwort.message_id ?? "";
 }
 
+/**
+ * Liefert die IDs und Autoren aller Antworten auf einen Kommentar.
+ *
+ * Genutzt, um festzustellen, ob unter einem Kommentar bereits eine Antwort
+ * unseres eigenen Kontos steht - dann wurde der Kommentar entweder von der
+ * Automation oder von einer externen Route bereits behandelt und darf nicht
+ * doppelt verarbeitet werden.
+ */
+export async function ladeAntworten(
+  commentId: string,
+): Promise<Array<{ id: string; fromId?: string }>> {
+  const antwort = await graph<{ data?: Array<{ id: string; from?: { id?: string } }> }>(
+    `${commentId}/replies`,
+    { method: "GET", query: { fields: "id,from" } },
+  );
+  return (antwort.data ?? []).map((eintrag) => ({
+    id: eintrag.id,
+    fromId: eintrag.from?.id,
+  }));
+}
+
 /** Antwortet öffentlich unter dem Kommentar. */
 export async function antworteAufKommentar(commentId: string, text: string): Promise<string> {
   const antwort = await graph<{ id?: string }>(`${commentId}/replies`, {
