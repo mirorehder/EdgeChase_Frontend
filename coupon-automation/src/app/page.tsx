@@ -130,7 +130,7 @@ export default async function StartSeite() {
     <main>
       <h1>Instagram-Kommentar-Automat</h1>
       <p className="subtitle">
-        Kommentiert jemand seinen Namen unter einem Aktions-Reel, entsteht ein Gutschein über{" "}
+        Kommentiert jemand seinen Namen unter einem Promo-Reel, entsteht ein Gutschein über{" "}
         {GUTSCHEIN.prozent}% ({GUTSCHEIN.gueltigTage} Tage, einmal einlösbar), geht per DM raus und
         wird öffentlich beantwortet. Ausgelöst von Instagram selbst, nicht von einem Zeitplan.
       </p>
@@ -243,10 +243,10 @@ export default async function StartSeite() {
         </table>
       )}
 
-      <h2 className="abschnitt-titel">Aktions-Reels</h2>
+      <h2 className="abschnitt-titel">Promo-Reels</h2>
       {aktiveMedien.length === 0 ? (
         <p className="empty-state">
-          Noch kein Reel als Aktions-Reel erkannt. Das passiert beim ersten Kommentar darunter.
+          Noch kein Reel als Promo-Reel erkannt. Das passiert beim ersten Kommentar darunter.
         </p>
       ) : (
         <div className="ig-reels">
@@ -284,7 +284,7 @@ export default async function StartSeite() {
         <>
           <h2 className="abschnitt-titel">Andere zuletzt gesehene Reels</h2>
           <p className="subtitle">
-            Diese Reels wurden nicht als Aktions-Reel erkannt. Gehört eines doch dazu, lässt es sich
+            Diese Reels wurden nicht als Promo-Reel erkannt. Gehört eines doch dazu, lässt es sich
             hier von Hand nachtragen.
           </p>
           <div className="ig-reels">

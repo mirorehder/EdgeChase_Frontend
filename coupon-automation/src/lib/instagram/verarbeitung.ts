@@ -34,6 +34,22 @@ const NEGATIVBEISPIELE = 8;
 export const EIGENES_KONTO_HINWEIS = "Kommentar stammt vom eigenen Konto.";
 
 /**
+ * Hinweistexte, die auf die Reel-Klassifikation zurückgehen - dazu genutzt,
+ * die betroffenen Kommentare erneut in die Warteschlange aufzunehmen, wenn
+ * das Reel später doch als Promo-Reel markiert wird.
+ *
+ * Beide Listen: die aktuellen Texte und die früheren "Aktions"-Varianten, damit
+ * auch Zeilen aus der Zeit vor der Umbenennung mit-nachbearbeitet werden.
+ */
+export const REEL_KLASSIFIKATION_HINWEISE = [
+  "Das Reel ist kein Promo-Reel.",
+  "Manuell als kein Promo-Reel markiert.",
+  // Ältere Formulierungen, bevor "Aktion" zu "Promo" umbenannt wurde:
+  "Das Reel ruft nicht zur Namens-Aktion auf.",
+  "Manuell als kein Aktions-Reel markiert.",
+];
+
+/**
  * So lange gilt die zwischengespeicherte Einschätzung eines Reels.
  *
  * Eine Bildunterschrift ändert sich praktisch nie, deshalb wäre ein Abruf je
@@ -155,8 +171,8 @@ async function fuehreAus(zeile: {
       status: "uebersprungen",
       hinweis:
         media.ueberschreibung === false
-          ? "Manuell als kein Aktions-Reel markiert."
-          : "Das Reel ruft nicht zur Namens-Aktion auf.",
+          ? "Manuell als kein Promo-Reel markiert."
+          : "Das Reel ist kein Promo-Reel.",
     };
   }
 

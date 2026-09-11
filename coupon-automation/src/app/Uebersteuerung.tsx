@@ -3,7 +3,7 @@
 import { useState } from "react";
 
 /**
- * Steuerelement, um die automatische Aktions-Reel-Erkennung eines einzelnen
+ * Steuerelement, um die automatische Promo-Reel-Erkennung eines einzelnen
  * Reels von Hand zu übersteuern.
  *
  * Die Texterkennung prüft nur Wörter in der Bildunterschrift - ein Reel wie
@@ -58,7 +58,7 @@ export function Uebersteuerung({
         </button>
       ) : (
         <button className="ig-knopf ig-knopf-klein" onClick={() => setzen(true)} disabled={busy}>
-          {busy ? "…" : "Als Aktions-Reel markieren"}
+          {busy ? "…" : "Als Promo-Reel markieren"}
         </button>
       )}
 
