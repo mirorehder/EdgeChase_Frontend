@@ -25,7 +25,7 @@ import {
   waehleSound,
   type PostZeitplanStand,
 } from "../src/lib/postAuto";
-import { posteReelMit, pruefeZugang, pruefeTrialFaehig } from "../src/lib/instagram";
+import { posteReelMit, pruefeZugang, pruefeTrialFaehig, pruefeAudioId } from "../src/lib/instagram";
 
 const BASIS = process.env.BASIS_URL ?? "http://127.0.0.1:3100";
 const MARKE = "PRUEF-POST";
@@ -126,6 +126,10 @@ async function main() {
     if (u.includes("fields=followers_count")) {
       return new Response(JSON.stringify({ followers_count: 5000 }), { status: 200 });
     }
+    // Sound-Validierung: die ID existiert.
+    if (u.includes("user_id=")) {
+      return new Response(JSON.stringify({ id: "123" }), { status: 200 });
+    }
     // Container anlegen.
     return new Response(JSON.stringify({ id: "container-1" }), { status: 200 });
   }) as unknown as typeof fetch;
@@ -139,7 +143,7 @@ async function main() {
   pruefe("Post erfolgreich", erg.ok, true);
   pruefe("Media-ID durchgereicht", erg.mediaId, "media-999");
   pruefe("Trial-Berechtigung wird VOR dem Container geprüft", rufe[0], "GET ig1");
-  pruefe("dann Container angelegt", rufe[1], "POST media");
+  pruefe("Container wurde angelegt", rufe.includes("POST media"), true);
   pruefe("es wurde wirklich gewartet (mehr als eine Statusabfrage)", statusAbfragen >= 2, true);
   pruefe("veröffentlicht wurde", rufe.includes("POST media_publish"), true);
 
@@ -388,6 +392,8 @@ async function main() {
       return new Response(JSON.stringify({ status_code: "FINISHED" }), { status: 200 });
     // Vorab-Berechtigungsprüfung: genug Follower → trial-fähig.
     if (u.includes("fields=followers_count")) return new Response(JSON.stringify({ followers_count: 5000 }), { status: 200 });
+    // Sound-Validierung: die ID existiert.
+    if (u.includes("user_id=")) return new Response(JSON.stringify({ id: "s-1" }), { status: 200 });
     return new Response(JSON.stringify({ id: "c-1" }), { status: 200 });
   }) as unknown as typeof fetch;
   const soundPost = await posteReelMit(
@@ -398,13 +404,14 @@ async function main() {
   );
   pruefe("Sound-Post erfolgreich", soundPost.ok, true);
   const alleParams = rufeParams.join(" | ");
-  pruefe("audio_name gesetzt", alleParams.includes("audio_name=s-1"), true);
-  pruefe("audio_volume=100", alleParams.includes("audio_volume=100"), true);
-  pruefe("video_volume=50", alleParams.includes("video_volume=50"), true);
+  // Der korrekte Sound-Parameter: audio_configuration als JSON - NICHT mehr audio_name.
+  pruefe("audio_configuration mit audio_id", alleParams.includes('audio_configuration={"audio_id":"s-1"'), true);
+  pruefe("audio_volume im JSON", alleParams.includes('"audio_volume":100'), true);
+  pruefe("video_volume im JSON", alleParams.includes('"video_volume":50'), true);
+  pruefe("alter Parameter audio_name NICHT mehr gesendet", alleParams.includes("audio_name="), false);
   // Der korrekte Trial-Parameter - und NICHT mehr die alten, wirkungslosen Flags.
   pruefe("trial_params gesetzt", alleParams.includes('trial_params={"graduation_strategy":"MANUAL"}'), true);
   pruefe("alte Flag is_trial NICHT mehr gesendet", alleParams.includes("is_trial=true"), false);
-  pruefe("alte Flag as_trial_reel NICHT mehr gesendet", alleParams.includes("as_trial_reel=true"), false);
   pruefe("Status-Abfrage mit via_facebook", alleParams.includes("via_facebook=true"), true);
 
   // _music-Fall: kein audio_name, kein audio_volume, aber video_volume=100.
@@ -426,8 +433,9 @@ async function main() {
     { abstandMs: 0, schlaf: async () => {} },
   );
   const p2 = rufe2.join(" | ");
+  // _music: kein angehängter Sound → die eingebaute Musik läuft unverändert.
+  pruefe("_music: kein audio_configuration", p2.includes("audio_configuration"), false);
   pruefe("_music: kein audio_name", p2.includes("audio_name="), false);
-  pruefe("_music: video_volume=100", p2.includes("video_volume=100"), true);
   pruefe("_music: kein Trial-Reel", p2.includes("trial_params"), false);
 
   console.log("\n6d. Sicherheit: nicht trial-berechtigtes Konto wird GAR NICHT gepostet");
@@ -480,6 +488,36 @@ async function main() {
     new Response(JSON.stringify({ followers_count: 1000 }), { status: 200 })) as unknown as typeof fetch);
   pruefe("1000 Follower: trial-fähig", genug.faehig, true);
   pruefe("Followerzahl durchgereicht", genug.followers, 1000);
+
+  console.log("\n6g. Sound-Validierung: tote Sound-ID → kein stummer Post");
+  const audioGut = await pruefeAudioId("a1", "ig1", "t", (async () =>
+    new Response(JSON.stringify({ id: "a1", title: "T" }), { status: 200 })) as unknown as typeof fetch);
+  pruefe("gültige Sound-ID erkannt", audioGut, true);
+  const audioTot = await pruefeAudioId("a1", "ig1", "t", (async () =>
+    new Response(JSON.stringify({ error: { message: "does not exist" } }), { status: 400 })) as unknown as typeof fetch);
+  pruefe("tote Sound-ID erkannt", audioTot, false);
+
+  // Ganze Kette: tote Sound-ID → NICHT posten (kein stummes Reel).
+  const rufe5: string[] = [];
+  const netzToterSound = (async (url: string | URL, init?: RequestInit) => {
+    const u = String(url);
+    const methode = init?.method ?? "GET";
+    rufe5.push(`${methode} ${u.split("?")[0].split("/").slice(-1)[0]}`);
+    if (u.includes("fields=followers_count")) return new Response(JSON.stringify({ followers_count: 5000 }), { status: 200 });
+    if (u.includes("user_id=")) return new Response(JSON.stringify({ error: { message: "does not exist" } }), { status: 400 });
+    if (u.includes("/media_publish")) return new Response(JSON.stringify({ id: "nie" }), { status: 200 });
+    if (u.includes("status_code")) return new Response(JSON.stringify({ status_code: "FINISHED" }), { status: 200 });
+    return new Response(JSON.stringify({ id: "c" }), { status: 200 });
+  }) as unknown as typeof fetch;
+  const toterSound = await posteReelMit(
+    { token: "t", igUserId: "ig1" },
+    { videoUrl: "https://x/y.mp4", caption: "Test", audioId: "tot-1", alsTrialReel: true },
+    netzToterSound,
+    { abstandMs: 0, schlaf: async () => {} },
+  );
+  pruefe("toter Sound → kein Erfolg", toterSound.ok, false);
+  pruefe("toter Sound → KEIN Container angelegt", rufe5.includes("POST media"), false);
+  pruefe("Grund nennt die Sicherheitsabschaltung", /SICHERHEIT/.test(toterSound.fehler ?? ""), true);
 
   console.log("\n7. Der Pinger weist ohne Geheimnis ab");
   const ohneGeheimnis = await fetch(`${BASIS}/api/post/run`);

@@ -185,6 +185,31 @@ export async function pruefeTrialFaehig(
 }
 
 /**
+ * Prüft, ob eine Sound-ID bei Instagram wirklich existiert/verwendbar ist.
+ *
+ * Warum nötig: Der API-Katalog ist kleiner als die App - manche IDs liefern
+ * "does not exist" (meist Lizenzgründe bei kommerzieller Musik). Hängt man so
+ * eine ID an, kann das Reel ohne Sound rausgehen. Deshalb vor dem Posten
+ * prüfen und im Zweifel lieber NICHT posten (kein stummes Reel).
+ */
+export async function pruefeAudioId(
+  audioId: string,
+  igUserId: string,
+  token: string,
+  netz: typeof fetch = fetch,
+): Promise<boolean> {
+  try {
+    const res = await netz(
+      `${GRAPH}/${audioId}?user_id=${encodeURIComponent(igUserId)}&access_token=${encodeURIComponent(token)}`,
+    );
+    const daten = (await res.json()) as { id?: string; error?: unknown };
+    return res.ok && !daten.error && !!daten.id;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Der reine Ablauf, mit einer einspeisbaren fetch- und schlaf-Funktion.
  *
  * Ausgelagert, damit sich der Dreischritt gegen eine nachgebildete API prüfen
@@ -223,6 +248,22 @@ export async function posteReelMit(
     }
   }
 
+  // 0b. SICHERHEIT: Sound muss wirklich existieren (kein stummes Reel).
+  //
+  // Ein angehängter, aber toter Sound (Lizenz/Katalog) ergäbe ein Reel ohne
+  // Ton. Deshalb die ID vorab prüfen und andernfalls gar nicht posten.
+  if (auftrag.audioId) {
+    const soundOk = await pruefeAudioId(auftrag.audioId, igUserId, token, netz);
+    if (!soundOk) {
+      return {
+        ok: false,
+        fehler:
+          `SICHERHEIT: Sound-ID ${auftrag.audioId} ist bei Instagram nicht verfügbar. ` +
+          "Nicht gepostet, um ein stummes Reel zu vermeiden.",
+      };
+    }
+  }
+
   // 1. Container anlegen.
   const anlegen = new URLSearchParams({
     media_type: "REELS",
@@ -231,17 +272,20 @@ export async function posteReelMit(
     access_token: token,
   });
   if (auftrag.audioId) {
-    // audio_name ist der dokumentierte Parameter für angehängte Sounds
-    // (Original-Sound-ID oder Music-Katalog-ID gleichermassen).
-    anlegen.set("audio_name", auftrag.audioId);
-    // 50 % Filmton unter voller Musik: der Originalton bleibt hörbar, mischt
-    // sich aber unter den Sound. Wert stammt aus dem bewährten Posting-Prompt.
-    anlegen.set("audio_volume", "100");
-    anlegen.set("video_volume", "50");
-  } else if (auftrag.hatEigeneMusik) {
-    // Video hat schon eigene Musik: kein zweiter Sound, Filmton laut.
-    anlegen.set("video_volume", "100");
+    // So wird ein Instagram-Sound WIRKLICH angehängt: ein einziges JSON-Feld
+    // "audio_configuration" mit audio_id, audio_volume und video_volume.
+    //
+    // Der frühere Parameter "audio_name" hat den Sound NICHT angehängt - er
+    // benennt nur die im Video vorhandene Tonspur. Deshalb liefen die Reels
+    // ohne den gewählten Sound. video_volume: 50 hält den Originalton unter
+    // der Musik hörbar.
+    anlegen.set(
+      "audio_configuration",
+      JSON.stringify({ audio_id: auftrag.audioId, audio_volume: 100, video_volume: 50 }),
+    );
   }
+  // hatEigeneMusik (Dateiname _music): KEIN audio_configuration - dann läuft die
+  // im Video eingebaute Musik/der Filmton unverändert in voller Lautstärke.
   // Trial-Reels: nur an Nicht-Follower zum Test, nicht im Profil.
   //
   // WICHTIG - hier lag der Fehler, durch den ein Reel ÖFFENTLICH ging: die
