@@ -25,7 +25,7 @@ import {
   waehleSound,
   type PostZeitplanStand,
 } from "../src/lib/postAuto";
-import { posteReelMit, pruefeZugang } from "../src/lib/instagram";
+import { posteReelMit, pruefeZugang, pruefeTrialFaehig } from "../src/lib/instagram";
 
 const BASIS = process.env.BASIS_URL ?? "http://127.0.0.1:3100";
 const MARKE = "PRUEF-POST";
@@ -122,9 +122,9 @@ async function main() {
         { status: 200 },
       );
     }
-    // Feed-Abfrage des Sicherheitsnetzes: leer = Reel NICHT öffentlich = Trial.
-    if (methode === "GET" && u.includes("/media?fields=id")) {
-      return new Response(JSON.stringify({ data: [] }), { status: 200 });
+    // Vorab-Berechtigungsprüfung: genug Follower → trial-fähig.
+    if (u.includes("fields=followers_count")) {
+      return new Response(JSON.stringify({ followers_count: 5000 }), { status: 200 });
     }
     // Container anlegen.
     return new Response(JSON.stringify({ id: "container-1" }), { status: 200 });
@@ -134,14 +134,14 @@ async function main() {
     { token: "t", igUserId: "ig1" },
     { videoUrl: "https://bucket/x.mp4", caption: "Test", audioId: "123", alsTrialReel: true },
     netz,
-    { abstandMs: 0, schlaf: async () => {}, verifyVersuche: 1 },
+    { abstandMs: 0, schlaf: async () => {} },
   );
   pruefe("Post erfolgreich", erg.ok, true);
   pruefe("Media-ID durchgereicht", erg.mediaId, "media-999");
-  pruefe("Reihenfolge: erst Container, dann Status, dann publish", rufe[0], "POST media");
+  pruefe("Trial-Berechtigung wird VOR dem Container geprüft", rufe[0], "GET ig1");
+  pruefe("dann Container angelegt", rufe[1], "POST media");
   pruefe("es wurde wirklich gewartet (mehr als eine Statusabfrage)", statusAbfragen >= 2, true);
   pruefe("veröffentlicht wurde", rufe.includes("POST media_publish"), true);
-  pruefe("Sicherheitsnetz hat den Feed geprüft", rufe.includes("GET media"), true);
 
   // Ein ERROR-Status bricht sauber ab.
   const netzFehler = (async (url: string | URL) => {
@@ -386,15 +386,15 @@ async function main() {
     if (u.includes("/media_publish")) return new Response(JSON.stringify({ id: "m-9" }), { status: 200 });
     if (u.includes("status_code"))
       return new Response(JSON.stringify({ status_code: "FINISHED" }), { status: 200 });
-    // Sicherheitsnetz-Feedabfrage: leer = nicht öffentlich = Trial bestätigt.
-    if (u.includes("/media?fields=id")) return new Response(JSON.stringify({ data: [] }), { status: 200 });
+    // Vorab-Berechtigungsprüfung: genug Follower → trial-fähig.
+    if (u.includes("fields=followers_count")) return new Response(JSON.stringify({ followers_count: 5000 }), { status: 200 });
     return new Response(JSON.stringify({ id: "c-1" }), { status: 200 });
   }) as unknown as typeof fetch;
   const soundPost = await posteReelMit(
     { token: "t", igUserId: "ig1" },
     { videoUrl: "https://x/y.mp4", caption: "Test", audioId: "s-1", alsTrialReel: true },
     nurCode,
-    { abstandMs: 0, schlaf: async () => {}, verifyVersuche: 1 },
+    { abstandMs: 0, schlaf: async () => {} },
   );
   pruefe("Sound-Post erfolgreich", soundPost.ok, true);
   const alleParams = rufeParams.join(" | ");
@@ -430,57 +430,56 @@ async function main() {
   pruefe("_music: video_volume=100", p2.includes("video_volume=100"), true);
   pruefe("_music: kein Trial-Reel", p2.includes("trial_params"), false);
 
-  console.log("\n6d. Sicherheitsnetz: öffentlich gewordenes Reel wird gelöscht");
+  console.log("\n6d. Sicherheit: nicht trial-berechtigtes Konto wird GAR NICHT gepostet");
   const rufe3: string[] = [];
-  let geloescht = false;
-  const netzOeffentlich = (async (url: string | URL, init?: RequestInit) => {
+  const netzWenigFollower = (async (url: string | URL, init?: RequestInit) => {
     const u = String(url);
     const methode = init?.method ?? "GET";
     rufe3.push(`${methode} ${u.split("?")[0].split("/").slice(-1)[0]}`);
-    if (methode === "DELETE") {
-      geloescht = true;
-      return new Response(JSON.stringify({ success: true }), { status: 200 });
-    }
-    if (u.includes("/media_publish")) return new Response(JSON.stringify({ id: "m-oeff" }), { status: 200 });
+    // Konto mit zu wenigen Followern → NICHT trial-berechtigt.
+    if (u.includes("fields=followers_count")) return new Response(JSON.stringify({ followers_count: 200 }), { status: 200 });
+    if (u.includes("/media_publish")) return new Response(JSON.stringify({ id: "sollte-nie" }), { status: 200 });
     if (u.includes("status_code")) return new Response(JSON.stringify({ status_code: "FINISHED" }), { status: 200 });
-    // Der Feed zeigt das gerade gepostete Reel → es ist ÖFFENTLICH geworden.
-    if (u.includes("/media?fields=id"))
-      return new Response(JSON.stringify({ data: [{ id: "m-oeff" }] }), { status: 200 });
-    return new Response(JSON.stringify({ id: "c-oeff" }), { status: 200 });
+    return new Response(JSON.stringify({ id: "c-x" }), { status: 200 });
   }) as unknown as typeof fetch;
-  const oeffentlichErg = await posteReelMit(
+  const zuWenig = await posteReelMit(
     { token: "t", igUserId: "ig1" },
     { videoUrl: "https://x/y.mp4", caption: "Test", audioId: "s-1", alsTrialReel: true },
-    netzOeffentlich,
-    { abstandMs: 0, schlaf: async () => {}, verifyVersuche: 1 },
+    netzWenigFollower,
+    { abstandMs: 0, schlaf: async () => {} },
   );
-  pruefe("öffentlich erkannt → NICHT als Erfolg gewertet", oeffentlichErg.ok, false);
-  pruefe("öffentlich erkannt → Reel wurde gelöscht (DELETE)", geloescht, true);
-  pruefe("Fehlermeldung nennt die Sicherheitsabschaltung", /SICHERHEIT/.test(oeffentlichErg.fehler ?? ""), true);
+  pruefe("nicht trial-berechtigt → kein Erfolg", zuWenig.ok, false);
+  pruefe("Grund nennt die Sicherheitsabschaltung", /SICHERHEIT/.test(zuWenig.fehler ?? ""), true);
+  pruefe("es wurde KEIN Container angelegt", rufe3.includes("POST media"), false);
+  pruefe("es wurde NICHT veröffentlicht", rufe3.includes("POST media_publish"), false);
 
-  console.log("\n6e. Sicherheitsnetz: unklarer Feed (Fehler) → vorsorglich gelöscht");
-  let geloescht2 = false;
-  const netzUnklar = (async (url: string | URL, init?: RequestInit) => {
+  console.log("\n6e. Sicherheit: Followerzahl nicht lesbar → ebenfalls kein Post");
+  const rufe4: string[] = [];
+  const netzFollowerFehler = (async (url: string | URL, init?: RequestInit) => {
     const u = String(url);
     const methode = init?.method ?? "GET";
-    if (methode === "DELETE") {
-      geloescht2 = true;
-      return new Response(JSON.stringify({ success: true }), { status: 200 });
-    }
-    if (u.includes("/media_publish")) return new Response(JSON.stringify({ id: "m-unklar" }), { status: 200 });
-    if (u.includes("status_code")) return new Response(JSON.stringify({ status_code: "FINISHED" }), { status: 200 });
-    // Feedabfrage schlägt fehl → Trial-Status nicht bestätigbar.
-    if (u.includes("/media?fields=id")) return new Response(JSON.stringify({ error: { message: "kaputt" } }), { status: 500 });
-    return new Response(JSON.stringify({ id: "c-unklar" }), { status: 200 });
+    rufe4.push(`${methode} ${u.split("?")[0].split("/").slice(-1)[0]}`);
+    if (u.includes("fields=followers_count")) return new Response(JSON.stringify({ error: { message: "kaputt" } }), { status: 500 });
+    if (u.includes("/media_publish")) return new Response(JSON.stringify({ id: "sollte-nie" }), { status: 200 });
+    return new Response(JSON.stringify({ id: "c-x" }), { status: 200 });
   }) as unknown as typeof fetch;
-  const unklarErg = await posteReelMit(
+  const nichtLesbar = await posteReelMit(
     { token: "t", igUserId: "ig1" },
     { videoUrl: "https://x/y.mp4", caption: "Test", audioId: "s-1", alsTrialReel: true },
-    netzUnklar,
-    { abstandMs: 0, schlaf: async () => {}, verifyVersuche: 2 },
+    netzFollowerFehler,
+    { abstandMs: 0, schlaf: async () => {} },
   );
-  pruefe("unklarer Status → NICHT als Erfolg gewertet", unklarErg.ok, false);
-  pruefe("unklarer Status → vorsorglich gelöscht", geloescht2, true);
+  pruefe("Berechtigung nicht prüfbar → kein Erfolg", nichtLesbar.ok, false);
+  pruefe("nicht prüfbar → kein Container", rufe4.includes("POST media"), false);
+
+  console.log("\n6f. Berechtigungsprüfung: ab 1000 Followern trial-fähig");
+  const wenig = await pruefeTrialFaehig("ig1", "t", (async () =>
+    new Response(JSON.stringify({ followers_count: 999 }), { status: 200 })) as unknown as typeof fetch);
+  pruefe("999 Follower: nicht trial-fähig", wenig.faehig, false);
+  const genug = await pruefeTrialFaehig("ig1", "t", (async () =>
+    new Response(JSON.stringify({ followers_count: 1000 }), { status: 200 })) as unknown as typeof fetch);
+  pruefe("1000 Follower: trial-fähig", genug.faehig, true);
+  pruefe("Followerzahl durchgereicht", genug.followers, 1000);
 
   console.log("\n7. Der Pinger weist ohne Geheimnis ab");
   const ohneGeheimnis = await fetch(`${BASIS}/api/post/run`);

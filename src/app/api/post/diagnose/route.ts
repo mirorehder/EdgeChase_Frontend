@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { env } from "@/lib/env";
 import { prisma } from "@/lib/db";
 import { TRACK_LISTE, bewertungsart, type Track } from "@/lib/trackClient";
-import { igZugang, pruefeZugang } from "@/lib/instagram";
+import { igZugang, pruefeZugang, pruefeTrialFaehig } from "@/lib/instagram";
 import { getPostZeitplan, naechstesVideo, letzteLaeufe, bestandDerSparte } from "@/lib/postAuto";
 import { getViralSchedule } from "@/lib/viralSchedule";
 import { MIN_USABLE_ANALYSIS_VERSION } from "@/lib/pipeline";
@@ -79,6 +79,10 @@ export async function GET(request: NextRequest) {
       const generierung = await generierungsDiagnose(b.key);
       // Live prüfen, ob der Token wirklich trägt - nicht nur, ob er gesetzt ist.
       const tokenPruefung = zugang ? await pruefeZugang(zugang) : null;
+      // Darf das Konto Trial-Reels? (Sonst würde trial_params ignoriert und
+      // öffentlich gepostet.) Nur sinnvoll, wenn der Token trägt.
+      const trial =
+        zugang && tokenPruefung?.ok ? await pruefeTrialFaehig(zugang.igUserId, zugang.token) : null;
 
       return {
         sparte: b.key,
@@ -97,6 +101,11 @@ export async function GET(request: NextRequest) {
         tokenGueltig: tokenPruefung ? tokenPruefung.ok : null,
         tokenKonto: tokenPruefung?.konto ?? null,
         tokenFehler: tokenPruefung && !tokenPruefung.ok ? tokenPruefung.fehler : null,
+        // Trial-Berechtigung: nur ein trial-fähiges Konto postet als Trial statt
+        // öffentlich. Ist das false, blockt die App den automatischen Post.
+        trialFaehig: trial ? trial.faehig : null,
+        follower: trial ? trial.followers : null,
+        trialHinweis: trial && !trial.faehig ? trial.grund : null,
         zeitplan: {
           an: zeitplan.enabled,
           // Welche Betriebsart greift - genau das war bei "10:00 hat nicht

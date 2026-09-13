@@ -1,35 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
 import { env } from "@/lib/env";
 import { trackFromValue } from "@/lib/trackParam";
-import { igZugang, loescheMedia, posteReelMit } from "@/lib/instagram";
+import { igZugang, pruefeZugang, pruefeTrialFaehig, TRIAL_MIN_FOLLOWERS } from "@/lib/instagram";
 
-// Instagram-Verarbeitung dauert; Luft lassen.
-export const maxDuration = 300;
 export const dynamic = "force-dynamic";
 
 /**
- * Sicherheits-Testlauf für Trial-Reels.
+ * Trial-Sicherheitscheck - OHNE etwas zu posten.
  *
- * Beantwortet die Frage "geht das Video wirklich als Trial raus und nicht
- * öffentlich?" - an einem echten Post, aber ohne bleibende Spur:
+ * Früher hat diese Route testweise ein echtes Reel veröffentlicht und danach
+ * geprüft, ob es öffentlich ist. Das war doppelt unklug: Trial-Reels erscheinen
+ * ebenfalls in der API-Medienliste (also war die "öffentlich?"-Prüfung
+ * unzuverlässig), und der Test selbst hat real gepostet.
  *
- *   1. Postet EIN Reel mit trial_params (wie im Echtbetrieb).
- *   2. Das Sicherheitsnetz in posteReelMit prüft danach, ob es im öffentlichen
- *      Feed auftaucht. Falls ja, wird es dort schon sofort gelöscht und als
- *      Fehler gemeldet - dann wissen wir: Trial greift NICHT.
- *   3. War es nicht öffentlich (also korrekt Trial), löscht dieser Testlauf das
- *      Reel anschliessend selbst wieder, damit der Test nichts hinterlässt.
+ * Jetzt rein lesend: Sie prüft, ob das Konto Trial-Reels überhaupt darf
+ * (öffentliches Professional-Konto mit ≥ 1.000 Followern). Genau das entscheidet,
+ * ob ein automatischer Post als Trial läuft oder öffentlich würde. Ist das Konto
+ * berechtigt, greift beim echten Posten trial_params zuverlässig - und die App
+ * blockt einen Post ohnehin, falls die Berechtigung fehlt.
  *
- * Ergebnis:
- *   - istTrial: true  → alles gut, so darf automatisch gepostet werden.
- *   - istTrial: false → das Reel wäre öffentlich gewesen (wurde gelöscht),
- *                       NICHT automatisch posten lassen.
- *
- * Geschützt über CRON_SECRET. Parameter:
- *   ?track=clothing        welches Konto/Sparte (Standard: clothing = EdgeChase)
- *   ?videoUrl=https://...  optional eigenes Testvideo; sonst das neueste fertige
- *                          Video der Sparte mit öffentlicher Kopie.
+ * Geschützt über CRON_SECRET. Parameter: ?track=clothing (Standard) / promo /
+ * viral / sports.
  */
 async function lauf(request: NextRequest) {
   const ausHeader = request.headers.get("authorization");
@@ -48,63 +39,27 @@ async function lauf(request: NextRequest) {
     );
   }
 
-  // Testvideo bestimmen: entweder mitgegeben, oder das neueste fertige mit Kopie.
-  let videoUrl = request.nextUrl.searchParams.get("videoUrl");
-  if (!videoUrl) {
-    const kandidat = await prisma.promoVideo.findFirst({
-      where: { track, status: "done", publicUrl: { not: null } },
-      orderBy: { createdAt: "desc" },
-      select: { publicUrl: true },
-    });
-    videoUrl = kandidat?.publicUrl ?? null;
-  }
-  if (!videoUrl) {
-    return NextResponse.json(
-      { error: `Kein Testvideo: die Sparte "${track}" hat kein fertiges Video mit öffentlicher Kopie. Gib ?videoUrl=… an.` },
-      { status: 400 },
-    );
-  }
-
-  // Echter Trial-Post mit dem Sicherheitsnetz aus posteReelMit.
-  const ergebnis = await posteReelMit(
-    zugang,
-    {
-      videoUrl,
-      caption: "Trial-Sicherheitstest – wird automatisch wieder gelöscht.",
-      audioId: null,
-      alsTrialReel: true,
-    },
-    fetch,
-  );
-
-  // Fall A: Das Sicherheitsnetz hat angeschlagen (öffentlich erkannt oder nicht
-  // bestätigbar) und bereits gelöscht bzw. gemeldet.
-  if (!ergebnis.ok) {
+  const token = await pruefeZugang(zugang);
+  if (!token.ok) {
     return NextResponse.json({
-      istTrial: false,
-      videoUrl,
-      hinweis:
-        "Das Reel wäre NICHT als Trial rausgegangen. Das Sicherheitsnetz hat eingegriffen. " +
-        "Posting-Automatik für dieses Konto NICHT einschalten, bis das geklärt ist.",
-      detail: ergebnis.fehler ?? null,
-      trockenlauf: ergebnis.trockenlauf ?? false,
+      track,
+      tokenGueltig: false,
+      tokenFehler: token.fehler ?? null,
+      hinweis: "Token ungültig - erst den Token in Vercel richten, dann erneut prüfen.",
     });
   }
 
-  // Fall B: Trial bestätigt (nicht im öffentlichen Feed). Testreel wieder
-  // entfernen, damit der Test nichts hinterlässt.
-  const aufgeraeumt = ergebnis.mediaId
-    ? await loescheMedia(ergebnis.mediaId, zugang.token)
-    : false;
-
+  const trial = await pruefeTrialFaehig(zugang.igUserId, zugang.token);
   return NextResponse.json({
-    istTrial: true,
-    videoUrl,
-    mediaId: ergebnis.mediaId ?? null,
-    testreelGeloescht: aufgeraeumt,
-    hinweis: aufgeraeumt
-      ? "Trial bestätigt: Das Reel war NICHT öffentlich sichtbar und wurde nach dem Test wieder gelöscht. Automatik ist sicher."
-      : "Trial bestätigt (nicht öffentlich), aber das Testreel konnte nicht automatisch gelöscht werden - bitte das Trial-Reel von Hand entfernen.",
+    track,
+    konto: token.konto ?? null,
+    tokenGueltig: true,
+    trialFaehig: trial.faehig,
+    follower: trial.followers,
+    mindestFollower: TRIAL_MIN_FOLLOWERS,
+    hinweis: trial.faehig
+      ? "Konto ist trial-berechtigt: ein automatischer Post läuft als Trial-Reel (nicht öffentlich)."
+      : `Konto ist NICHT trial-berechtigt (${trial.grund}). Die App würde einen Post blockieren, statt öffentlich zu posten.`,
   });
 }
 

@@ -104,20 +104,21 @@ interface WartenOptionen {
   abstandMs?: number;
   /** Für den Test überschreibbar. */
   schlaf?: (ms: number) => Promise<void>;
-  /** Wie oft nach dem Posten geprüft wird, ob das Trial-Reel doch öffentlich ist. */
-  verifyVersuche?: number;
-  /** Pause zwischen diesen Prüfungen, in Millisekunden. */
-  verifyAbstandMs?: number;
 }
 
 const schlafStandard = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 /**
- * Löscht ein veröffentlichtes Medium wieder. Der dokumentierte Weg ist
- * DELETE /{ig-media-id} (nur mit Facebook-Login möglich - den nutzen wir).
- *
- * Gebraucht vom Sicherheitsnetz: ein Reel, das fälschlich öffentlich statt als
- * Trial erschien, muss sofort wieder weg.
+ * Ab wie vielen Followern ein Konto Trial-Reels über die API veröffentlichen
+ * darf. Unterhalb dieser Grenze ignoriert Instagram den trial_params-Parameter
+ * und postet ÖFFENTLICH - deshalb ist das die entscheidende Vorab-Prüfung.
+ */
+export const TRIAL_MIN_FOLLOWERS = 1000;
+
+/**
+ * Löscht ein veröffentlichtes Medium wieder (DELETE /{ig-media-id}, nur mit
+ * Facebook-Login). Als Notfallwerkzeug erhalten - etwa um ein versehentlich
+ * öffentliches Reel von Hand über die App zu entfernen.
  */
 export async function loescheMedia(
   mediaId: string,
@@ -136,30 +137,50 @@ export async function loescheMedia(
 }
 
 /**
- * Sucht ein Medium im ÖFFENTLICHEN Feed des Kontos.
+ * Prüft, ob ein Konto Trial-Reels über die API veröffentlichen darf.
  *
- * Ein Trial-Reel erscheint dort NICHT (es wird nur Nicht-Followern gezeigt und
- * steht nicht im Profil). Taucht ein gerade gepostetes Reel hier auf, ist es
- * also öffentlich geworden - genau der Fall, den das Sicherheitsnetz abfängt.
+ * Warum das der richtige Schutz ist: Trial-Reels sind nur für öffentliche
+ * Professional-Konten ab ~1.000 Followern freigeschaltet. Erfüllt ein Konto das
+ * nicht, nimmt Instagram den trial_params-Parameter zwar an, veröffentlicht das
+ * Reel aber trotzdem ÖFFENTLICH. Deshalb wird VOR dem Posten geprüft - und bei
+ * fehlender Berechtigung gar nicht erst gepostet, statt einen öffentlichen Post
+ * zu riskieren.
  *
- * Rückgabe: true = öffentlich sichtbar, false = nicht im Feed (= Trial, gut),
- * null = ließ sich nicht feststellen (API-Fehler).
+ * (Ein Prüfen NACH dem Posten - ob das Reel im Feed auftaucht - ist KEIN
+ * verlässliches Signal: Trial-Reels erscheinen ebenfalls in der API-Medienliste
+ * des Kontos, nur nicht im Profil der Follower.)
  */
-async function erscheintImFeed(
+export async function pruefeTrialFaehig(
   igUserId: string,
-  mediaId: string,
   token: string,
-  netz: typeof fetch,
-): Promise<boolean | null> {
+  netz: typeof fetch = fetch,
+): Promise<{ faehig: boolean; followers: number | null; grund?: string }> {
   try {
     const res = await netz(
-      `${GRAPH}/${igUserId}/media?fields=id&limit=25&access_token=${encodeURIComponent(token)}`,
+      `${GRAPH}/${igUserId}?fields=followers_count&access_token=${encodeURIComponent(token)}`,
     );
-    const daten = (await res.json()) as { data?: { id?: string }[]; error?: unknown };
-    if (!res.ok || daten.error || !Array.isArray(daten.data)) return null;
-    return daten.data.some((m) => m.id === mediaId);
-  } catch {
-    return null;
+    const daten = (await res.json()) as {
+      followers_count?: number;
+      error?: { message?: string };
+    };
+    if (!res.ok || daten.error || typeof daten.followers_count !== "number") {
+      return {
+        faehig: false,
+        followers: null,
+        grund: daten.error?.message ?? "Followerzahl ließ sich nicht lesen",
+      };
+    }
+    const followers = daten.followers_count;
+    if (followers < TRIAL_MIN_FOLLOWERS) {
+      return {
+        faehig: false,
+        followers,
+        grund: `nur ${followers} Follower (Trial-Reels brauchen ≥ ${TRIAL_MIN_FOLLOWERS})`,
+      };
+    }
+    return { faehig: true, followers };
+  } catch (err) {
+    return { faehig: false, followers: null, grund: err instanceof Error ? err.message : String(err) };
   }
 }
 
@@ -184,6 +205,23 @@ export async function posteReelMit(
   const versuche = opt.versuche ?? 30;
   const abstandMs = opt.abstandMs ?? 60_000;
   const schlaf = opt.schlaf ?? schlafStandard;
+
+  // 0. SICHERHEIT: Trial nur auf einem trial-berechtigten Konto.
+  //
+  // Ist das Konto nicht berechtigt (< 1.000 Follower), würde Instagram das Reel
+  // trotz trial_params ÖFFENTLICH veröffentlichen. Deshalb vorher prüfen und im
+  // Zweifel gar nicht posten - lieber kein Post als ein öffentlicher.
+  if (auftrag.alsTrialReel) {
+    const faehig = await pruefeTrialFaehig(igUserId, token, netz);
+    if (!faehig.faehig) {
+      return {
+        ok: false,
+        fehler:
+          `SICHERHEIT: Konto nicht trial-berechtigt (${faehig.grund}). ` +
+          "Nicht gepostet, um einen öffentlichen Post zu vermeiden.",
+      };
+    }
+  }
 
   // 1. Container anlegen.
   const anlegen = new URLSearchParams({
@@ -259,47 +297,8 @@ export async function posteReelMit(
   if (!pubRes.ok || !pubDaten.id) {
     return { ok: false, fehler: pubDaten.error?.message || "Veröffentlichen fehlgeschlagen." };
   }
-  const mediaId = pubDaten.id;
 
-  // 4. SICHERHEITSNETZ für Trial-Reels.
-  //
-  // Ein Trial-Reel darf NIEMALS öffentlich erscheinen. Verlässt sich die App
-  // allein auf den richtigen Parameter, bleibt ein Restrisiko (falscher Wert,
-  // API-Änderung, nicht berechtigtes Konto). Deshalb wird nach dem Posten
-  // aktiv geprüft, ob das Reel im öffentlichen Feed auftaucht - und wenn ja
-  // (oder wenn es sich partout nicht bestätigen lässt), sofort wieder gelöscht.
-  // Lieber gar kein Post als ein öffentlicher.
-  if (auftrag.alsTrialReel) {
-    const verifyVersuche = opt.verifyVersuche ?? 3;
-    const verifyAbstandMs = opt.verifyAbstandMs ?? 3000;
-
-    // Mehrfach prüfen: ein öffentlicher Post kann verzögert im Feed auftauchen.
-    // Sobald er sichtbar ist, sofort abbrechen. Der letzte Prüfwert entscheidet:
-    // false = nicht im Feed (gewollter Trial-Zustand), true = öffentlich,
-    // null = nicht feststellbar (dann sicherheitshalber behandeln wie öffentlich).
-    let sichtbar: boolean | null = null;
-    for (let i = 0; i < verifyVersuche; i++) {
-      sichtbar = await erscheintImFeed(igUserId, mediaId, token, netz);
-      if (sichtbar === true) break;
-      if (i < verifyVersuche - 1) await schlaf(verifyAbstandMs);
-    }
-
-    if (sichtbar !== false) {
-      const geloescht = await loescheMedia(mediaId, token, netz);
-      const wie = geloescht
-        ? "wurde sofort wieder gelöscht"
-        : "konnte NICHT automatisch gelöscht werden - bitte umgehend von Hand entfernen";
-      return {
-        ok: false,
-        fehler:
-          sichtbar === true
-            ? `SICHERHEIT: Reel wurde öffentlich statt als Trial veröffentlicht und ${wie}.`
-            : `SICHERHEIT: Trial-Status ließ sich nicht bestätigen; das Reel ${wie}.`,
-      };
-    }
-  }
-
-  return { ok: true, mediaId };
+  return { ok: true, mediaId: pubDaten.id };
 }
 
 /**
