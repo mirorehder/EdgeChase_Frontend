@@ -15,6 +15,7 @@ import { prisma } from "./db";
 import type { Track } from "./trackClient";
 import { TRACKS, trackBeschreibung } from "./trackClient";
 import { istVerwendbar } from "./sound";
+import { normalisiereTagKeys, passtZuSparte } from "./soundTags";
 import { posteReel } from "./instagram";
 import { logActivity } from "./activity";
 import {
@@ -38,6 +39,10 @@ export type PostQuelle = "scheduled" | "manual" | "beliebig";
 export interface TrendSound {
   audioId: string;
   titel: string;
+  /** Stimmungs-/Genre-Tags dieses Sounds (Schlüssel aus dem SoundTag-Katalog).
+   *  Fehlt/leer, solange der Sound nicht eingeordnet wurde. Aus getPostZeitplan
+   *  ist es immer gesetzt (normalisierePool). */
+  tags?: string[];
 }
 
 export interface PostZeitplanStand {
@@ -56,9 +61,12 @@ export interface PostZeitplanStand {
   quelle: PostQuelle;
   /** Freitext-Hashtags fürs Reel - werden hinter die Caption gehängt. */
   hashtags: string;
-  /** Trend-Sound-Pool: einer davon wird zufällig gewählt, wenn kein eigener
-   *  Sound am Video hängt. */
+  /** Trend-Sound-Pool: einer davon wird gewählt, wenn kein eigener Sound am
+   *  Video hängt. Beschränkt auf die zur Sparte passenden (siehe soundTags). */
   trendSounds: TrendSound[];
+  /** Die für diese Sparte gewählten Stimmungs-/Genre-Tags (Katalog-Schlüssel).
+   *  Leer = keine Einschränkung, der ganze Pool zählt. */
+  soundTags: string[];
   /**
    * Feste Uhrzeiten in Schweizer Zeit, zu denen gepostet wird.
    *
@@ -80,6 +88,7 @@ export const STANDARD_ZEITPLAN: PostZeitplanStand = {
   quelle: "scheduled",
   hashtags: "",
   trendSounds: [],
+  soundTags: [],
   postingTimes: [],
 };
 
@@ -215,6 +224,7 @@ export async function getPostZeitplan(track: Track): Promise<PostZeitplanStand> 
     quelle: z.quelle as PostQuelle,
     hashtags: z.hashtags,
     trendSounds: normalisierePool(z.trendSounds),
+    soundTags: normalisiereTagKeys(z.soundTags),
     postingTimes: parsePostingTimes(z.postingTimes),
   };
 }
@@ -247,7 +257,8 @@ function normalisierePool(rohes: unknown): TrendSound[] {
     if (!e || typeof e !== "object") continue;
     const audioId = String((e as { audioId?: unknown }).audioId ?? "").trim();
     const titel = String((e as { titel?: unknown }).titel ?? "").trim();
-    if (audioId) ergebnis.push({ audioId, titel });
+    const tags = normalisiereTagKeys((e as { tags?: unknown }).tags);
+    if (audioId) ergebnis.push({ audioId, titel, tags });
   }
   return ergebnis;
 }
@@ -339,8 +350,25 @@ export interface SoundEingabe {
   dateiName: string;
   konzeptSound: { audioId: string | null; status: string };
   trendPool: TrendSound[];
+  /** Die für die Sparte gewählten Stimmungs-/Genre-Tags. Leer = keine
+   *  Einschränkung. Beschränkt den Pool auf passende Sounds. */
+  spartenTags?: string[];
   /** Fuer den Test einsetzbar; sonst Math.random. */
   zufall?: () => number;
+}
+
+/**
+ * Die zur Sparten-Auswahl passenden Sounds aus dem Pool.
+ *
+ * Passt kein einziger Sound zur gewählten Stimmung (etwa weil der Pool noch
+ * nicht eingeordnet ist oder die Auswahl zu eng ist), gilt bewusst der ganze
+ * Pool: ein passender Sound wäre schöner, aber ein stummes Reel oder gar kein
+ * Post ist die schlechtere Wahl. Die Stimmung ist eine Vorliebe, kein Verbot.
+ */
+export function passendeSounds(pool: TrendSound[], spartenTags: string[] = []): TrendSound[] {
+  if (spartenTags.length === 0) return pool;
+  const passend = pool.filter((s) => passtZuSparte(s.tags ?? [], spartenTags));
+  return passend.length > 0 ? passend : pool;
 }
 
 /**
@@ -372,9 +400,12 @@ export function waehleSound(eingabe: SoundEingabe): SoundWahl {
     };
   }
 
-  if (eingabe.trendPool.length > 0) {
+  // Nur die zur gewählten Stimmung passenden Sounds; ist keiner dabei, der
+  // ganze Pool (siehe passendeSounds - lieber irgendein Sound als keiner).
+  const kandidaten = passendeSounds(eingabe.trendPool, eingabe.spartenTags ?? []);
+  if (kandidaten.length > 0) {
     const zufall = eingabe.zufall ?? Math.random;
-    const gewaehlt = eingabe.trendPool[Math.floor(zufall() * eingabe.trendPool.length)];
+    const gewaehlt = kandidaten[Math.floor(zufall() * kandidaten.length)];
     return {
       audioId: gewaehlt.audioId,
       hatEigeneMusik: false,
@@ -510,6 +541,7 @@ export async function posteFaelliges(track: Track, jetzt = new Date()): Promise<
       status: kandidat.soundStatus ?? "offen",
     },
     trendPool: zeitplan.trendSounds,
+    spartenTags: zeitplan.soundTags,
   });
 
   if (sound.grund === "kein Sound verfügbar") {

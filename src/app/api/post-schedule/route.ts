@@ -4,6 +4,7 @@ import { trackFromRequest, trackFromValue } from "@/lib/trackParam";
 import { logActivity } from "@/lib/activity";
 import { getPostZeitplan, parsePostingTimes, type PostQuelle, type TrendSound } from "@/lib/postAuto";
 import { audioIdAus } from "@/lib/sound";
+import { normalisiereTagKeys } from "@/lib/soundTags";
 import { formatUhrzeit } from "@/lib/zeit";
 
 export const dynamic = "force-dynamic";
@@ -25,8 +26,11 @@ interface Eingang {
   quelle?: string;
   hashtags?: string;
   /** Frei eingegebene Einträge: entweder audioId oder ein IG-Sound-Link,
-   *  jeweils mit optionalem Titel. Der Server liest die ID sauber heraus. */
-  trendSounds?: { link?: string; audioId?: string; titel?: string }[];
+   *  jeweils mit optionalem Titel und Stimmungs-/Genre-Tags. Der Server liest
+   *  die ID sauber heraus. */
+  trendSounds?: { link?: string; audioId?: string; titel?: string; tags?: string[] }[];
+  /** Die für diese Sparte gewählten Stimmungs-/Genre-Tags (Katalog-Schlüssel). */
+  soundTags?: string[];
   /** Feste Uhrzeiten in CH-Zeit als "HH:MM"-Liste (oder eine Zeichenkette
    *  wie "17:00,20:00" - beides wird angenommen). */
   postingTimes?: string | string[];
@@ -50,6 +54,7 @@ function begrenzen(e: Eingang) {
     quelle: QUELLEN.includes(e.quelle as PostQuelle) ? (e.quelle as PostQuelle) : "scheduled",
     hashtags: (e.hashtags ?? "").trim(),
     trendSounds: leseTrendPool(e.trendSounds),
+    soundTags: normalisiereTagKeys(e.soundTags),
     postingTimes: leseUhrzeiten(e.postingTimes),
   };
 }
@@ -79,7 +84,7 @@ function leseTrendPool(rohes: Eingang["trendSounds"]): TrendSound[] {
     if (!roh) continue;
     const audioId = audioIdAus(roh);
     if (!audioId) continue;
-    ergebnis.push({ audioId, titel: (e?.titel ?? "").trim() });
+    ergebnis.push({ audioId, titel: (e?.titel ?? "").trim(), tags: normalisiereTagKeys(e?.tags) });
   }
   return ergebnis;
 }
@@ -99,6 +104,7 @@ export async function PUT(request: NextRequest) {
     const daten = {
       ...werte,
       trendSounds: werte.trendSounds as unknown as object,
+      soundTags: werte.soundTags as unknown as object,
     };
     const gespeichert = await prisma.postZeitplan.upsert({
       where: { id: track },

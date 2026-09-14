@@ -610,14 +610,51 @@ model PostZeitplan {
 
   /// Trend-Sound-Pool: wird gezogen, wenn ein Video keinen eigenen Sound hat.
   ///
-  /// Format: JSON-Liste [{ audioId, titel }]. Der Nutzer trägt im Dashboard
-  /// Instagram-Sound-Links ein (die eingelesene ID plus einen optionalen
-  /// Namen zur Wiedererkennung); beim Posten wird per Zufall einer daraus
-  /// gewählt. Ohne Pool und ohne eigenen Sound wird das Video NICHT gepostet -
-  /// stumme Reels sind ausgeschlossen.
+  /// Format: JSON-Liste [{ audioId, titel, tags? }]. Der Nutzer trägt im
+  /// Dashboard Instagram-Sound-Links ein (die eingelesene ID plus einen
+  /// optionalen Namen zur Wiedererkennung); "tags" hält die Stimmungs-/Genre-
+  /// Merkmale des Sounds (Schlüssel aus dem SoundTag-Katalog). Beim Posten wird
+  /// aus den Sounds gewählt, deren Tags zur Sparten-Auswahl (soundTags) passen.
+  /// Ohne Pool und ohne eigenen Sound wird das Video NICHT gepostet - stumme
+  /// Reels sind ausgeschlossen.
   trendSounds Json @default("[]")
 
+  /// Die für diese Sparte gewählten Stimmungs-/Genre-Tags (Schlüssel aus dem
+  /// SoundTag-Katalog), als JSON-Liste. Ist sie gesetzt, kommen für diese
+  /// Sparte nur Pool-Sounds infrage, deren eigene Tags mindestens einen dieser
+  /// Tags treffen. Leer = keine Einschränkung (der ganze Pool zählt).
+  soundTags Json @default("[]")
+
   updatedAt DateTime @updatedAt
+}
+
+/// Der GLOBALE Katalog der Stimmungs- und Genre-Tags, mit denen sich Sounds
+/// beschreiben lassen ("aggressiv", "episch", "Hip-Hop/Trap", ...).
+///
+/// Bewusst genau eine gemeinsame Liste für alle vier Sparten: fügt der Nutzer
+/// im Dashboard einen Tag hinzu oder entfernt einen, ändert sich damit die
+/// Auswahl in JEDER Sparte. Welche dieser Tags eine Sparte tatsächlich nutzt,
+/// steht getrennt an der Sparte (PostZeitplan.soundTags) - der Katalog liefert
+/// nur die möglichen Tags.
+model SoundTag {
+  id String @id @default(cuid())
+
+  /// Stabiler Schlüssel (Slug), unter dem der Tag an Sounds und Sparten
+  /// referenziert wird - z.B. "episch". Wird aus dem Label abgeleitet und
+  /// bleibt gleich, auch wenn das Label später umbenannt wird.
+  key String @unique
+
+  /// Anzeigename im Dashboard, z.B. "Episch" oder "Hip-Hop/Trap".
+  label String
+
+  /// "stimmung" (Adjektiv/Energie) oder "genre". Nur zur Gruppierung in der
+  /// Oberfläche; für den Abgleich sind alle Tags gleichwertig.
+  kind String @default("stimmung")
+
+  /// Reihenfolge in der Auswahl.
+  sortIndex Int @default(0)
+
+  createdAt DateTime @default(now())
 }
 
 /// Protokoll jeder Prüfung der Posting-Automatik - was der Pinger bei jedem

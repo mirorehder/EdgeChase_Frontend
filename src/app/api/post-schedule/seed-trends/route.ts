@@ -2,8 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { env } from "@/lib/env";
 import { logActivity } from "@/lib/activity";
-import { getPostZeitplan, type TrendSound } from "@/lib/postAuto";
+import { getPostZeitplan } from "@/lib/postAuto";
 import type { Track } from "@/lib/trackClient";
+
+/** Seed-Eintrag: nur ID und Titel; Tags werden beim Bedarf im Dashboard
+ *  vergeben. Beim Lesen ergänzt normalisierePool ein leeres Tag-Feld. */
+type SeedSound = { audioId: string; titel: string };
 
 export const dynamic = "force-dynamic";
 
@@ -32,7 +36,7 @@ const HASHTAGS: Record<Track, string> = {
   clothing: "Streetwear OOTD Fashion Outfit Style",
 };
 
-const POOLS: Record<Track, TrendSound[]> = {
+const POOLS: Record<Track, SeedSound[]> = {
   viral: [
     { audioId: "1557001441730708", titel: "M83 Outro (24s)" },
     { audioId: "1685692728641662", titel: "Tokyo Drift Funk - Eternxlkz (14s)" },

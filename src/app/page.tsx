@@ -27,6 +27,8 @@ import {
   type PostHistorieEintrag,
   type PostLaufEintrag,
 } from "./PostHistorie";
+import { getSoundTagKatalog } from "@/lib/soundTagStore";
+import { SoundTagKatalog } from "./SoundTagKatalog";
 import { chFormatZeitstempel } from "@/lib/zeit";
 
 export const dynamic = "force-dynamic";
@@ -167,15 +169,33 @@ const HINWEIS: Record<Track, string> = {
 };
 
 export default async function DashboardPage() {
-  const sparten = await Promise.all(TRACK_LISTE.map((s) => ladeSparte(s.key)));
+  const [sparten, soundTagKatalog] = await Promise.all([
+    Promise.all(TRACK_LISTE.map((s) => ladeSparte(s.key))),
+    getSoundTagKatalog(),
+  ]);
   const daten = Object.fromEntries(
     TRACK_LISTE.map((s, i) => [s.key, sparten[i]]),
   ) as Record<Track, TrackData>;
+
+  // Tags, die es (noch) im Katalog gibt. Aus dem Katalog entfernte Tags sollen
+  // in jeder Sparte und an jedem Sound verschwinden - deshalb hier für die
+  // Anzeige herausfiltern. Beim nächsten Speichern fällt der Rest weg.
+  const erlaubteTags = new Set(soundTagKatalog.map((t) => t.key));
+  const nurErlaubt = (keys: string[] | undefined) =>
+    (keys ?? []).filter((k) => erlaubteTags.has(k));
 
   const inhalte = Object.fromEntries(
     TRACK_LISTE.map((sparte) => {
       const track = sparte.key;
       const data = daten[track];
+      const postZeitplan = {
+        ...data.postZeitplan,
+        soundTags: nurErlaubt(data.postZeitplan.soundTags),
+        trendSounds: data.postZeitplan.trendSounds.map((s) => ({
+          ...s,
+          tags: nurErlaubt(s.tags),
+        })),
+      };
 
       return [
         track,
@@ -185,7 +205,7 @@ export default async function DashboardPage() {
 
           <TriggerButtons track={track} />
           {track === "promo" ? <DailySettings /> : <ViralSchedule track={track} />}
-          <PostAutomatik track={track} stand={data.postZeitplan} />
+          <PostAutomatik track={track} stand={postZeitplan} katalog={soundTagKatalog} />
           <PostHistorie
             track={track}
             posts={data.postHistorie}
@@ -214,6 +234,8 @@ export default async function DashboardPage() {
         Vier getrennte Sparten - Werbevideos aus dem Shooting-Material und drei Reihen Reels, jede
         mit eigenen Quellordnern, eigener Bibliothek und eigenem Zeitplan.
       </p>
+
+      <SoundTagKatalog katalog={soundTagKatalog} />
 
       <Sparten inhalte={inhalte} />
     </main>

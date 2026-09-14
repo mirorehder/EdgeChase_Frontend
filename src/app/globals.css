@@ -1130,6 +1130,79 @@ button.klein {
   margin-right: 2px;
 }
 
+/* --- Sound-Stimmungs-/Genre-Tags -------------------------------------- */
+
+/* Ein Sound-Eintrag im Pool hat jetzt zwei Zeilen: Kopf (Titel/Knöpfe) und
+   darunter seine Tags. Deshalb Spalte statt der Standard-Zeile für <li>. */
+.trend-pool-liste li.trend-pool-eintrag {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.trend-pool-kopf {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tag-gruppe {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.tag-wahl {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tag-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* Ein Tag-Chip. Im Katalog-Editor mit Entfernen-Kreuz, in der Auswahl als
+   an-/abwählbarer Knopf (.wahl). */
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.tag-chip button {
+  all: unset;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 12px;
+  padding: 0 2px;
+}
+
+.tag-chip button:hover {
+  color: var(--err);
+}
+
+/* Auswahl-Variante: der ganze Chip ist ein Knopf. */
+.tag-chip.wahl {
+  cursor: pointer;
+}
+
+.tag-chip.wahl.an {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, var(--surface));
+  color: var(--text);
+}
+
 /* Der Ändern/Festlegen-Knopf rückt ans Ende der Zeile. */
 .ausgabe-zeile > button {
   margin-left: auto;
