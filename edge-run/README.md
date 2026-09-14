@@ -100,15 +100,19 @@ Belohnungstabellen im Code: `api/lib/reward.js` (`DEFAULT_TABLES`).
 
 ---
 
-## Das echte Logo einsetzen
+## Logo
 
-`public/logo.svg` ist ein geometrischer **Nachbau/Platzhalter**. Zum Austausch:
-
-- Entweder `public/logo.svg` durch die offizielle Vektordatei ersetzen, **oder**
-- eine `public/logo.png` (transparenter Hintergrund) daneben legen – das Spiel
-  bevorzugt automatisch die PNG.
+`assets/logo.png` ist das offizielle Edge-Chase-Logo (auf 512px optimiert;
+Original als `assets/logo-original.png`). Das Spiel bevorzugt die PNG, sonst
+greift `assets/logo.svg` als Fallback. Zum Austausch einfach `assets/logo.png`
+ersetzen (transparenter Hintergrund).
 
 Das Logo wird im Spiel weiß eingefärbt und rotiert als Verfolger mit rotem Glow.
+
+> **Wichtig (Vercel):** Statische Dateien liegen bewusst in `assets/`, **nicht**
+> in `public/`. Bei „Other"-Projekten ohne Build setzt Vercel das Output-
+> Verzeichnis sonst automatisch auf `public/` und liefert die `index.html` im
+> Wurzelverzeichnis nicht aus (404).
 
 ---
 
@@ -130,7 +134,10 @@ edge-run/
 │       ├── store.js      # Rate-Limit / Replay (KV-ready)
 │       ├── wix.js        # Wix-Coupon-Erstellung
 │       └── http.js       # kleine HTTP-Helfer
-├── public/logo.svg       # Platzhalter-Logo (austauschbar)
+├── assets/               # statische Assets (NICHT "public/" – siehe Hinweis oben)
+│   ├── logo.png          # offizielles Logo (512px, Runtime)
+│   ├── logo-original.png # Original 4800px
+│   └── logo.svg          # SVG-Fallback
 ├── vercel.json
 └── .env.example
 ```

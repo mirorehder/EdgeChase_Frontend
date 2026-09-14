@@ -30,9 +30,9 @@ function preloadLogo() {
       const svg = new Image();
       svg.onload = () => resolve(svg);
       svg.onerror = () => resolve(null);
-      svg.src = "./public/logo.svg";
+      svg.src = "./assets/logo.svg";
     };
-    png.src = "./public/logo.png";
+    png.src = "./assets/logo.png";
   });
 }
 
