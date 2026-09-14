@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <title>EDGE RUN — Entkomme dem EDGE</title>
+  <meta name="description" content="Spiel dich zu deinem Rabatt. Überlebe so lange du kannst — je weiter du kommst, desto besser deine Chance." />
+  <link rel="stylesheet" href="./src/styles.css" />
+</head>
+<body>
+  <div id="app" class="app">
+
+    <!-- ============ INTRO / EINWILLIGUNG ============ -->
+    <section id="screen-intro" class="screen screen--active">
+      <div class="intro">
+        <img class="intro__logo" src="./public/logo.svg" alt="Edge Chase" width="88" height="88" />
+        <h1 class="intro__title">EDGE<br />RUN</h1>
+        <p class="intro__tag">Das EDGE jagt dich. Lauf, spring, überlebe —<br />und sichere dir deinen Rabatt.</p>
+
+        <form id="intro-form" class="form" autocomplete="on" novalidate>
+          <label class="field">
+            <span class="field__label">Dein Name</span>
+            <input id="in-name" name="name" type="text" inputmode="text" maxlength="20"
+                   placeholder="z. B. David" required />
+          </label>
+          <label class="field">
+            <span class="field__label">Deine E-Mail</span>
+            <input id="in-email" name="email" type="email" inputmode="email" maxlength="120"
+                   placeholder="du@example.com" required />
+          </label>
+
+          <label class="consent">
+            <input id="in-consent" type="checkbox" required />
+            <span>Ich akzeptiere die <a href="#" data-legal="terms">Teilnahmebedingungen</a> und
+              <a href="#" data-legal="privacy">Datenschutzhinweise</a> und möchte meinen Rabattcode per E-Mail erhalten.</span>
+          </label>
+
+          <p id="intro-error" class="error" hidden></p>
+          <button id="btn-start" class="btn btn--primary" type="submit">SPIEL STARTEN</button>
+        </form>
+
+        <button class="link-how" type="button" data-open="how">Wie funktioniert's?</button>
+      </div>
+    </section>
+
+    <!-- ============ SPIEL ============ -->
+    <section id="screen-game" class="screen">
+      <div class="hud">
+        <div class="hud__score"><span class="hud__label">DISTANZ</span><span id="hud-score">0</span></div>
+        <div class="hud__threat">
+          <span class="hud__label">EDGE</span>
+          <div class="threat"><div id="threat-fill" class="threat__fill"></div></div>
+        </div>
+      </div>
+      <canvas id="game-canvas"></canvas>
+      <div id="countdown" class="countdown" hidden></div>
+      <div id="controls-hint" class="controls-hint">
+        <span class="controls-hint__mobile">Tippen = Springen · nach unten wischen = Rutschen</span>
+        <span class="controls-hint__desktop">Leertaste / ↑ = Springen · ↓ = Rutschen</span>
+      </div>
+    </section>
+
+    <!-- ============ ERGEBNIS ============ -->
+    <section id="screen-result" class="screen">
+      <div class="result">
+        <div id="result-loading" class="result__loading">
+          <div class="spinner"></div>
+          <p>Dein Ergebnis wird geprüft…</p>
+        </div>
+
+        <div id="result-content" class="result__content" hidden>
+          <p class="result__eyebrow">DISTANZ <span id="result-score">0</span></p>
+          <h2 id="result-headline" class="result__headline">—</h2>
+          <div id="result-prize" class="prize">
+            <div class="prize__value" id="prize-value">—</div>
+            <div class="prize__label" id="prize-label">RABATT</div>
+          </div>
+
+          <div id="result-code-wrap" class="code" hidden>
+            <span class="code__label">DEIN CODE</span>
+            <div class="code__row">
+              <code id="result-code">—</code>
+              <button id="btn-copy" class="btn btn--ghost" type="button">Kopieren</button>
+            </div>
+            <p class="code__meta" id="result-expiry"></p>
+          </div>
+
+          <p id="result-note" class="result__note"></p>
+          <button id="btn-again" class="btn btn--primary" type="button">NOCHMAL</button>
+          <button id="btn-shop" class="btn btn--ghost" type="button" data-shop hidden>ZUM SHOP</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ INFO-OVERLAY ============ -->
+    <div id="modal-how" class="modal" hidden>
+      <div class="modal__box">
+        <h3>So läuft's</h3>
+        <ul>
+          <li>Renne so weit wie möglich, ohne dass dich das EDGE einholt.</li>
+          <li>Je weiter deine Distanz, desto besser deine Gewinnchance.</li>
+          <li>10–15 % sind gut machbar. Höhere Rabatte sind selten — der Hauptpreis ist die Krönung.</li>
+          <li>Ein Versuch pro Person. Dein Code wird sofort erzeugt.</li>
+        </ul>
+        <button class="btn btn--ghost" type="button" data-close="how">Verstanden</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./src/app.js"></script>
+</body>
+</html>
