@@ -3,6 +3,7 @@
 // von /api/reward geprüft wird. Name (für den Code) und E-Mail-Hash (fürs
 // Tageslimit) stecken signiert im Token – der Client kann sie nicht fälschen.
 import { signSession, emailHash, randomSid } from "./lib/token.js";
+import { ladder } from "./lib/reward.js";
 import { sendJson, readJson } from "./lib/http.js";
 
 export default async function handler(req, res) {
@@ -25,5 +26,6 @@ export default async function handler(req, res) {
     eh: emailHash(cleanEmail),
   });
 
-  return sendJson(res, 200, { ok: true, token });
+  // Rabatt-Leiter mitgeben, damit die Live-Anzeige im Spiel exakt zum Server passt.
+  return sendJson(res, 200, { ok: true, token, ladder: ladder() });
 }

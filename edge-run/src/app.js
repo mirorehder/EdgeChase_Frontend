@@ -68,7 +68,7 @@ form.addEventListener("submit", async (e) => {
       }
       throw new Error(res.message || "Start fehlgeschlagen");
     }
-    session = { token: res.token, name };
+    session = { token: res.token, name, ladder: res.ladder };
     startGameFlow();
   } catch (err) {
     showError(err.message || "Etwas ist schiefgelaufen. Bitte erneut versuchen.");
@@ -79,16 +79,45 @@ form.addEventListener("submit", async (e) => {
 function showError(msg) { errBox.textContent = msg; errBox.hidden = false; }
 
 /* ---------- Spielablauf ---------- */
+// Rabatt-Leiter (Fallback, falls /api/start keine mitliefert). Server ist maßgeblich.
+const DEFAULT_LADDER = [
+  { min: 150, pct: 10 }, { min: 900, pct: 15 }, { min: 2200, pct: 20 },
+  { min: 4200, pct: 25 }, { min: 7000, pct: 30 },
+];
+function discountForScore(score, rungs) {
+  let pct = 0;
+  for (const r of rungs) if (score >= r.min) pct = r.pct;
+  return pct;
+}
+
 function startGameFlow() {
   show("game");
   const canvas = $("#game-canvas");
   const hintEl = $("#controls-hint");
   const scoreEl = $("#hud-score");
   const threatEl = $("#threat-fill");
+  const discEl = $("#hud-discount");
+
+  const rungs = (session && Array.isArray(session.ladder) && session.ladder.length) ? session.ladder : DEFAULT_LADDER;
+  let shownPct = -1;
+  discEl.textContent = "–";
+  discEl.classList.remove("hud__discount-val--bump");
 
   game = createGame(canvas, {
     logoImg,
-    onScore: (s) => { scoreEl.textContent = s; },
+    onScore: (s) => {
+      scoreEl.textContent = s;
+      const pct = discountForScore(s, rungs);
+      if (pct !== shownPct) {
+        const climbed = pct > shownPct;
+        shownPct = pct;
+        discEl.textContent = pct > 0 ? pct + "%" : "–";
+        // Kurzer Puls, wenn eine neue Stufe erreicht wird.
+        discEl.classList.remove("hud__discount-val--bump");
+        void discEl.offsetWidth; // Reflow -> Animation neu starten
+        if (pct > 0 && climbed) discEl.classList.add("hud__discount-val--bump");
+      }
+    },
     onThreat: (t) => { threatEl.style.width = Math.round(t * 100) + "%"; },
     onGameOver: handleGameOver,
   });

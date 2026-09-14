@@ -175,8 +175,18 @@ body {
   color: var(--ink-dim);
   margin-bottom: 3px;
 }
-.hud__score { font-size: 30px; font-weight: 900; font-variant-numeric: tabular-nums; font-style: italic; }
-.hud__threat { width: 42%; max-width: 200px; text-align: right; }
+.hud__score { font-size: 22px; font-weight: 900; font-variant-numeric: tabular-nums; font-style: italic; }
+.hud__discount { text-align: center; }
+.hud__discount-val {
+  display: block;
+  font-size: 32px; font-weight: 900; font-style: italic; line-height: 1;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 18px rgba(255,43,43,.35);
+  transform-origin: center;
+}
+.hud__discount-val--bump { animation: bump .45s ease; }
+.hud__threat { width: 34%; max-width: 160px; text-align: right; }
 .threat {
   height: 10px;
   background: var(--bg-soft);
@@ -288,6 +298,7 @@ body {
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes spin-slow { to { transform: rotate(360deg); } }
 @keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+@keyframes bump { 0% { transform: scale(1); } 40% { transform: scale(1.4); } 100% { transform: scale(1); } }
 
 @media (prefers-reduced-motion: reduce) {
   .intro__logo, .spinner { animation: none; }

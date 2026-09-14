@@ -38,8 +38,8 @@ export default async function handler(req, res) {
     return sendJson(res, 200, { ok: false, error: "already_played", message: "Du hast heute schon gespielt – morgen wieder!" });
   }
 
-  // Belohnung ziehen.
-  let { tier, reward } = drawReward(score);
+  // Belohnung ziehen (Leiter-Modell: gesicherter Boden + seltenes Upgrade/Jackpot).
+  let { reward } = drawReward(score);
 
   // Jackpot-Deckel: Gratis-Teil nur bis zum Monatslimit, sonst auf 30 % abstufen.
   if (reward.kind === "free" && !(await allowJackpot(JACKPOT_MAX_PER_MONTH))) {
@@ -49,8 +49,8 @@ export default async function handler(req, res) {
   // Kein Gewinn -> kein Code (E-Mail ist trotzdem als Lead erfasst).
   if (reward.kind === "none") {
     return sendJson(res, 200, {
-      ok: true, tier, reward, code: null, score,
-      message: "Kein Code diesmal – aber du bist für Drops & Aktionen dabei.",
+      ok: true, reward, code: null, score,
+      message: "Zu kurz für einen Code – lauf weiter, ab etwas Distanz gibt's Rabatt!",
     });
   }
 
@@ -60,7 +60,6 @@ export default async function handler(req, res) {
 
   return sendJson(res, 200, {
     ok: true,
-    tier,
     reward,
     code,
     score,

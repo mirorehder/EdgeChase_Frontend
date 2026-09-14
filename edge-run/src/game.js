@@ -21,8 +21,8 @@ const CFG = {
   jumpCutoff: 520,      // frühes Loslassen -> kürzerer Sprung
   maxAirJumps: 1,       // Doppelsprung
   // Threat (EDGE holt auf)
-  threatOnHit: 0.34,
-  threatDecay: 0.058,   // pro Sekunde
+  threatOnHit: 0.42,    // ~2-3 Treffer = erwischt
+  threatDecay: 0.05,    // pro Sekunde (Erholung zwischen Fehlern)
   threatShardRelief: 0.12,
   stumbleTime: 0.42,    // Sekunden Tempoverlust nach Treffer
   // Score
@@ -244,9 +244,12 @@ export function createGame(canvas, opts = {}) {
     }
 
     // --- Threat / EDGE ---
+    // ERST prüfen: ein Treffer in diesem Frame kann das Meter auf 1.0 setzen.
+    // Würde man vorher den Decay abziehen, läge der Wert stets knapp unter 1
+    // und der Tod löste nie aus (der ursprüngliche Bug).
+    if (S.threat >= 1) return gameOver("caught");
     S.threat = Math.max(0, S.threat - CFG.threatDecay * dt);
     onThreat(S.threat);
-    if (S.threat >= 1) return gameOver("caught");
 
     // Partikel
     for (const pt of S.particles) { pt.x += pt.vx * dt; pt.y += pt.vy * dt; pt.vy += 900 * dt; pt.life -= dt; }
