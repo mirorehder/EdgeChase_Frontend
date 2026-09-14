@@ -32,7 +32,7 @@ import { env } from "./env";
 import { hookTextToFileName } from "./filename";
 import { logActivity } from "./activity";
 import { beilageBauen, beilagenName } from "./sound";
-import { getDailySettings } from "./dailyConfig";
+import { getDailySettings, merkeRotation, waehleRotierend } from "./dailyConfig";
 import { getViralSchedule, viralOutputFolderId, viralTextStyle } from "./viralSchedule";
 import { bewertungsart, trackBeschreibung } from "./trackClient";
 import { trackFromValue } from "./trackParam";
@@ -2090,15 +2090,32 @@ export async function planDailyJob(): Promise<string | null> {
     return null;
   }
 
+  // Overlay-Text (Video) und Bildunterschrift (Instagram) getrennt bestimmen:
+  // je "ki" (die KI formuliert) oder "eigene" (reihum aus der Liste).
+  let fixedHookText: string | undefined;
+  let neuerHookIndex = settings.hookIndex;
+  if (settings.hookMode === "eigene" && settings.hookTexts.length > 0) {
+    const w = waehleRotierend(settings.hookTexts, settings.hookIndex);
+    fixedHookText = w.wert;
+    neuerHookIndex = w.naechsterIndex;
+  }
+
+  let postCaption: string | null = null;
+  let neuerCaptionIndex = settings.captionIndex;
+  if (settings.captionMode === "eigene" && settings.captions.length > 0) {
+    const w = waehleRotierend(settings.captions, settings.captionIndex);
+    postCaption = w.wert;
+    neuerCaptionIndex = w.naechsterIndex;
+  }
+
   // Die geltenden Vorgaben mitschreiben. Ohne sie lässt sich hinterher nicht
   // unterscheiden, ob eine Einstellung nicht gespeichert wurde oder ob die
   // Zusammenstellung sie nicht erfüllen konnte.
   await logActivity(
     `Tageslauf gestartet. Vorgaben: ${settings.clipCount} Clips à ${settings.maxSecondsPerScene}s, ` +
       `Stil "${settings.textStyle}", Ton ${settings.videoVolume}, ` +
-      (settings.hookText
-        ? `fester Text über ${settings.hookText.split("\n").length} Zeilen`
-        : "Text wird neu formuliert") +
+      `Video-Text ${settings.hookMode === "eigene" ? "eigener (rotierend)" : "per KI"}, ` +
+      `Caption ${settings.captionMode === "eigene" ? "eigene (rotierend)" : "per KI"}` +
       (settings.themeHint ? `, Thema "${settings.themeHint}"` : "") +
       ".",
   );
@@ -2116,7 +2133,7 @@ export async function planDailyJob(): Promise<string | null> {
     clipCount: settings.clipCount,
     maxSecondsPerScene: settings.maxSecondsPerScene,
     themeHint: settings.themeHint || undefined,
-    fixedHookText: settings.hookText || undefined,
+    fixedHookText,
   });
 
   const job = await prisma.promoVideo.create({
@@ -2127,12 +2144,21 @@ export async function planDailyJob(): Promise<string | null> {
       origin: "scheduled",
       textStyle: settings.textStyle,
       fileTitle: composed.fileTitle || null,
+      // Eigene, rotierende Bildunterschrift (falls gewählt); sonst null -> beim
+      // Posten gilt wie bisher der KI-Titel.
+      postCaption,
       videoVolume: settings.videoVolume,
       // Der im Dashboard gewählte Ordner für den Tageslauf; null lässt den
       // bisherigen Standard gelten.
       driveFolderId: await ausgabeOrdnerId("promo", "scheduled"),
     },
   });
+
+  // Die Rotationszeiger fortschreiben, damit beim nächsten Lauf der jeweils
+  // nächste eigene Text/Caption an die Reihe kommt.
+  if (neuerHookIndex !== settings.hookIndex || neuerCaptionIndex !== settings.captionIndex) {
+    await merkeRotation(neuerHookIndex, neuerCaptionIndex);
+  }
 
   return job.id;
 }

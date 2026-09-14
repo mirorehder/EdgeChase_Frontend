@@ -522,10 +522,10 @@ export async function posteFaelliges(track: Track, jetzt = new Date()): Promise<
     return abschluss(track, jetzt, { gepostet: false, grund: "kein Sound verfügbar" }, kandidatTitel);
   }
 
-  const caption = mitHashtags(
-    kandidat.fileTitle || kandidat.hookText.replace(/\n/g, " "),
-    zeitplan.hashtags,
-  );
+  // Eigene, feste Bildunterschrift (Promo mit rotierenden Captions) geht vor;
+  // sonst wie bisher der KI-Titel bzw. der Hook-Text.
+  const captionRoh = kandidat.postCaption || kandidat.fileTitle || kandidat.hookText.replace(/\n/g, " ");
+  const caption = mitHashtags(captionRoh, zeitplan.hashtags);
 
   const ergebnis = await posteReel(track, {
     videoUrl: kandidat.publicUrl,

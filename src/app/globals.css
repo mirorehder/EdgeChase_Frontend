@@ -365,6 +365,55 @@ tr:last-child td {
   color: var(--muted);
 }
 
+/* Promo: Auswahl KI vs. eigene Captions + Listeneditor. */
+.caption-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.caption-titel {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.radio-row {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+
+.radio-row .schalter {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+}
+
+.caption-liste {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.caption-zeile {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.caption-zeile textarea {
+  flex: 1;
+}
+
+button.klein {
+  padding: 4px 10px;
+  font-size: 13px;
+  align-self: flex-start;
+}
+
 .chat {
   margin: 28px 0;
 }

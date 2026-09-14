@@ -272,6 +272,11 @@ model PromoVideo {
   /// Warum ein Post zuletzt fehlgeschlagen ist - fürs Dashboard.
   postError String?
 
+  /// Feste Instagram-Bildunterschrift für dieses Video (nur Promo, wenn der
+  /// Nutzer eigene, rotierende Captions gewählt hat). Ist sie gesetzt, wird sie
+  /// beim Posten dem KI-Titel vorgezogen. Leer = wie bisher (KI-Titel/Hook).
+  postCaption String?
+
   createdAt DateTime @default(now())
 
   @@index([status])
@@ -287,9 +292,33 @@ model PromoVideo {
 model DailyConfig {
   id String @id @default("default")
 
-  /// Fester Text für das Overlay. Leer bedeutet: bei jedem Lauf neu
-  /// formulieren lassen.
+  /// Alt: fester Text für das Overlay. Durch hookMode/hookTexts abgelöst, bleibt
+  /// als Spalte erhalten (die Migration übernimmt den Wert in hookTexts).
   hookText String?
+
+  /// Nur Promo: woher der Video-Text (Overlay) kommt.
+  /// "ki"     - die KI formuliert ihn bei jedem Lauf neu.
+  /// "eigene" - reihum aus hookTexts.
+  hookMode String @default("ki")
+
+  /// Nur Promo: eigene Overlay-Texte, die reihum gewählt werden. JSON-Liste von
+  /// Zeichenketten; ein Eintrag darf mehrere Zeilen haben (Zeilenumbrüche gehen
+  /// ins Video).
+  hookTexts Json @default("[]")
+
+  /// Zeiger für die Rotation der Overlay-Texte (nächster Eintrag).
+  hookIndex Int @default(0)
+
+  /// Nur Promo: woher die Instagram-Bildunterschrift kommt.
+  /// "ki"     - aus dem KI-Titel (wie bisher).
+  /// "eigene" - reihum aus captions.
+  captionMode String @default("ki")
+
+  /// Nur Promo: eigene Bildunterschriften, reihum gewählt. JSON-Liste.
+  captions Json @default("[]")
+
+  /// Zeiger für die Rotation der Bildunterschriften.
+  captionIndex Int @default(0)
 
   /// "banner" oder "reference".
   textStyle String @default("banner")
