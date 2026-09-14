@@ -202,8 +202,12 @@ export async function pruefeAudioId(
     const res = await netz(
       `${GRAPH}/${audioId}?user_id=${encodeURIComponent(igUserId)}&access_token=${encodeURIComponent(token)}`,
     );
-    const daten = (await res.json()) as { id?: string; error?: unknown };
-    return res.ok && !daten.error && !!daten.id;
+    const daten = (await res.json()) as { error?: { message?: string } };
+    // Gültige ID → 200 mit Sound-Metadaten (Titel, Dauer, …); ungültige →
+    // Fehler ("does not exist"). NICHT auf ein bestimmtes Feld wie "id" prüfen:
+    // der Audio-Knoten liefert seine Daten unter anderen Schlüsseln, dadurch
+    // wurden zuvor gültige Sounds fälschlich abgelehnt.
+    return res.ok && !daten.error;
   } catch {
     return false;
   }
