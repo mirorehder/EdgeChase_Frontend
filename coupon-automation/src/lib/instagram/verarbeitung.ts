@@ -6,6 +6,7 @@ import { formuliereAntwort, formuliereDm } from "./antwort";
 import { antworteAufKommentar, ladeMedia, sendePrivateAntwort, type WebhookKommentar } from "./graph";
 import { istAktionsReel, leseNameAusHandle, leseNameAusText, spracheAusCaption } from "./namen";
 import { istEchterName } from "./namenspruefung";
+import { analysiereVideo } from "./videoanalyse";
 
 /**
  * Der Ablauf für einen einzelnen Kommentar: Gutschein anlegen, DM schicken,
@@ -79,30 +80,54 @@ async function medienInfo(mediaId: string) {
     return bekannt;
   }
 
-  const { caption, permalink } = await ladeMedia(mediaId);
-  const daten = {
+  const { caption, permalink, videoUrl, mediaType } = await ladeMedia(mediaId);
+
+  // Beim ersten Auftauchen: Video-Analyse mit Gemini, Text-Erkennung als
+  // Fallback. Bei einer späteren Auffrischung nicht mehr neu klassifizieren -
+  // Reels sind unveränderlich, die Klassifikation bliebe dieselbe und würde
+  // nur die Kosten unnötig verdoppeln.
+  const istErstAnalyse = bekannt === null;
+  let istAktion = bekannt?.istAktion ?? false;
+  let analyseHinweis = bekannt?.analyseHinweis ?? null;
+
+  if (istErstAnalyse) {
+    const videoAntwort =
+      videoUrl && (mediaType === "VIDEO" || mediaType === "REELS")
+        ? await analysiereVideo(videoUrl, caption)
+        : null;
+
+    if (videoAntwort) {
+      istAktion = videoAntwort.istPromo;
+      analyseHinweis = `Video-Analyse: ${videoAntwort.begruendung}`;
+    } else {
+      // Fallback auf die Regex - wenn Gemini nichts liefert oder wir gar kein
+      // Video haben (Bild-Post, Karussell), soll die Klassifikation trotzdem
+      // stehen und lieber zu streng als gar nicht.
+      istAktion = istAktionsReel(caption);
+      analyseHinweis = "Text-Erkennung (Video nicht analysierbar)";
+    }
+  }
+
+  // "ueberschreibung" und "istAktion"/"analyseHinweis" bewusst getrennt von
+  // der täglichen Auffrischung der Caption/Sprache: eine von Hand oder von
+  // der Video-Analyse getroffene Klassifikation überlebt die 24-h-Auffrischung,
+  // nur die Caption wird nachgezogen.
+  const captionDaten = {
     caption,
     permalink,
-    istAktion: istAktionsReel(caption),
     sprache: spracheAusCaption(caption),
   };
-
-  // "ueberschreibung" bewusst nicht in "daten" enthalten: eine von Hand
-  // getroffene Entscheidung soll die tägliche Auffrischung der Caption
-  // überleben, nicht von ihr überschrieben werden.
   const media = await prisma.instagramMedia.upsert({
     where: { id: mediaId },
-    create: { id: mediaId, ...daten },
-    update: daten,
+    create: { id: mediaId, ...captionDaten, istAktion, analyseHinweis },
+    update: captionDaten,
   });
 
   // Nur beim ersten Auftauchen benachrichtigen. bekannt === null bedeutet: es
   // gab vor diesem Aufruf keine Zeile - also gerade angelegt.
-  if (bekannt === null) {
+  if (istErstAnalyse) {
     const kopfzeile = caption.split("\n")[0].slice(0, 80).trim() || "(ohne Text)";
-    const status = daten.istAktion ? "als Promo-Reel erkannt" : "nicht als Promo-Reel erkannt";
-    // Push soll die Verarbeitung nie zum Fall bringen - der Kommentar-
-    // Workflow ist wichtiger als die Benachrichtigung.
+    const status = istAktion ? "als Promo-Reel erkannt" : "nicht als Promo-Reel erkannt";
     // Bewusst awaiten: auf Vercel wird eine Serverless-Funktion nach der
     // Antwort abgeschnitten - ein fire-and-forget würde den Push je nach
     // Timing killen. Fehler werden abgefangen, damit ein Push-Ausfall die
@@ -110,9 +135,6 @@ async function medienInfo(mediaId: string) {
     await sendePush({
       titel: `Neues Reel: ${status}`,
       rumpf: kopfzeile,
-      // Tippt der Nutzer die Benachrichtigung an, soll das Dashboard aufgehen -
-      // dort steht die volle Caption, die Klassifizierung und der Knopf zum
-      // Übersteuern. Der Permalink zum Reel selbst liegt einen Klick weiter.
       url: "/",
     }).catch((fehler) => console.error("Push für neues Reel fehlgeschlagen", fehler));
   }

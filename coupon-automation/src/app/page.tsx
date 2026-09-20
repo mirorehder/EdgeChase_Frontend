@@ -358,6 +358,9 @@ export default async function StartSeite() {
                   )}
                 </div>
                 <div className="ig-reel-caption">{media.caption.split("\n")[0].slice(0, 120)}</div>
+                {media.analyseHinweis && (
+                  <div className="ig-schwach">Erkennung: {media.analyseHinweis}</div>
+                )}
                 <div className="ig-schwach">
                   {eintraege.length} Kommentare · {eintraege.filter((z) => z.couponCode).length}{" "}
                   Codes · {eintraege.filter((z) => z.dmGesendet).length} DMs
@@ -394,6 +397,9 @@ export default async function StartSeite() {
                   )}
                 </div>
                 <div className="ig-reel-caption">{media.caption.split("\n")[0].slice(0, 120)}</div>
+                {media.analyseHinweis && (
+                  <div className="ig-schwach">Erkennung: {media.analyseHinweis}</div>
+                )}
                 <Uebersteuerung
                   mediaId={media.id}
                   ueberschreibung={media.ueberschreibung}

@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { env } from "@/lib/env";
 import { formuliereAntwort, formuliereDm } from "@/lib/instagram/antwort";
 import { abonniereKommentare, ladeMedia, leseAbo, listeLetzteMedien } from "@/lib/instagram/graph";
+import { analysiereVideo } from "@/lib/instagram/videoanalyse";
 import {
   istAktionsReel,
   leseNameAusHandle,
@@ -27,7 +28,8 @@ import { freierCode } from "@/lib/wix/coupons";
  *   ?pruefe=abo                      Ist das Konto für Kommentar-Webhooks abonniert?
  *   ?pruefe=abo&setzen=1             Konto jetzt dafür freischalten
  *   ?pruefe=medien                   Numerische Media-IDs der letzten Reels
- *   ?pruefe=caption&mediaId=123      Gilt das Reel als Aktions-Reel?
+ *   ?pruefe=caption&mediaId=123      Gilt das Reel laut Text-Regex als Aktions-Reel?
+ *   ?pruefe=video&mediaId=123        Analysiert Gemini das Video als Promo-Reel?
  *   ?pruefe=name&text=Lars           Welcher Name wird gelesen?
  *   ?pruefe=antwort&name=Lars        Wie klingt eine erzeugte Antwort?
  *   ?pruefe=gemini                   Antwortet Gemini überhaupt - ohne Rückfall?
@@ -106,6 +108,28 @@ export async function GET(request: NextRequest) {
           permalink,
           istAktionsReel: istAktionsReel(caption),
           sprache: spracheAusCaption(caption),
+        });
+      }
+
+      case "video": {
+        const mediaId = params.get("mediaId");
+        if (!mediaId) {
+          return NextResponse.json({ error: "mediaId fehlt." }, { status: 400 });
+        }
+        const { caption, videoUrl, mediaType } = await ladeMedia(mediaId);
+        if (!videoUrl) {
+          return NextResponse.json({
+            caption,
+            mediaType,
+            fehler: "Kein Video-URL - Bild-Post oder Karussell.",
+          });
+        }
+        const analyse = await analysiereVideo(videoUrl, caption);
+        return NextResponse.json({
+          caption,
+          mediaType,
+          textErkennung: istAktionsReel(caption),
+          videoAnalyse: analyse,
         });
       }
 

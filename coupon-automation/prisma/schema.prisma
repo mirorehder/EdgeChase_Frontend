@@ -132,9 +132,14 @@ model InstagramMedia {
   caption   String
   permalink String?
 
-  /// Ruft das Reel zur Namens-Aktion auf, automatisch aus der Bildunterschrift
-  /// gelesen?
+  /// Ruft das Reel zur Namens-Aktion auf, automatisch klassifiziert (Video-
+  /// Analyse via Gemini, mit Text-Regex als Fallback)?
   istAktion Boolean
+
+  /// Menschenlesbare Begründung der automatischen Klassifikation - was Gemini
+  /// im Video oder im Text gesehen hat. Rein zur Nachvollziehbarkeit im
+  /// Dashboard, hat keinen Einfluss auf die Verarbeitung.
+  analyseHinweis String?
 
   /// Von Hand gesetzte Übersteuerung der automatischen Erkennung: true
   /// erzwingt "ist Aktions-Reel", false schliesst es aus, null (Vorgabe)

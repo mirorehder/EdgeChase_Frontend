@@ -120,20 +120,35 @@ export function kommentareAusPayload(payload: unknown): WebhookKommentar[] {
 }
 
 /**
- * Bildunterschrift und Adresse eines Reels.
+ * Bildunterschrift, Adresse und Video-Quelle eines Reels.
  *
- * Die Bildunterschrift entscheidet über Relevanz und Sprache; die Adresse
- * dient nur der Übersichtsseite, damit sich ein Reel von dort aus öffnen
- * lässt, statt es anhand einer nackten ID suchen zu müssen.
+ * Die Bildunterschrift entscheidet über Sprache und ist ein Signal bei der
+ * Klassifikation; die Adresse dient der Übersichtsseite; die Video-URL wird
+ * an die Video-Analyse durchgereicht, damit auch im Video gesprochene oder
+ * eingeblendete Namens-Aufrufe erkannt werden. Signierte CDN-URL, gilt nur
+ * kurz - deshalb sofort nach Erhalt weiterverarbeiten.
  */
-export async function ladeMedia(
-  mediaId: string,
-): Promise<{ caption: string; permalink: string | null }> {
-  const media = await graph<{ caption?: string; permalink?: string }>(mediaId, {
+export async function ladeMedia(mediaId: string): Promise<{
+  caption: string;
+  permalink: string | null;
+  videoUrl: string | null;
+  mediaType: string | null;
+}> {
+  const media = await graph<{
+    caption?: string;
+    permalink?: string;
+    media_url?: string;
+    media_type?: string;
+  }>(mediaId, {
     method: "GET",
-    query: { fields: "caption,permalink" },
+    query: { fields: "caption,permalink,media_url,media_type" },
   });
-  return { caption: media.caption ?? "", permalink: media.permalink ?? null };
+  return {
+    caption: media.caption ?? "",
+    permalink: media.permalink ?? null,
+    videoUrl: media.media_url ?? null,
+    mediaType: media.media_type ?? null,
+  };
 }
 
 /**
