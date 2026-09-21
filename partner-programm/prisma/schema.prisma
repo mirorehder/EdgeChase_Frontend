@@ -1,0 +1,279 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+
+  // Migrationen müssen an Neons Verbindungspooler vorbei: der läuft im
+  // Transaction-Mode und lehnt die DDL-Anweisungen ab, die "prisma migrate
+  // deploy" beim Build absetzt. Beide Variablen setzt die Neon-Integration
+  // in Vercel automatisch. Eigener Neon-Branch/-Projekt für das
+  // Partner-Programm - kein gemeinsamer Datenbestand mit dem Coupon-Automaten.
+  directUrl = env("DATABASE_URL_UNPOOLED")
+}
+
+/// Eine Person im Micro-Affiliate-Programm.
+///
+/// Der stabile Schlüssel ist die Instagram-scoped User-ID: dieselbe ID liefert
+/// der Kommentar-Webhook (als `from.id`) und der Nachrichten-Webhook (als
+/// `sender.id`), sodass sich ein per Kommentar ausgelöstes Onboarding und die
+/// folgende DM-Konversation derselben Person zuordnen lassen. Ohne diese
+/// Verbindung liesse sich eine eingehende DM nicht auf das Reel zurückführen,
+/// unter dem alles begann.
+///
+/// `status` ist der Zustandsautomat der Konversation (siehe unten). `gesperrt`
+/// ist davon bewusst getrennt: es ist die manuelle Missbrauchs-Sperre aus dem
+/// Dashboard und sagt nichts über den Gesprächsstand aus - eine gesperrte
+/// Person kann durchaus mitten in `zustimmung_erhalten` stehen.
+model Partner {
+  id String @id @default(cuid())
+
+  /// Instagram-scoped ID der Person - der Join-Schlüssel zwischen Kommentar
+  /// und DM. Unique, damit dieselbe Person nicht zweimal ins Programm kommt.
+  igUserId String @unique
+
+  /// Handle und selbst genannter Vorname, soweit bekannt. Beide optional: ein
+  /// DM-Erstkontakt liefert oft nur die scoped ID, der Name kommt erst im
+  /// Gespräch oder aus dem Handle.
+  igUsername String?
+  name       String?
+
+  /// "de" | "en" | null. Der Bot fragt als Erstes nach der Sprache; bis dahin
+  /// steht hier null und alle Bot-Texte laufen zweisprachig.
+  sprache String?
+
+  /// Der Zustandsautomat der Konversation:
+  ///   "neu"                 - Zeile angelegt, noch nichts verschickt
+  ///   "sprache_offen"       - Sprachfrage verschickt, wartet auf de/en
+  ///   "angeschrieben"       - Willkommens-DM raus, wartet auf Zustimmung
+  ///   "zustimmung_erhalten" - Code erzeugt und ausgeliefert, aktiv im Programm
+  ///   "frage_offen"         - Bot hat auf eine Rückfrage geantwortet
+  ///   "eskaliert"           - Betreiber übernimmt, Bot pausiert für diese Person
+  ///   "abgelehnt"           - Person will nicht mitmachen
+  ///   "beendet"             - Person ist ausgestiegen, Code deaktiviert
+  status String @default("neu")
+
+  /// Manuelle Sperre aus dem Dashboard (Code-Missbrauch). Unabhängig vom
+  /// Gesprächsstatus. Gesperrt = keine weitere Provision, Code deaktiviert.
+  gesperrt Boolean @default(false)
+
+  /// "kommentar" | "dm" - wie die Person ins Programm kam. Nur zur Auswertung.
+  quelle String
+
+  /// Das Reel, unter dem der auslösende Kommentar stand (bei quelle=kommentar).
+  triggerMediaId String?
+
+  /// Die auslösende Kommentar-ID. Unique und damit die Doppelsperre gegen
+  /// mehrfache Zustellung desselben Kommentar-Webhooks: der zweite Versuch,
+  /// aus demselben Kommentar einen Partner anzulegen, scheitert am Einfügen.
+  triggerCommentId String? @unique
+
+  /// Der vergebene persönliche Rabatt-Code und seine Wix-Gutschein-ID. Erst
+  /// gesetzt, sobald die Person zugestimmt hat.
+  couponCode  String? @unique
+  wixCouponId String?
+
+  /// Konditionen als Momentaufnahme je Person - so ändert eine spätere
+  /// Anpassung der Programm-Vorgaben nicht rückwirkend, was diese Person
+  /// zugesagt bekommen hat. provisionssatz als Anteil (0.15 = 15%),
+  /// kaeuferRabatt als Prozentzahl (15 = 15%).
+  provisionssatz Float @default(0.15)
+  kaeuferRabatt  Int   @default(15)
+
+  /// Welche Fassung der Teilnahmebedingungen die Person per Zustimmungsklick
+  /// akzeptiert hat, und wann. Für die Nachweisbarkeit der Einwilligung.
+  agbVersion   String?
+  zustimmungAm DateTime?
+
+  /// Die zuletzt vom Bot getroffene Entscheidung und - falls eskaliert - der
+  /// Grund. Rein fürs Dashboard, damit auf einen Blick klar ist, worauf der
+  /// Bot zuletzt reagiert hat.
+  letzteBotAktion String?
+  eskalationsGrund String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  nachrichten  PartnerNachricht[]
+  bestellungen PartnerBestellung[]
+  auszahlungen PartnerAuszahlung[]
+
+  @@index([status])
+  @@index([couponCode])
+  @@index([createdAt])
+}
+
+/// Jede Nachricht der Konversation, eingehend wie ausgehend - die Chronik, an
+/// der sich im Dashboard nachvollziehen lässt, worauf der Bot geantwortet hat.
+///
+/// Bei eingehenden Nachrichten ist `igMessageId` die Doppelsperre: Meta stellt
+/// dasselbe Nachrichten-Ereignis mehrfach zu, wenn die Antwort langsam ist.
+/// Weil die Message-ID unique ist, wird dieselbe DM nie zweimal verarbeitet.
+model PartnerNachricht {
+  id String @id @default(cuid())
+
+  partnerId String
+  partner   Partner @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+
+  /// "eingehend" | "ausgehend".
+  richtung String
+
+  text String
+
+  /// Metas Message-ID der eingehenden DM - Doppelsperre. Bei ausgehenden
+  /// Nachrichten null.
+  igMessageId String? @unique
+
+  /// Die vom Bot gewählte Aktion und seine Sicherheit (0..1). Bei ausgehenden
+  /// Nachrichten die Aktion, die zu diesem Text geführt hat; bei eingehenden
+  /// die Klassifikation der eingehenden Nachricht. Unter der Schwelle
+  /// eskaliert der Bot statt selbst zu antworten.
+  klassifikation String?
+  sicherheit     Float?
+
+  /// Ob diese Nachricht eine Eskalation ausgelöst hat.
+  eskaliert Boolean @default(false)
+
+  createdAt DateTime @default(now())
+
+  @@index([partnerId, createdAt])
+}
+
+/// Eine über einen Partner-Code gelaufene Bestellung, aus dem Wix-
+/// `orders/created`-Webhook.
+///
+/// `wixOrderId` ist unique - die Doppelsperre gegen mehrfache Zustellung
+/// desselben Bestell-Ereignisses, damit eine Provision nicht doppelt zählt.
+/// Beträge als Decimal, nicht Float: bei Geld darf die Rundung nicht vom
+/// Gleitkomma abhängen.
+model PartnerBestellung {
+  id String @id @default(cuid())
+
+  partnerId String
+  partner   Partner @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+
+  /// Wix-Bestell-ID - Doppelsperre.
+  wixOrderId String @unique
+
+  /// Der Netto-Warenwert, auf den die Provision gerechnet wird: nach
+  /// Rabattabzug, ohne Versandkosten (und ohne Steuer). So aus dem Wix-
+  /// Payload gelesen, damit die Provisionsbasis fest steht und nicht später
+  /// aus wechselnden Feldern neu abgeleitet werden muss.
+  bestellwertNetto Decimal @db.Decimal(10, 2)
+  waehrung         String  @default("CHF")
+
+  /// Provisionssatz als Momentaufnahme und die daraus errechnete Provision.
+  provisionssatz Float
+  provision      Decimal @db.Decimal(10, 2)
+
+  /// Der Code, über den die Bestellung lief - redundant zur Partner-Relation,
+  /// aber nützlich, wenn ein Partner den Code getauscht bekommen hat.
+  couponCode String
+
+  /// Abrechnungsmonat "YYYY-MM", aus `bestelltAm` abgeleitet. Als Feld statt
+  /// als Berechnung, damit die Monatsaggregation ohne Datumsarithmetik läuft.
+  monat String
+
+  /// Wann die Bestellung bei Wix erstellt wurde (nicht wann der Webhook kam).
+  bestelltAm DateTime
+
+  /// Bei Retoure/Storno auf true - die Provision wird dann im laufenden
+  /// Abrechnungsmonat gegengerechnet, nicht rückwirkend zurückgefordert.
+  storniert Boolean @default(false)
+
+  /// Das rohe Webhook-Payload zur Nachvollziehbarkeit.
+  payload Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([partnerId])
+  @@index([monat])
+}
+
+/// Die monatliche Auszahlung je Person (Ausblick / Buchführung).
+///
+/// Die eigentliche Zahlung passiert ausserhalb des Bots (TWINT/Bank). Diese
+/// Zeile ist der Beleg: welcher Betrag für welchen Monat fällig war, ob und
+/// wie er ausgezahlt wurde. Genau eine Zeile je Person und Monat.
+model PartnerAuszahlung {
+  id String @id @default(cuid())
+
+  partnerId String
+  partner   Partner @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+
+  /// Abrechnungsmonat "YYYY-MM".
+  monat String
+
+  /// Der fällige Betrag (Summe der Provisionen des Monats, minus Stornos,
+  /// plus eventueller Übertrag aus einem Monat unter der Mindestgrenze).
+  betrag Decimal @db.Decimal(10, 2)
+
+  /// "offen" | "ausgezahlt" | "uebertragen" (unter der Mindestgrenze, geht in
+  /// den Folgemonat).
+  status String @default("offen")
+
+  /// "bank" | "twint" - wie ausgezahlt wurde.
+  methode      String?
+  ausgezahltAm DateTime?
+
+  notiz String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([partnerId, monat])
+}
+
+/// Was wir über ein Reel wissen, zwischengespeichert - Vorbild: InstagramMedia
+/// im Coupon-Automaten, hier für die Partner-Aufruf-Klassifikation.
+///
+/// Ob ein Reel zur Partner-Teilnahme aufruft, entscheidet die Video-Analyse
+/// (Gemini) beim ersten Kommentar darunter, mit Text-Erkennung als Fallback.
+/// Das Ergebnis bleibt gespeichert - Reels sind unveränderlich, eine zweite
+/// Analyse würde nur Kosten verdoppeln. Die Caption wird täglich aufgefrischt,
+/// die Klassifikation nicht.
+model PartnerMedia {
+  id String @id
+
+  caption   String
+  permalink String?
+
+  /// Ruft das Reel zur Partner-Teilnahme auf (automatisch klassifiziert)?
+  istAufruf Boolean
+
+  /// Menschenlesbare Begründung der Klassifikation - fürs Dashboard.
+  analyseHinweis String?
+
+  /// Manuelle Übersteuerung: true erzwingt "ist Partner-Aufruf", false
+  /// schliesst aus, null (Vorgabe) bedeutet "automatisch entscheiden".
+  ueberschreibung Boolean?
+
+  /// "de" | "en" - bestimmt die Vorgabe-Sprache, solange die Person noch keine
+  /// gewählt hat.
+  sprache String
+
+  aktualisiertAm DateTime @updatedAt
+}
+
+/// Der Ein-Aus-Schalter des Partner-Automaten. Eine einzige Zeile. Steht er
+/// auf false, werden eingehende Ereignisse gesammelt, aber nicht bearbeitet.
+model PartnerConfig {
+  id String @id @default("default")
+
+  enabled Boolean @default(true)
+
+  updatedAt DateTime @updatedAt
+}
+
+/// Ein Web-Push-Abonnement fürs Betreiber-Dashboard - Vorbild: der Coupon-
+/// Automat. Eigene VAPID-Schlüssel je App. Alte Abos, die der Push-Dienst als
+/// abgelaufen zurückweist, putzt der Sende-Code weg.
+model PushSubscription {
+  id        String   @id @default(cuid())
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+}

@@ -1,0 +1,498 @@
+:root {
+  color-scheme: dark;
+  --bg: #0f1115;
+  --surface: #171a21;
+  --border: #2a2e38;
+  --text: #e7e9ee;
+  --muted: #9aa1ac;
+  --accent: #4f7cff;
+  --ok: #3ecf8e;
+  --warn: #f5a623;
+  --err: #ef4444;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+main {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 32px 20px 64px;
+  padding-left: max(20px, env(safe-area-inset-left));
+  padding-right: max(20px, env(safe-area-inset-right));
+  /* Im Vollbildmodus gibt es keine Browserleiste, die unten Platz macht -
+     ohne das hier klebt der Schalter am Home-Indikator. */
+  padding-bottom: calc(64px + env(safe-area-inset-bottom));
+}
+
+h1 {
+  font-size: 22px;
+  margin-bottom: 4px;
+}
+
+.subtitle {
+  color: var(--muted);
+  margin-top: 0;
+  margin-bottom: 28px;
+  font-size: 14px;
+}
+
+.stats-row {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+
+.stat-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 16px;
+  min-width: 130px;
+}
+
+.stat-card .value {
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.stat-card .label {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+button {
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 16px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.error-text {
+  color: var(--err);
+  font-size: 12px;
+}
+
+.empty-state {
+  color: var(--muted);
+  font-size: 14px;
+  padding: 24px 0;
+}
+
+.tag {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(79, 124, 255, 0.18);
+  color: var(--accent);
+}
+
+.abschnitt-titel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: var(--text);
+  font-size: inherit;
+  font-weight: inherit;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+/* ==========================================================================
+   Instagram-Kommentar-Automat
+   ========================================================================== */
+
+.ig-schalter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  margin: 20px 0;
+  /* Der Zustand muss ohne Lesen erkennbar sein - deshalb die Kante in
+     Signalfarbe statt eines blossen Wortes. */
+  border-left: 4px solid var(--muted);
+}
+
+.ig-schalter.ig-an {
+  border-left-color: var(--ok);
+}
+
+.ig-schalter.ig-aus {
+  border-left-color: var(--warn);
+}
+
+.ig-schalter-titel {
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.ig-schalter-text {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.ig-warnung {
+  margin-top: 8px;
+  color: var(--warn);
+  font-size: 13px;
+}
+
+.ig-knopf {
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.ig-knopf:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.ig-knopf:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.ig-fehlerkasten {
+  border: 1px solid var(--err);
+  border-radius: 10px;
+  padding: 12px 16px;
+  margin-bottom: 20px;
+  background: color-mix(in srgb, var(--err) 8%, var(--surface));
+  font-size: 13px;
+}
+
+.ig-fehlerkasten ul {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  color: var(--muted);
+}
+
+.ig-tabelle {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  /* Auf dem Telefon ist die Tabelle breiter als der Schirm; sie soll für sich
+     scrollen und nicht die ganze Seite verschieben. */
+  display: block;
+  overflow-x: auto;
+}
+
+.ig-tabelle th {
+  text-align: left;
+  padding: 8px 10px;
+  color: var(--muted);
+  font-weight: 500;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.ig-tabelle td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.ig-tabelle code {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 12px;
+}
+
+.ig-zeile-fehler td {
+  background: color-mix(in srgb, var(--err) 6%, transparent);
+}
+
+.ig-schwach {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.ig-reels {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.ig-reel {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  background: var(--surface);
+}
+
+.ig-reel-kopf {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 12px;
+}
+
+.ig-reel-kopf a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.ig-reel-caption {
+  font-size: 13px;
+  margin-bottom: 8px;
+  line-height: 1.4;
+}
+
+.ig-uebersteuerung {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+/* Ausklappbare Kommentar-Liste innerhalb einer Reel-Karte. */
+.ig-reel-kommentare {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.ig-reel-kommentare summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--muted);
+  list-style: none;
+  /* Chevron rechts angedeutet - dezenter als der native Marker. */
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ig-reel-kommentare summary::before {
+  content: "▸";
+  font-size: 10px;
+  transition: transform 0.15s;
+}
+
+.ig-reel-kommentare[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.ig-reel-kommentare summary::-webkit-details-marker {
+  display: none;
+}
+
+.ig-tabelle-eingebettet {
+  margin-top: 8px;
+  font-size: 12px;
+}
+
+.ig-tabelle-eingebettet th,
+.ig-tabelle-eingebettet td {
+  padding: 6px 8px;
+}
+
+.ig-knopf-klein {
+  padding: 3px 10px;
+  font-size: 12px;
+}
+
+.push-einrichten {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  margin: 0 0 20px;
+  font-size: 13px;
+}
+
+.push-einrichten.push-an {
+  color: var(--ok);
+}
+
+.push-einrichten.push-verboten {
+  color: var(--warn);
+}
+
+.push-titel {
+  font-weight: 600;
+  margin-bottom: 2px;
+  color: var(--text);
+  font-size: 14px;
+}
+
+.push-text {
+  font-size: 12px;
+}
+
+.ig-gruende {
+  font-size: 13px;
+  color: var(--muted);
+  padding-left: 18px;
+}
+
+.ig-verlauf {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 88px;
+  margin-bottom: 24px;
+}
+
+.ig-balken {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  height: 100%;
+  min-width: 0;
+}
+
+/* Auch ein Tag ohne Kommentare bekommt eine sichtbare Grundlinie - sonst
+   sähe eine Lücke aus wie ein fehlender Tag statt wie eine Null. */
+.ig-balken-fuellung {
+  background: var(--accent);
+  border-radius: 3px 3px 0 0;
+  min-height: 2px;
+  transition: height 0.2s;
+}
+
+.ig-balken-tag {
+  text-align: center;
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Partner-Programm-spezifische Ergänzungen --- */
+
+/* Status-Pille je Konversations-Zustand. */
+.pp-status {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+.pp-status-zustimmung_erhalten,
+.pp-status-frage_offen {
+  color: var(--ok);
+  border-color: color-mix(in srgb, var(--ok) 40%, transparent);
+}
+.pp-status-eskaliert {
+  color: var(--err);
+  border-color: color-mix(in srgb, var(--err) 40%, transparent);
+}
+.pp-status-angeschrieben,
+.pp-status-sprache_offen {
+  color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 40%, transparent);
+}
+.pp-gesperrt {
+  color: var(--err);
+  font-weight: 600;
+}
+
+/* Karte je Partner. */
+.pp-partner {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-bottom: 12px;
+}
+.pp-partner-kopf {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+.pp-partner-name {
+  font-weight: 600;
+}
+.pp-zahlen {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+  margin: 8px 0;
+  font-size: 13px;
+}
+.pp-zahl-wert {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.pp-zahl-label {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+/* Konversations-Verlauf. */
+.pp-verlauf {
+  margin-top: 8px;
+}
+.pp-nachricht {
+  padding: 6px 10px;
+  border-radius: 8px;
+  margin: 4px 0;
+  font-size: 13px;
+  max-width: 85%;
+  white-space: pre-wrap;
+}
+.pp-eingehend {
+  background: #1d2028;
+  border: 1px solid var(--border);
+}
+.pp-ausgehend {
+  background: color-mix(in srgb, var(--accent) 18%, var(--surface));
+  margin-left: auto;
+}
+.pp-nachricht-meta {
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.pp-aktionen {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
