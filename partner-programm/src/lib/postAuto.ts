@@ -17,6 +17,7 @@ import { TRACKS, trackBeschreibung } from "./trackClient";
 import { istVerwendbar } from "./sound";
 import { normalisiereTagKeys, passtZuSparte } from "./soundTags";
 import { posteReel } from "./instagram";
+import { spracheAusCaption } from "./instagram/reelerkennung";
 import { logActivity } from "./activity";
 import {
   bucketFromServeUrl,
@@ -498,6 +499,38 @@ async function abschluss(
 }
 
 /**
+ * Markiert ein gerade gepostetes Reel als Partner-Aufruf.
+ *
+ * Legt (oder aktualisiert) den PartnerMedia-Eintrag mit `ueberschreibung = true`
+ * an - dieselbe Markierung, die der Betreiber sonst von Hand im Dashboard setzt.
+ * Der Partner-Bot behandelt das Reel damit garantiert als Partner-Aufruf, ohne
+ * dass jemand es nachtragen muss.
+ *
+ * Bewusst best-effort in try/catch: das Markieren darf einen erfolgreichen Post
+ * niemals nachträglich zu Fall bringen. Schlägt es fehl, bleibt der alte Weg
+ * (im Dashboard von Hand markieren) offen.
+ */
+async function markiereAlsPartnerReel(mediaId: string, caption: string): Promise<void> {
+  try {
+    await prisma.partnerMedia.upsert({
+      where: { id: mediaId },
+      create: {
+        id: mediaId,
+        caption,
+        istAufruf: true,
+        ueberschreibung: true,
+        sprache: spracheAusCaption(caption),
+        analyseHinweis: "Vom Content-Generator gepostet - automatisch als Partner-Reel markiert.",
+      },
+      update: { ueberschreibung: true },
+    });
+    await logActivity(`Als Partner-Reel markiert (Media-ID ${mediaId}).`, { track: "promo" });
+  } catch {
+    // Still: der Post ist raus, das Markieren ist Komfort. Notfalls von Hand.
+  }
+}
+
+/**
  * Prüft eine Sparte und postet höchstens EIN fälliges Video.
  *
  * Bewusst nur eines pro Aufruf: der Mindestabstand soll greifen, und ein
@@ -604,6 +637,15 @@ export async function posteFaelliges(track: Track, jetzt = new Date()): Promise<
     where: { id: kandidat.id },
     data: { postedMediaId: ergebnis.mediaId, postedAt: jetzt, postError: null },
   });
+
+  // Von hier gepostete Reels automatisch als Partner-Reel markieren: der
+  // Partner-Bot arbeitet im Allowlist-Modus und behandelt nur markierte Reels.
+  // Weil dieser Generator in derselben App läuft, kennen wir die Media-ID sofort
+  // und setzen die Markierung selbst - kein manuelles Nachtragen mehr.
+  if (ergebnis.mediaId) {
+    await markiereAlsPartnerReel(ergebnis.mediaId, caption);
+  }
+
   const soundText =
     sound.herkunft === "eigenerFilmton"
       ? "Filmton (Video mit _music)"
