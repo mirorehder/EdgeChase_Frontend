@@ -41,10 +41,18 @@ Nur Ereignisse jünger als der gespeicherte Wasserstand (`PartnerConfig`) werden
 betrachtet; die eigentliche Doppelsperre bleiben die Unique-Constraints
 (`igMessageId`, `triggerCommentId`, `igUserId`). Ist der Automat ausgeschaltet,
 wird nicht abgefragt und der Wasserstand nicht bewegt — beim Wiedereinschalten
-werden die Ereignisse erneut gesehen. Latenz = Zeitplan-Takt (Vorgabe 10 Min,
-braucht den Vercel-**Pro**-Plan; Hobby deckelt Cron auf einmal täglich). Der
-`/api/webhook`-Endpunkt bleibt im Code, wird aber nicht registriert — falls das
-Programm später eine eigene Meta-App bekommt, ist er sofort einsatzbereit.
+werden die Ereignisse erneut gesehen. Der `/api/webhook`-Endpunkt bleibt im
+Code, wird aber nicht registriert — falls das Programm später eine eigene
+Meta-App bekommt, ist er sofort einsatzbereit.
+
+**Geteilte Taktung** (`polleEingaenge`): DMs werden bei **jedem** Lauf geholt
+(ein einziger Aufruf, hält die laufende Konversation minutenschnell), die
+Kommentar-Suche läuft höchstens alle 10 Min (`KOMMENTAR_INTERVALL_MS`) — sie geht
+über viele Reels und wäre bei jedem Minuten-Lauf zu teuer fürs Instagram-Rate-
+Limit. So kann ein **externer Cron-Dienst** `/api/process` jede Minute anstossen
+(mit `Authorization: Bearer <CRON_SECRET>`), ohne Vercel-Pro. Der Cron in
+`vercel.json` ist nur noch ein täglicher Notnagel (Hobby deckelt Vercel-Cron auf
+einmal pro Tag).
 
 ## Der Konversations-Zustandsautomat
 
@@ -98,10 +106,11 @@ Onboarding-DM verlinkt sie; die akzeptierte Fassung wird je Person in
 2. `npm install`
 3. `npm run prisma:deploy` (Migrationen) bzw. `npm run prisma:migrate` (lokal)
 4. `npm run dev`
-5. **Kein** Meta-Webhook nötig — die App holt Kommentare und DMs per Polling
-   (`/api/process`, Zeitplan in `vercel.json`). Die Webhook-Abos des
-   Coupon-Automaten bleiben unangetastet. Für brauchbare Latenz den Vercel-Pro-
-   Plan (Cron alle 10 Min); auf Hobby läuft der Poll nur einmal täglich.
+5. **Kein** Meta-Webhook nötig — die App holt Kommentare und DMs per Polling.
+   Die Webhook-Abos des Coupon-Automaten bleiben unangetastet. Für die Taktung
+   einen externen Cron-Dienst (z.B. cron-job.org, kostenlos, 1×/Min) auf
+   `…/api/process` zeigen lassen, mit Kopfzeile `Authorization: Bearer <CRON_SECRET>`.
+   (Der Cron in `vercel.json` ist nur der tägliche Notnagel.)
 6. Wix-Automation `orders/created` → `…/api/wix-webhook?secret=<WIX_WEBHOOK_SECRET>`.
 
 ## Wichtige Dateien

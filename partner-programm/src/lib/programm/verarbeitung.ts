@@ -68,6 +68,17 @@ const UEBERLAPP_MS = 3 * 60 * 1000;
 /** So viele der jüngsten Medien werden je Lauf nach neuen Kommentaren abgesucht. */
 const MEDIEN_JE_LAUF = 15;
 
+/**
+ * Wie oft die (teure) Kommentar-Suche höchstens läuft. DMs holt jeder Lauf ab -
+ * das ist ein einziger Aufruf und hält die Konversation minutenschnell. Die
+ * Kommentar-Suche geht über viele Reels (ein Aufruf je Reel) und läuft deshalb
+ * nur in diesem Takt, damit ein Poller, der jede Minute angestossen wird (z.B.
+ * ein externer Cron-Dienst statt Vercel-Pro), nicht in Instagrams Rate-Limit
+ * läuft. Neue Kommentierende landen so mit bis zu 10 Min Verzug - das reicht,
+ * die eigentliche Konversation danach ist wieder minutenschnell.
+ */
+const KOMMENTAR_INTERVALL_MS = 10 * 60 * 1000;
+
 /** Ist der Automat eingeschaltet? Fehlt die Zeile, gilt er als eingeschaltet. */
 export async function istEingeschaltet(): Promise<boolean> {
   const config = await prisma.partnerConfig.findUnique({ where: { id: "default" } });
@@ -649,23 +660,41 @@ export async function polleEingaenge(): Promise<{ kommentare: number; nachrichte
 
   const config = await prisma.partnerConfig.findUnique({ where: { id: "default" } });
   const jetzt = Date.now();
+  const stand = new Date(jetzt);
 
-  const kommentarCutoff = config?.letzterKommentarScan
-    ? config.letzterKommentarScan.getTime() - UEBERLAPP_MS
-    : jetzt - ERSTLAUF_RUECKBLICK_MS;
+  // DMs jeden Lauf (ein Aufruf) - die laufende Konversation soll nicht warten.
   const dmCutoff = config?.letzterDmScan
     ? config.letzterDmScan.getTime() - UEBERLAPP_MS
     : jetzt - ERSTLAUF_RUECKBLICK_MS;
-
-  const kommentare = await polleKommentare(kommentarCutoff);
   const nachrichten = await polleNachrichten(dmCutoff);
 
-  // Wasserstand erst nach erfolgreichem Lauf setzen.
-  const stand = new Date(jetzt);
+  // Kommentar-Suche nur, wenn seit dem letzten Mal genug Zeit vergangen ist -
+  // sie geht über viele Reels und wäre bei jedem Minuten-Lauf zu teuer.
+  const kommentarFaellig =
+    !config?.letzterKommentarScan ||
+    jetzt - config.letzterKommentarScan.getTime() >= KOMMENTAR_INTERVALL_MS;
+
+  let kommentare = 0;
+  if (kommentarFaellig) {
+    const kommentarCutoff = config?.letzterKommentarScan
+      ? config.letzterKommentarScan.getTime() - UEBERLAPP_MS
+      : jetzt - ERSTLAUF_RUECKBLICK_MS;
+    kommentare = await polleKommentare(kommentarCutoff);
+  }
+
+  // Wasserstände getrennt fortschreiben: den Kommentar-Stand nur, wenn diesmal
+  // wirklich gesucht wurde (sonst würde der Takt bei jedem Lauf zurückgesetzt).
   await prisma.partnerConfig.upsert({
     where: { id: "default" },
-    create: { id: "default", letzterKommentarScan: stand, letzterDmScan: stand },
-    update: { letzterKommentarScan: stand, letzterDmScan: stand },
+    create: {
+      id: "default",
+      letzterDmScan: stand,
+      letzterKommentarScan: kommentarFaellig ? stand : null,
+    },
+    update: {
+      letzterDmScan: stand,
+      ...(kommentarFaellig ? { letzterKommentarScan: stand } : {}),
+    },
   });
 
   return { kommentare, nachrichten };
