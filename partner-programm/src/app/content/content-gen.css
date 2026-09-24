@@ -1,0 +1,1424 @@
+:root {
+  color-scheme: dark;
+  --bg: #0f1115;
+  --surface: #171a21;
+  --border: #2a2e38;
+  --text: #e7e9ee;
+  --muted: #9aa1ac;
+  --accent: #4f7cff;
+  --ok: #3ecf8e;
+  --warn: #f5a623;
+  --err: #ef4444;
+  /* Leitfarbe je Sparte - deutlich verschieden, damit auf einen Blick klar
+     ist, in welcher man gerade arbeitet. */
+  --viral: #f5643c;
+  --sports: #3ecf8e;
+  --clothing: #c084fc;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+main {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 32px 20px 64px;
+  /* Quer gehalten liegt die Kameraeinbuchtung neben dem Inhalt. Ohne diese
+     beiden Zeilen verschwindet dort die linke Spalte der Clip-Bibliothek. */
+  padding-left: max(20px, env(safe-area-inset-left));
+  padding-right: max(20px, env(safe-area-inset-right));
+}
+
+h1 {
+  font-size: 22px;
+  margin-bottom: 4px;
+}
+
+.subtitle {
+  color: var(--muted);
+  margin-top: 0;
+  margin-bottom: 28px;
+  font-size: 14px;
+}
+
+.stats-row {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+
+.stat-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 16px;
+  min-width: 130px;
+}
+
+.stat-card .value {
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.stat-card .label {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.actions {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 28px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+button {
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 16px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+button.secondary {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+
+.action-message {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.action-message.error {
+  color: var(--err);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+th, td {
+  text-align: left;
+  padding: 10px 12px;
+  font-size: 13px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+th {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+tr:last-child td {
+  border-bottom: none;
+}
+
+.status {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.status-done { background: rgba(62, 207, 142, 0.15); color: var(--ok); }
+.status-rendering, .status-queued { background: rgba(245, 166, 35, 0.15); color: var(--warn); }
+.status-failed { background: rgba(239, 68, 68, 0.15); color: var(--err); }
+
+.clip-list {
+  color: var(--muted);
+  font-size: 12px;
+  margin: 0;
+  padding-left: 16px;
+}
+
+.hook-text {
+  max-width: 280px;
+}
+
+.drive-link {
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 12px;
+}
+
+.error-text {
+  color: var(--err);
+  font-size: 12px;
+}
+
+.hinweis-text {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.empty-state {
+  color: var(--muted);
+  font-size: 14px;
+  padding: 24px 0;
+}
+
+.live {
+  margin: 28px 0 8px;
+}
+
+.live-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.live-head h2 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.live-progress {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* Pulsierender Punkt, solange ein Lauf arbeitet - ohne ihn sieht die Seite
+   waehrend der minutenlangen Laeufe aus, als haenge sie. */
+.pulse {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--ok);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.35; transform: scale(0.8); }
+}
+
+.bar {
+  height: 5px;
+  background: var(--border);
+  border-radius: 999px;
+  overflow: hidden;
+  margin-bottom: 12px;
+}
+
+.bar-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.4s ease;
+}
+
+.log {
+  list-style: none;
+  margin: 0;
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  max-height: 320px;
+  overflow-y: auto;
+  font-size: 13px;
+}
+
+.log li {
+  display: flex;
+  gap: 10px;
+  padding: 5px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  line-height: 1.45;
+}
+
+.log li:last-child {
+  border-bottom: none;
+}
+
+.log-time {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.log-error {
+  color: var(--err);
+}
+
+/* Posting-Übersicht: was automatisch gepostet wurde und was die Automatik
+   zuletzt geprüft hat. Bewusst nah am Log-Stil, es ist dieselbe Art Liste. */
+.post-historie {
+  margin: 28px 0 8px;
+}
+
+.post-historie h2 {
+  margin-bottom: 10px;
+}
+
+.historie-unter {
+  margin: 22px 0 8px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.empty-state.small {
+  font-size: 13px;
+  padding: 12px 0;
+}
+
+.historie-liste,
+.lauf-liste {
+  list-style: none;
+  margin: 0;
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 13px;
+}
+
+.lauf-liste {
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.historie-zeile,
+.lauf-liste li {
+  display: flex;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  line-height: 1.45;
+}
+
+.historie-zeile:last-child,
+.lauf-liste li:last-child {
+  border-bottom: none;
+}
+
+.historie-zeit,
+.lauf-zeit {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+  min-width: 118px;
+}
+
+.historie-mitte {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.historie-titel {
+  font-weight: 600;
+}
+
+.historie-titel a {
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 1px solid var(--border);
+}
+
+.historie-titel a:hover {
+  border-bottom-color: var(--accent);
+}
+
+.historie-details {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* Ein tatsächlich geposteter Lauf hebt sich vom „nichts zu tun“ ab - so
+   springt in der Prüfliste sofort ins Auge, wann wirklich etwas rausging. */
+.lauf-post .lauf-text {
+  color: var(--ok);
+}
+
+.lauf-leer .lauf-text {
+  color: var(--muted);
+}
+
+/* Promo: Auswahl KI vs. eigene Captions + Listeneditor. */
+.caption-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.caption-titel {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.radio-row {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+
+.radio-row .schalter {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+}
+
+.caption-liste {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.caption-zeile {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.caption-zeile textarea {
+  flex: 1;
+}
+
+button.klein {
+  padding: 4px 10px;
+  font-size: 13px;
+  align-self: flex-start;
+}
+
+.chat {
+  margin: 28px 0;
+}
+
+.chat-hint {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 0 0 12px;
+}
+
+.chat-log {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px;
+  min-height: 90px;
+  max-height: 380px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.chat-examples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chip {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 7px 13px;
+  font-size: 12px;
+  text-align: left;
+}
+
+.chip:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.bubble {
+  max-width: 84%;
+  padding: 10px 13px;
+  border-radius: 12px;
+  font-size: 14px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.bubble-user {
+  align-self: flex-end;
+  background: var(--accent);
+  color: white;
+  border-bottom-right-radius: 4px;
+}
+
+.bubble-assistant {
+  align-self: flex-start;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border);
+  border-bottom-left-radius: 4px;
+}
+
+.bubble-busy {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.chat-input {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.chat-input input {
+  flex: 1;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 11px 13px;
+  color: var(--text);
+  font-size: 14px;
+  font-family: inherit;
+}
+
+.chat-input input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.library {
+  margin: 32px 0;
+}
+
+.search {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+  min-width: 260px;
+}
+
+.search:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.clips {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.clip {
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.clip:last-child {
+  border-bottom: none;
+}
+
+.clip-row {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 11px 14px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.clip-row:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.clip.open .clip-row {
+  background: rgba(79, 124, 255, 0.08);
+}
+
+.clip-name {
+  font-size: 14px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.tag {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(79, 124, 255, 0.18);
+  color: var(--accent);
+}
+
+.tag.warn {
+  background: rgba(245, 166, 35, 0.18);
+  color: var(--warn);
+}
+
+.clip-meta {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.clip-desc {
+  font-size: 12px;
+  color: var(--muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.clip-editor {
+  padding: 4px 14px 16px;
+  display: grid;
+  gap: 12px;
+}
+
+.clip-editor label,
+.ordner-beschreibung label {
+  display: grid;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.clip-editor textarea,
+.clip-editor input,
+.ordner-beschreibung textarea {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 9px 11px;
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+  resize: vertical;
+}
+
+.clip-editor textarea:focus,
+.clip-editor input:focus,
+.ordner-beschreibung textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.field-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.field-row label {
+  flex: 1;
+  min-width: 130px;
+}
+
+.clip-editor .actions {
+  margin-bottom: 0;
+  align-items: center;
+}
+
+.daily {
+  margin: 24px 0;
+}
+
+.daily-editor {
+  padding: 12px 0 0;
+  border-top: 1px solid var(--border);
+}
+
+.daily-editor label span {
+  display: block;
+  line-height: 1.45;
+}
+
+.clip-editor select {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 9px 11px;
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.checkbox {
+  display: flex !important;
+  align-items: center;
+  gap: 9px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.checkbox input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+}
+
+/* --------------------------------------------------------------------------
+   Sparten
+   Die Trennung muss auf einen Blick sichtbar sein, nicht nur in den
+   Überschriften: die aktive Sparte bekommt eine eigene Leitfarbe, die sich
+   auch auf Knöpfe und Fortschrittsbalken darunter durchzieht.
+   -------------------------------------------------------------------------- */
+
+.sparten {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+
+.sparte {
+  flex: 1 1 220px;
+  text-align: left;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+
+.sparte:hover {
+  color: var(--text);
+}
+
+.sparte-titel {
+  display: block;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.sparte-unter {
+  display: block;
+  margin-top: 3px;
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+.sparte-promo.aktiv {
+  color: var(--text);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+}
+
+.sparte-viral.aktiv {
+  color: var(--text);
+  border-color: var(--viral);
+  background: color-mix(in srgb, var(--viral) 12%, var(--surface));
+}
+
+.sparte-sports.aktiv {
+  color: var(--text);
+  border-color: var(--sports);
+  background: color-mix(in srgb, var(--sports) 12%, var(--surface));
+}
+
+.sparte-clothing.aktiv {
+  color: var(--text);
+  border-color: var(--clothing);
+  background: color-mix(in srgb, var(--clothing) 12%, var(--surface));
+}
+
+/* Die Leitfarbe der Sparte gilt für alles darunter. Dadurch stimmen Knöpfe,
+   Balken und Verweise ohne eigene Regeln je Bauteil. */
+.sparte-inhalt-viral {
+  --accent: var(--viral);
+}
+
+.sparte-inhalt-sports {
+  --accent: var(--sports);
+}
+
+.sparte-inhalt-clothing {
+  --accent: var(--clothing);
+}
+
+/* --------------------------------------------------------------------------
+   Dieselbe Auswahl als Leiste unten, für schmale Bildschirme.
+
+   Vom Home-Bildschirm gestartet läuft die Oberfläche im Vollbild: keine
+   Adressleiste, kein Zurück-Knopf. Die Karten oben sind dann nach zwei
+   Fingerbewegungen aus dem Bild, und die Sparte lässt sich nur noch durch
+   Zurückscrollen wechseln. Die feste Leiste unten löst das und liegt
+   ausserdem dort, wo der Daumen ohnehin ist.
+
+   Gezeigt wird immer genau eine der beiden: unterhalb von 760px die Leiste,
+   darüber die Karten.
+   -------------------------------------------------------------------------- */
+
+.tableiste {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  .sparten {
+    display: none;
+  }
+
+  .tableiste {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 40;
+    /* Durchscheinend, aber nicht mitlesbar: bei 86% blieb die Überschrift
+       dahinter erkennbar und die Leiste wirkte schmutzig. */
+    background: color-mix(in srgb, var(--bg) 93%, transparent);
+    -webkit-backdrop-filter: blur(16px);
+    backdrop-filter: blur(16px);
+    border-top: 1px solid var(--border);
+    /* Wirkt nur mit viewport-fit=cover (siehe src/app/layout.tsx): hält die
+       Beschriftungen über dem Home-Indikator statt darunter. */
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+
+  .tab {
+    position: relative;
+    appearance: none;
+    background: none;
+    border: 0;
+    padding: 9px 4px 8px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    color: var(--muted);
+    cursor: pointer;
+    /* Ohne die beiden Zeilen blitzt beim Tippen ein graues Rechteck auf und
+       ein langer Druck markiert die Beschriftung - beides verrät sofort, dass
+       es kein App-Bedienelement ist. */
+    -webkit-tap-highlight-color: transparent;
+    -webkit-user-select: none;
+    user-select: none;
+    transition: color 0.15s;
+  }
+
+  /* Der Strich über der aktiven Sparte. Er nimmt die Leitfarbe an, die auch
+     Knöpfe und Balken im Inhalt darunter tragen. */
+  .tab::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 50%;
+    width: 26px;
+    height: 2px;
+    border-radius: 0 0 2px 2px;
+    transform: translateX(-50%) scaleX(0);
+    background: currentColor;
+    transition: transform 0.15s;
+  }
+
+  .tab.aktiv::before {
+    transform: translateX(-50%) scaleX(1);
+  }
+
+  .tab-zeichen {
+    width: 23px;
+    height: 23px;
+  }
+
+  .tab-titel {
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.1;
+    white-space: nowrap;
+  }
+
+  .tab-promo.aktiv {
+    color: var(--accent);
+  }
+  .tab-viral.aktiv {
+    color: var(--viral);
+  }
+  .tab-sports.aktiv {
+    color: var(--sports);
+  }
+  .tab-clothing.aktiv {
+    color: var(--clothing);
+  }
+
+  /* Platz für die Leiste. Ohne das verdeckt sie den letzten Knopf der Seite -
+     und der lässt sich dann nicht mehr drücken. */
+  main {
+    padding-bottom: calc(56px + 64px + env(safe-area-inset-bottom));
+  }
+}
+
+.sparte-hinweis {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+  margin: -8px 0 22px;
+  padding-left: 12px;
+  border-left: 2px solid var(--accent);
+}
+
+/* Textphasen eines Konzepts - jede Phase eigenständig lesbar, damit die
+   Abfolge Aufbau -> Pointe auf einen Blick erkennbar ist. */
+.phasen {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 6px 0;
+}
+
+.phase {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-left: 10px;
+  border-left: 2px solid var(--accent);
+}
+
+.phase .tag {
+  align-self: flex-start;
+}
+
+.phase-editor {
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+
+/* --------------------------------------------------------------------------
+   Erzeugte Videos: zwei Gruppen, beide auf- und zuklappbar
+   Die Herkunft muss ohne Lesen erkennbar sein - dafuer je ein Zeichen, eine
+   Farbe und eine farbige Kante an jeder Zeile.
+   -------------------------------------------------------------------------- */
+
+.video-gruppen {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-bottom: 28px;
+}
+
+.video-gruppe {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.gruppe-scheduled {
+  --herkunft: var(--ok);
+}
+
+.gruppe-manual {
+  --herkunft: var(--muted);
+}
+
+.gruppe-kopf {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  background: transparent;
+  border: 0;
+  border-left: 4px solid var(--herkunft);
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.gruppe-kopf:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.gruppe-zeichen {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.gruppe-titel {
+  flex: 1;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.gruppe-hinweis {
+  display: block;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.gruppe-zahl {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.video-pfeil {
+  color: var(--muted);
+  font-size: 12px;
+  width: 12px;
+}
+
+.videos {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 4px;
+}
+
+.video {
+  border-top: 1px solid var(--border);
+}
+
+/* Auch ausserhalb ihrer Gruppe bleibt jede Zeile zuordenbar. */
+.video-scheduled {
+  border-left: 4px solid var(--ok);
+}
+
+.video-manual {
+  border-left: 4px solid var(--muted);
+}
+
+.video-kopf {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: transparent;
+  border: 0;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.video-kopf:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.video-titel {
+  flex: 1;
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.video-meta {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.video-inhalt {
+  padding: 4px 14px 16px 30px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.video-feld {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* Trend-Sound-Pool: Liste der eingetragenen Sounds. */
+.trend-pool {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.trend-pool-liste {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.trend-pool-liste li {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.08));
+  border-radius: 6px;
+}
+
+.trend-pool-titel {
+  flex: 1;
+  min-width: 140px;
+}
+
+/* Ein Kontrollkästchen mit Beschriftung in einer Zeile. Höhere Spezifität als
+   die Grid-Regel für .clip-editor label, sonst steht der Haken über dem Text. */
+.clip-editor label.schalter {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.clip-editor label.schalter input {
+  width: auto;
+  margin: 0;
+  flex: none;
+}
+
+/* Der Ausgabeordner-Block innerhalb einer Videogruppe. */
+.ausgabe-ordner {
+  padding: 10px 12px;
+  margin: 4px 0 10px;
+  border: 1px dashed var(--line, rgba(255, 255, 255, 0.12));
+  border-radius: 8px;
+}
+
+.ausgabe-zeile {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ausgabe-zeile > .video-label {
+  margin-right: 2px;
+}
+
+/* --- Sound-Stimmungs-/Genre-Tags -------------------------------------- */
+
+/* Ein Sound-Eintrag im Pool hat jetzt zwei Zeilen: Kopf (Titel/Knöpfe) und
+   darunter seine Tags. Deshalb Spalte statt der Standard-Zeile für <li>. */
+.trend-pool-liste li.trend-pool-eintrag {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.trend-pool-kopf {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tag-gruppe {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.tag-wahl {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tag-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* Ein Tag-Chip. Im Katalog-Editor mit Entfernen-Kreuz, in der Auswahl als
+   an-/abwählbarer Knopf (.wahl). */
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.tag-chip button {
+  all: unset;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 12px;
+  padding: 0 2px;
+}
+
+.tag-chip button:hover {
+  color: var(--err);
+}
+
+/* Auswahl-Variante: der ganze Chip ist ein Knopf. */
+.tag-chip.wahl {
+  cursor: pointer;
+}
+
+.tag-chip.wahl.an {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, var(--surface));
+  color: var(--text);
+}
+
+/* Der Ändern/Festlegen-Knopf rückt ans Ende der Zeile. */
+.ausgabe-zeile > button {
+  margin-left: auto;
+}
+
+.video-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.video-inhalt .clip-list {
+  margin: 0;
+  padding-left: 18px;
+}
+
+/* Auf schmalen Bildschirmen bricht die Kopfzeile um, statt den Titel
+   wegzuquetschen. */
+@media (max-width: 620px) {
+  .video-kopf,
+  .gruppe-kopf {
+    flex-wrap: wrap;
+  }
+
+  .video-meta,
+  .gruppe-zahl {
+    width: 100%;
+    padding-left: 22px;
+  }
+}
+
+/* --- Quellordner und Clips darunter ------------------------------------ */
+
+.ordner-liste {
+  display: grid;
+  gap: 14px;
+}
+
+.ordner {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.ordner-kopf {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid var(--border);
+}
+
+.ordner-titel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ordner-zahl {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+/* Ueberschrift eines ganzen Abschnitts, der sich zuklappen laesst. */
+.abschnitt-titel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  /* Ohne das zentriert der Knopf seinen Text - am Handy, wo die Ueberschrift
+     ueber zwei Zeilen laeuft, sieht das aus wie ein Versehen. */
+  text-align: left;
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: var(--text);
+  font-size: inherit;
+  font-weight: inherit;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.ordner-schalter {
+  display: flex;
+  gap: 14px;
+}
+
+.ordner-schalter label,
+.clip-schalter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ordner-beschreibung {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.ordner-beschreibung .chat-hint {
+  margin: 4px 0 0;
+}
+
+/* Die Ordnerkarte bringt ihren eigenen Rahmen mit - der der Liste darin
+   waere ein zweiter, doppelt gezeichneter. */
+.ordner .clips {
+  border: none;
+  border-radius: 0;
+}
+
+.clip-zeile {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding-right: 12px;
+}
+
+.clip-griff {
+  padding: 12px 0 12px 12px;
+  color: var(--muted);
+  font-size: 14px;
+  cursor: grab;
+  user-select: none;
+}
+
+.clip-bild {
+  width: 64px;
+  height: 64px;
+  object-fit: cover;
+  border-radius: 6px;
+  margin-top: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  flex-shrink: 0;
+}
+
+.clip-zeile .clip-row {
+  flex: 1;
+  min-width: 0;
+  /* Der Griff bringt seinen eigenen linken Abstand mit. */
+  padding-left: 0;
+}
+
+/* Stillgelegt: sichtbar, aber erkennbar aus dem Spiel. */
+.clip.still .clip-bild,
+.clip.still .clip-row {
+  opacity: 0.45;
+}
+
+/* Der Clip, der gerade am Finger haengt. Angehoben statt nur umrandet -
+   am Handy ist der Finger ueber der Zeile, das Heben ist die einzige
+   Rueckmeldung, die man sieht. */
+.clip.zieht {
+  position: relative;
+  z-index: 2;
+  background: #1f2430;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  border-radius: 8px;
+}
+
+/* Waehrend des Ziehens darf kein Text markiert werden - sonst faerbt sich am
+   Handy nach dem Gedrueckthalten die halbe Zeile blau. */
+.clip.zieht,
+.clip.zieht * {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Der Griff selbst nimmt die Geste immer entgegen, ohne Halten. */
+.clip-griff {
+  touch-action: none;
+}
+
+.clip-schalter {
+  padding-top: 14px;
+}
+
+/* --- Ordner aufnehmen und entfernen ------------------------------------ */
+
+.ordner-neu {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+  flex-wrap: wrap;
+}
+
+.ordner-neu .search {
+  flex: 1;
+}
+
+.ordner-weg {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  border-radius: 8px;
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+.ordner-weg:hover:not(:disabled) {
+  color: var(--err);
+  border-color: var(--err);
+}

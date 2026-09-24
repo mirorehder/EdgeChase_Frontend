@@ -120,4 +120,75 @@ export const env = {
   get vapidSubject(): string {
     return process.env.VAPID_SUBJECT || "mailto:info@edgechase.com";
   },
+
+  // -------------------------------------------------------------------------
+  // Content-Generator (in dieses Projekt eingebaut, nutzt die BESTEHENDE Infra
+  // des Promo-Generators wieder). databaseUrl/geminiApiKey/cronSecret stehen
+  // schon oben und werden mitbenutzt. Die AWS-/Remotion-/Drive-Variablen zeigen
+  // auf dieselben Ressourcen wie das Hauptprojekt - im Vercel-Projekt dieser
+  // App identisch setzen.
+  // -------------------------------------------------------------------------
+  get googleServiceAccountJson() {
+    return required("GOOGLE_SERVICE_ACCOUNT_JSON");
+  },
+  get driveSourceFolderId() {
+    return required("DRIVE_SOURCE_FOLDER_ID");
+  },
+  get driveViralFolderId() {
+    return process.env.DRIVE_VIRAL_FOLDER_ID || "1t-9kl96htTGEiKqhRiA_Ab9f5T5EpMIN";
+  },
+  /** Zielordner wird von der Anwendung selbst angelegt (drive.file sieht nur
+   *  Eigenes), deshalb genügt der Name statt einer ID. */
+  get driveOutputFolderName() {
+    return process.env.DRIVE_OUTPUT_FOLDER_NAME || "EdgeChase Partner Content";
+  },
+  get driveViralOutputFolderName() {
+    return process.env.DRIVE_VIRAL_OUTPUT_FOLDER_NAME || "EdgeChase Virale Edits";
+  },
+  get driveOutputFolderId(): string | null {
+    return process.env.DRIVE_OUTPUT_FOLDER_ID || null;
+  },
+  get driveViralOutputFolderId(): string | null {
+    return process.env.DRIVE_VIRAL_OUTPUT_FOLDER_ID || null;
+  },
+  get googleOAuthClientId() {
+    return required("GOOGLE_OAUTH_CLIENT_ID");
+  },
+  get googleOAuthClientSecret() {
+    return required("GOOGLE_OAUTH_CLIENT_SECRET");
+  },
+  get googleOAuthRefreshToken() {
+    return required("GOOGLE_OAUTH_REFRESH_TOKEN");
+  },
+  /**
+   * Die eigene Adresse von aussen - für Stellen, die keine laufende Anfrage
+   * haben und trotzdem sagen müssen, wohin eine Rückmeldung geht.
+   */
+  get oeffentlicheBasisUrl(): string | null {
+    const eigen = process.env.APP_BASE_URL?.trim();
+    if (eigen) return eigen.replace(/\/+$/, "");
+    const fest = process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim();
+    if (fest) return `https://${fest}`;
+    const fluechtig = process.env.VERCEL_URL?.trim();
+    return fluechtig ? `https://${fluechtig}` : null;
+  },
+  /** Wann der tägliche Lauf startet - nur zur Anzeige. */
+  get cronScheduleLabel() {
+    return process.env.CRON_SCHEDULE_LABEL || "08:00 UTC";
+  },
+  get remotionAwsAccessKeyId() {
+    return required("REMOTION_AWS_ACCESS_KEY_ID");
+  },
+  get remotionAwsSecretAccessKey() {
+    return required("REMOTION_AWS_SECRET_ACCESS_KEY");
+  },
+  get remotionLambdaFunctionName() {
+    return required("REMOTION_LAMBDA_FUNCTION_NAME");
+  },
+  get remotionServeUrl() {
+    return required("REMOTION_SERVE_URL");
+  },
+  get remotionAwsRegion() {
+    return process.env.REMOTION_AWS_REGION || "eu-central-1";
+  },
 };

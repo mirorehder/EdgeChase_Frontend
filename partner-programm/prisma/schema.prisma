@@ -298,3 +298,683 @@ model PushSubscription {
   auth      String
   createdAt DateTime @default(now())
 }
+
+// ===========================================================================
+// Content-Generator (aus dem Promo-Generator übernommen). Eigene Tabellen in
+// derselben Neon-DB dieser App. Keine Namenskollision mit den Partner-Modellen.
+// ===========================================================================
+model Clip {
+  id          String @id @default(cuid())
+  driveFileId String @unique
+  name        String
+
+  /// "promo" oder "viral" - siehe oben.
+  track String @default("promo")
+
+  durationMs Int?
+
+  /// Ordner, aus dem der Clip stammt. Der Name ("Parkour-Bangers",
+  /// "Trainings-Clips", ...) ist ein inhaltliches Signal und geht als
+  /// Kontext in die Clip-Auswahl ein.
+  sourceFolderId   String?
+  sourceFolderName String?
+
+  /// Der im Dashboard verwaltete Wurzelordner, unter dem dieser Clip gefunden
+  /// wurde - die Zuordnung, nach der die Bibliothek gruppiert.
+  ///
+  /// Getrennt von sourceFolderId: der steht für den unmittelbaren Ordner, in
+  /// dem die Datei liegt, und der kann ein Unterordner sein. Gruppiert wird
+  /// aber nach dem, was im Dashboard als Ordner auftaucht.
+  rootFolderId String?
+
+  /// Von Hand vergebener Rang innerhalb des Wurzelordners, 0 ist ganz oben.
+  /// Ohne Wert gilt der Clip als unsortiert und zählt hinter allen sortierten.
+  manualRank Int?
+
+  /// Von Hand stillgelegt: bleibt in der Bibliothek sichtbar, kommt aber in
+  /// keinem Video mehr vor.
+  disabled Boolean @default(false)
+
+  /// Was auf dem Clip zu sehen ist - Grundlage für die Auswahl.
+  description String?
+
+  /// Nur Sparte "promo": wie gut die Kleidung erkennbar ist (0-1). Clips, auf
+  /// denen man nichts von der Kleidung sieht, taugen für Werbung nicht.
+  apparelScore Float?
+
+  /// Nur Sparte "viral": wie spektakulär der Trick ist (0-1). 0 heisst, dass
+  /// gar kein Trick vorkommt - nur Gehen, Anlauf oder Vorbereitung.
+  stuntScore Float?
+
+  /// Nur die Reels-Sparten: was für ein Moment das ist - "trick" (gelungen),
+  /// "fail" (Sturz, Fehlversuch, Abbruch) oder "kein_moment".
+  ///
+  /// Getrennt von stuntScore, weil es zwei verschiedene Fragen sind: WIE STARK
+  /// wirkt der Moment, und WAS FÜR EINER ist es. Vorher gab es nur die
+  /// Bewertung, und der Analyse-Prompt setzte einen Fehlversuch darin auf 0.
+  /// Zusammen mit dem Filter "stuntScore >= 0.25" waren Fails damit nicht
+  /// selten, sondern unwählbar - aus dem Betrieb: "es werden praktisch nur
+  /// Parkour Bangers gewählt".
+  momentArt String?
+
+  /// Nur die Reels-Sparten: was NUR im gezeigten Fenster zu sehen ist.
+  ///
+  /// Getrennt von description, weil die den ganzen Clip beschreibt - und der
+  /// dauert oft eine halbe Minute, wovon rund eine Sekunde ins Video kommt.
+  /// Wird auf die lange Beschreibung ausgewählt, kann ein Clip wegen einer
+  /// Stelle gewählt werden, die im fertigen Video gar nicht vorkommt.
+  ///
+  /// Leer, solange ein Clip nicht neu analysiert wurde; dann gilt weiter die
+  /// lange Beschreibung.
+  momentDescription String?
+
+  /// Nur Sparte "viral": der eigentliche Höhepunkt, in Millisekunden ab
+  /// Clipbeginn - vom Absprung bis zur Landung.
+  ///
+  /// Getrennt von startMs/endMs, weil beides verschiedene Fragen sind: hier
+  /// steht, wo der Trick stattfindet, dort, was davon geschnitten wird. Nur
+  /// so lässt sich der Schnitt später anders setzen (mehr Anlauf, mehr
+  /// Landung), ohne den Clip neu auswerten zu müssen.
+  highlightStartMs Int?
+  highlightEndMs   Int?
+
+  /// Der eine Augenblick innerhalb des Fensters, auf den es ankommt - der
+  /// höchste Punkt, die Rotation, der Aufprall.
+  ///
+  /// Gebraucht, wenn der Trick länger dauert, als eine Einstellung zeigen darf:
+  /// ohne diesen Punkt wird ab dem Absprung geschnitten, und bei einem langen
+  /// Trick (Anlauf, Klettern, dann Salto) fällt die Landung hinten heraus.
+  peakMs Int?
+
+  /// Bester Ausschnitt für die Verwendung (Millisekunden im Rohclip).
+  startMs Int?
+  endMs   Int?
+
+  /// Stand der Analyse. Hochzählen, wenn sich Felder oder Prompt ändern -
+  /// dann werten sich alte Clips von selbst neu aus.
+  analysisVersion Int?
+
+  /// Wie oft die Analyse an diesem Clip gescheitert ist, und woran zuletzt.
+  ///
+  /// Ohne diesen Zähler blockiert ein einziger unverdaulicher Clip die ganze
+  /// Warteschlange: die Reihenfolge ist immer dieselbe, also käme er bei jedem
+  /// Abgleich wieder als erster dran und scheiterte wieder. Ab drei
+  /// Fehlversuchen wird er übersprungen; eine ausdrückliche Neuanalyse setzt
+  /// den Zähler zurück.
+  analysisFailures Int     @default(0)
+  analysisError    String?
+
+  /// Wann Beschreibung, Bewertung oder Ausschnitt von Hand geändert wurden.
+  /// Ist das gesetzt, überspringt die automatische Neuanalyse den Clip - eine
+  /// Korrektur des Nutzers soll nicht stillschweigend überschrieben werden.
+  editedAt DateTime?
+
+  /// Wann dieser Clip zuletzt in einem Video verwendet wurde. Steuert die
+  /// Rotation: lange nicht Verwendetes wird bevorzugt.
+  lastUsedAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([apparelScore])
+  @@index([lastUsedAt])
+  @@index([track])
+  @@index([rootFolderId])
+}
+
+/// Laufendes Protokoll dessen, was die Pipeline gerade tut.
+///
+/// Die Läufe dauern Minuten und laufen serverseitig; ohne diese Einträge
+/// sieht die Oberfläche bis zum Schluss gar nichts, und ein nächtlicher
+/// Fehlschlag hinterlässt nur eine Fehlermeldung ohne Vorgeschichte.
+model ActivityLog {
+  id      String   @id @default(cuid())
+  at      DateTime @default(now())
+  /// info | error
+  level   String   @default("info")
+  /// Sparte, zu der der Eintrag gehört: "promo" oder "viral".
+  track   String   @default("promo")
+  message String
+  /// Zugehöriger Job, falls der Eintrag aus einem Video-Auftrag stammt.
+  videoId String?
+
+  @@index([at])
+}
+
+model PromoVideo {
+  id String @id @default(cuid())
+
+  /// Sparte, aus der dieses Video stammt: "promo" oder "viral".
+  track String @default("promo")
+
+  /// Wie dieses Video zustande kam: "scheduled" (der tägliche Zeitplan) oder
+  /// "manual" (im Dashboard oder per Dialog ausgelöst).
+  ///
+  /// Ein eigenes Feld, obwohl es sich heute aus requestedVia und driveFolderId
+  /// erraten liesse: die Herkunft ist eine Tatsache über den Auftrag, keine
+  /// Nebenwirkung anderer Felder. Wird eines davon später anders belegt,
+  /// stimmt die Einteilung sonst stillschweigend nicht mehr.
+  origin String @default("manual")
+
+  /// Der erzeugte Hook-Text, wie er im Video steht.
+  hookText String
+
+  /// Textgestaltung des Overlays: "banner" (kurzer Hook, grosse Schrift) oder
+  /// "reference" (laengerer Fliesstext, abgerundete Schrift, starke Kontur).
+  /// Leer bedeutet die Voreinstellung.
+  textStyle String?
+
+  /// Wortlaut der Anweisung, aus der dieses Video entstanden ist - leer bei
+  /// den automatischen Tageslaeufen.
+  requestedVia String?
+
+  /// Worauf es bei der Clipauswahl ankam - die Regieanweisung.
+  ///
+  /// Getrennt von requestedVia, obwohl beides aus derselben Eingabe stammt:
+  /// requestedVia ist der Wortlaut fürs Protokoll ("6 Clips, möglichst
+  /// Stürze"), dieses Feld die daraus abgeleitete Vorgabe an die Auswahl
+  /// ("Stürze"). Nur so lässt sie sich später in ein Konzept übernehmen -
+  /// aus dem Fliesstext müsste man sie sonst wieder herauslesen.
+  themeHint String?
+
+  /// Lautstaerke des Originaltons der Clips. 0 = stumm, 1 = unveraendert,
+  /// darueber wird verstaerkt.
+  videoVolume Float @default(1)
+
+  /// Verwendete Clips in Reihenfolge: [{ clipId, startMs, endMs, seconds }]
+  scenes Json
+
+  /// Textphasen im fertigen Video: [{ text, startMs, durationMs }].
+  /// Leer bedeutet: hookText steht über der ganzen Länge.
+  textPhases Json?
+
+  /// Wie die Datei in Drive heissen soll - ein kurzer, treffender Titel zu
+  /// genau diesem Video.
+  ///
+  /// Wird beim Anlegen des Auftrags festgelegt und nicht beim Hochladen: ein
+  /// Wiederholversuch muss denselben Namen verwenden, sonst greift der
+  /// Duplikatschutz nicht mehr. Leer bedeutet, dass der Hook-Text herhält.
+  fileTitle String?
+
+  status   String @default("queued") // queued | rendering | done | failed
+  attempts Int    @default(0)
+
+  lastError String?
+
+  claimedAt     DateTime?
+  driveUrl      String?
+  driveFileName String?
+
+  /// Zielordner in Drive, falls dieser Auftrag nicht in den Standardordner
+  /// seiner Sparte gehört. Die vom Zeitplan erzeugten Edits landen so in dem
+  /// Ordner, aus dem später gepostet wird, während Handversuche den
+  /// Arbeitsordner nicht vollschreiben.
+  driveFolderId String?
+
+  /// Das Konzept, aus dem dieser Auftrag entstanden ist.
+  ///
+  /// Bisher stand die Herkunft nur als Fliesstext in requestedVia ("Konzept:
+  /// ..."). Für den Sound reicht das nicht: der Titel eines Konzepts kann sich
+  /// ändern, und zwei Konzepte dürfen gleich heissen.
+  conceptId String?
+
+  /// Der Sound, wie er zum Zeitpunkt der Anlage am Konzept stand.
+  ///
+  /// Festgehalten und nicht erst beim Posten nachgeschlagen - aus demselben
+  /// Grund wie driveFolderId: ändert sich die Einstellung zwischen Anlegen und
+  /// Posten, soll dieser Auftrag den Sound bekommen, der beim Anlegen galt.
+  soundAudioId String?
+  soundTitle   String?
+
+  /// "geprueft" = beginnt nachweislich an der gewollten Stelle, kann direkt
+  /// angehaengt werden. "offen" = eingefuegt, aber noch nicht geprueft; die
+  /// Posting-Routine muss selbst entscheiden, ob er brauchbar ist.
+  ///
+  /// Die Anwendung kann das nicht klaeren: sie hat keinen Instagram-Zugang.
+  /// Deshalb gibt sie den Stand weiter, statt ihn zu erraten.
+  soundStatus String?
+
+  /// Instagram-Media-ID des geposteten Videos, sobald bekannt.
+  ///
+  /// Wird jetzt von der Posting-Automatik gefüllt (früher nur von der externen
+  /// Routine). postedAt ist zugleich die Grundlage der Taktung: woraus sich
+  /// ergibt, wie viele Videos heute schon draussen sind und wann das letzte
+  /// ging.
+  postedMediaId String?
+  postedAt      DateTime?
+
+  /// Öffentlich ladbarer Link zum fertigen Video im Remotion-Bucket.
+  ///
+  /// Instagram muss das Video von einer öffentlichen Adresse holen können; die
+  /// Drive-Ansicht (driveUrl) taugt dafür nicht. Beim Posten wird die Datei
+  /// deshalb in den ohnehin öffentlich lesbaren Bucket gespiegelt und hier ihr
+  /// Link festgehalten. Nach erfolgreichem Post darf die Kopie wieder weg.
+  publicUrl String?
+
+  /// Warum ein Post zuletzt fehlgeschlagen ist - fürs Dashboard.
+  postError String?
+
+  /// Feste Instagram-Bildunterschrift für dieses Video (nur Promo, wenn der
+  /// Nutzer eigene, rotierende Captions gewählt hat). Ist sie gesetzt, wird sie
+  /// beim Posten dem KI-Titel vorgezogen. Leer = wie bisher (KI-Titel/Hook).
+  postCaption String?
+
+  createdAt DateTime @default(now())
+
+  @@index([status])
+  @@index([createdAt])
+  @@index([track])
+  @@index([origin])
+  @@index([track, postedAt])
+}
+
+/// Vorgaben für den täglichen Lauf. Genau eine Zeile mit fester ID, damit
+/// sich die Einstellungen im Dashboard ändern lassen, ohne dass dafür eine
+/// neue Fassung ausgerollt werden muss.
+model DailyConfig {
+  id String @id @default("default")
+
+  /// Alt: fester Text für das Overlay. Durch hookMode/hookTexts abgelöst, bleibt
+  /// als Spalte erhalten (die Migration übernimmt den Wert in hookTexts).
+  hookText String?
+
+  /// Nur Promo: woher der Video-Text (Overlay) kommt.
+  /// "ki"     - die KI formuliert ihn bei jedem Lauf neu.
+  /// "eigene" - reihum aus hookTexts.
+  hookMode String @default("ki")
+
+  /// Nur Promo: eigene Overlay-Texte, die reihum gewählt werden. JSON-Liste von
+  /// Zeichenketten; ein Eintrag darf mehrere Zeilen haben (Zeilenumbrüche gehen
+  /// ins Video).
+  hookTexts Json @default("[]")
+
+  /// Zeiger für die Rotation der Overlay-Texte (nächster Eintrag).
+  hookIndex Int @default(0)
+
+  /// Nur Promo: woher die Instagram-Bildunterschrift kommt.
+  /// "ki"     - aus dem KI-Titel (wie bisher).
+  /// "eigene" - reihum aus captions.
+  captionMode String @default("ki")
+
+  /// Nur Promo: eigene Bildunterschriften, reihum gewählt. JSON-Liste.
+  captions Json @default("[]")
+
+  /// Zeiger für die Rotation der Bildunterschriften.
+  captionIndex Int @default(0)
+
+  /// "banner" oder "reference".
+  textStyle String @default("banner")
+
+  clipCount          Int   @default(4)
+  maxSecondsPerScene Float @default(2.5)
+
+  /// Lautstaerke des Originaltons, 0 bis 4.
+  videoVolume Float @default(1)
+
+  /// Thematischer Wunsch für die Auswahl, z.B. "Parkour". Leer = egal.
+  themeHint String?
+
+  /// Steht das auf false, legt der Zeitplan kein Video an.
+  enabled Boolean @default(true)
+
+  updatedAt DateTime @updatedAt
+}
+
+/// Ein aus einem fremden Video abgeleitetes Gestaltungskonzept.
+///
+/// Gespeichert werden ausschliesslich die abgeleiteten Merkmale und der
+/// Quelllink - nicht das fremde Video selbst. Es dient der Inspiration, nicht
+/// der Weiterverbreitung.
+model Concept {
+  id    String @id @default(cuid())
+  title String
+
+  /// Für welche Sparte diese Vorlage gedacht ist: "promo" oder "viral".
+  /// Bei den viralen Edits liefert das Konzept den Text des Videos.
+  track String @default("promo")
+
+  /// Link zum urspruenglichen Beitrag, falls mitgeschickt.
+  sourceUrl String?
+
+  /// Der Haupttext im Wortlaut - die erste Phase aus textPhases. Bleibt als
+  /// eigenes Feld erhalten, weil Listen, Dateinamen und die Promo-Sparte nur
+  /// einen einzelnen Text brauchen.
+  hookText String
+
+  /// Die Textphasen des Videos in ihrer Reihenfolge, als JSON-Liste:
+  /// [{ text, seconds, role, sceneHint }]
+  ///
+  /// Manche Videos brauchen mehrere Texte nacheinander, damit sie überhaupt
+  /// Sinn ergeben - erst ein unterstellter Vorwurf, dann die Antwort, die die
+  /// folgende Montage beweist. Ein einziger durchgehender Text kann das nicht
+  /// leisten. "role" unterscheidet Aufbau ("setup") von Pointe ("payoff"),
+  /// "sceneHint" hält fest, was im Original während dieses Textes zu sehen war
+  /// - danach wird der passende eigene Clip gesucht.
+  textPhases Json @default("[]")
+
+  /// Welche unserer beiden Textgestaltungen dem Original am naechsten kommt.
+  textStyle String @default("reference")
+
+  /// Anzahl der Schnitte bzw. Einstellungen.
+  clipCount Int
+
+  totalSeconds    Float
+  secondsPerScene Float
+
+  /// Die Regieanweisung: worauf es bei der Clipauswahl ankommt.
+  ///
+  /// Freitext in eigenen Worten - "vor allem die schwarze Jacke", "möglichst
+  /// Stürze, keine sauberen Landungen", "grosse Höhe". Geht in die Auswahl
+  /// ein, steht aber NICHT im Bild; dafür ist hookText da.
+  ///
+  /// Stammt entweder aus dem Dialog ("6 Einstellungen, möglichst Stürze"),
+  /// aus der Auswertung eines Referenzvideos, oder wird von Hand eingetragen.
+  /// Leer heisst: die Auswahl richtet sich allein nach Bewertung, Rotation
+  /// und dem eingeblendeten Text.
+  theme String?
+
+  /// Beobachtungen zur Schrift, zu Farben und zur Platzierung - als
+  /// Gedaechtnisstuetze, nicht maschinell ausgewertet.
+  notes String?
+
+  /// Wann zuletzt ein Video nach diesem Konzept entstanden ist. Grundlage der
+  /// Rotation: das am längsten nicht verwendete Konzept kommt als nächstes.
+  lastUsedAt DateTime?
+
+  // --- Der Sound dieses Konzepts ------------------------------------------
+  //
+  // Instagram kennt beim Anhängen eines Sounds KEINEN Startversatz: der Ton
+  // beginnt immer bei 0:00. Ein voller Song, dessen Stelle bei 0:47 liegt,
+  // ist damit unbrauchbar - man hört das Intro. Brauchbar sind nur Sounds,
+  // deren Anfang schon die gewollte Stelle ist; das sind in aller Regel die
+  // von Creatorn zugeschnittenen "original_sound"-Einträge.
+  //
+  // Deshalb zwei getrennte Felder: was der Nutzer eingefügt hat (soundUrl),
+  // und was am Ende wirklich verwendet wird (soundAudioId). Bei einem
+  // Zuschnitt ist beides dasselbe. Bei einem vollen Song wird einmalig ein
+  // passender Zuschnitt gesucht und nach dem Anhören bestätigt - dann steht
+  // hier dessen ID, und es muss nie wieder gesucht werden.
+
+  /// Was der Nutzer eingefügt hat, im Wortlaut. Bleibt erhalten, auch wenn
+  /// soundAudioId später auf einen anderen Zuschnitt zeigt - sonst wäre
+  /// hinterher nicht mehr nachvollziehbar, was ursprünglich gemeint war.
+  soundUrl String?
+
+  /// Die ID, die beim Posten wirklich angehängt wird.
+  soundAudioId String?
+
+  /// "original_sound" oder "music". Bei "music" ohne geprüften Zuschnitt ist
+  /// der Sound NICHT verwendbar - siehe oben.
+  soundKind String?
+
+  soundTitle  String?
+  soundArtist String?
+
+  /// "ohne"     - kein eigener Sound; es gilt der Trend-Sound beim Posten.
+  ///              Auch der Ausgangszustand: ein neues Konzept hat keinen.
+  /// "offen"    - eingefügt, aber noch nicht geprüft
+  /// "geprueft" - beginnt an der gewollten Stelle, kann angehängt werden
+  soundStatus String @default("ohne")
+
+  /// Freitext: welche Stelle gemeint ist, warum ein Ersatz gewählt wurde.
+  soundNote String?
+
+  soundCheckedAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+/// Zeitplan der viralen Sparte: was der tägliche Lauf erzeugen soll.
+///
+/// Genau eine Zeile mit fester ID, wie bei DailyConfig - so lassen sich die
+/// Vorgaben im Dashboard ändern, ohne eine neue Fassung auszurollen.
+/// Ein Quellordner in Drive, wie ihn das Dashboard verwaltet.
+///
+/// Bis hierher hatte jede Sparte genau einen Wurzelordner, fest in einer
+/// Umgebungsvariablen. Für die Parkour-Edits sind es jetzt mehrere, und welche
+/// davon mitlaufen, entscheidet sich zur Laufzeit - deshalb stehen sie in der
+/// Datenbank und nicht mehr in der Umgebung.
+model SourceFolder {
+  id String @id @default(cuid())
+
+  /// Die Ordner-ID aus der Drive-Adresse. Ordner-IDs sind keine Geheimnisse.
+  driveFolderId String @unique
+
+  /// Wie der Ordner in Drive heisst. Wird beim Abgleich nachgeführt, damit ein
+  /// Umbenennen in Drive im Dashboard ankommt.
+  name String
+
+  /// "promo" oder "viral".
+  track String @default("viral")
+
+  /// Was für Clips hier liegen und wofür sie taugen - in eigenen Worten.
+  /// Geht als Kontext sowohl in die Clip-Analyse als auch in die Auswahl ein.
+  description String @default("")
+
+  /// Wird der Ordner eingelesen und ausgewertet? Aus heisst: kein Abgleich,
+  /// keine Analyse, keine Gemini-Kosten. Bereits eingelesene Clips bleiben
+  /// erhalten und werden beim Aufräumen nicht angefasst.
+  autoAnalyze Boolean @default(true)
+
+  /// Dürfen seine Clips in Videos vorkommen? Getrennt vom Auswerten, damit
+  /// sich ein fertig analysierter Ordner vorübergehend stilllegen lässt, ohne
+  /// die Analyse wegzuwerfen.
+  useInVideos Boolean @default(true)
+
+  /// Reihenfolge in der Übersicht.
+  sortIndex Int @default(0)
+
+  createdAt DateTime @default(now())
+
+  @@index([track])
+}
+
+/// Der Zeitplan einer Sparte. Eine Zeile je Sparte, der Schlüssel ist die
+/// Sparte selbst ("viral", "sports", "clothing").
+///
+/// Die Promo-Sparte hat ihren eigenen Satz Einstellungen (DailySettings) und
+/// steht deshalb nicht hier.
+model TrackSchedule {
+  /// Die Sparte, zu der dieser Zeitplan gehört.
+  id String @id
+
+  /// Steht das auf false, erzeugt der Zeitplan keine Edits.
+  enabled Boolean @default(false)
+
+  /// Wie viele Edits pro Tag entstehen sollen.
+  videosPerDay Int @default(1)
+
+  /// "rotation" = reihum aus allen Konzepten der Sparte.
+  /// "fixed"    = nur aus den unter conceptIds gewählten.
+  conceptMode String @default("rotation")
+
+  /// Bei "fixed" die gewählten Konzept-IDs als JSON-Liste.
+  conceptIds Json @default("[]")
+
+  updatedAt DateTime @updatedAt
+}
+
+/// Ein von Hand gewählter Ausgabeordner in Drive - je Sparte und je Herkunft.
+///
+/// Bisher stand der Zielordner fest im Code und in Umgebungsvariablen: die
+/// Tageslaeufe gingen in einen Ordner, die Handversuche in einen anderen, und
+/// aendern liess sich das nur ueber Vercel. Damit die Posting-Routinen sauber
+/// getrennt aufgestellt werden koennen, waehlt der Nutzer die Ordner jetzt
+/// selbst im Dashboard.
+///
+/// Acht Zeilen sind moeglich: vier Sparten mal zwei Herkuenfte. Fehlt eine
+/// Zeile, gilt weiterhin der bisherige Standard - die Einstellung ist ein
+/// Zusatz, kein Zwang.
+model AusgabeOrdner {
+  /// Die Sparte: "promo", "viral", "sports" oder "clothing".
+  track String
+
+  /// Woher das Video stammt, dessen Ablage hier geregelt wird:
+  /// "scheduled" (der taegliche Lauf) oder "manual" (im Dashboard oder per
+  /// Dialog ausgeloest). Genau die Zweiteilung, die auch die Videoliste zeigt.
+  kind String
+
+  /// Die Drive-Ordner-ID. Aus dem eingefuegten Link gezogen; nach ihr richtet
+  /// sich der Upload.
+  folderId String
+
+  /// Der angezeigte Name. Wird beim Speichern best-effort aus Drive geholt
+  /// (nur moeglich, wenn der Ordner fuer das Dienstkonto freigegeben ist),
+  /// laesst sich aber jederzeit von Hand ueberschreiben - er ist eine
+  /// Gedaechtnisstuetze, keine Pruefung.
+  folderName String @default("")
+
+  /// Der eingefuegte Link im Wortlaut, fuer den Verweis im Dashboard.
+  folderUrl String?
+
+  updatedAt DateTime @updatedAt
+
+  @@id([track, kind])
+}
+
+/// Der Posting-Zeitplan einer Sparte - wie oft und wann fertige Videos
+/// automatisch auf Instagram veröffentlicht werden.
+///
+/// Getrennt von TrackSchedule: der plant die ERZEUGUNG von Videos, dieser ihre
+/// VERÖFFENTLICHUNG. Beides kann verschieden getaktet sein - man erzeugt
+/// vielleicht drei Edits am Morgen und postet sie über den Tag verteilt.
+///
+/// Fehlt die Zeile, ist die Automatik für die Sparte aus - dann passiert nichts
+/// von selbst, genau wie bisher.
+model PostZeitplan {
+  /// Die Sparte: "promo", "viral", "sports" oder "clothing".
+  id String @id
+
+  /// Steht das auf false, postet die Sparte nichts automatisch.
+  enabled Boolean @default(false)
+
+  /// Wie viele Videos pro Tag höchstens gepostet werden.
+  postsPerDay Int @default(1)
+
+  /// Frühester und spätester Zeitpunkt am Tag (Minuten seit Mitternacht, UTC).
+  /// Ausserhalb des Fensters wird nicht gepostet - so landet nichts nachts.
+  fensterVonMin Int @default(480)
+  fensterBisMin Int @default(1260)
+
+  /// Mindestabstand zwischen zwei Posts derselben Sparte, in Minuten. Verhindert,
+  /// dass ein Pinger, der oft anklopft, mehrere Videos hintereinander rauswirft.
+  minAbstandMin Int @default(120)
+
+  /// Werden die Videos als Trial-Reel gepostet (nur an Nicht-Follower zum Test)?
+  alsTrialReel Boolean @default(true)
+
+  /// Aus welcher Herkunft gepostet wird: "scheduled" (nur Tageslauf-Videos),
+  /// "manual" (nur Handversuche) oder "beliebig". Meist sollen nur die
+  /// Tageslauf-Videos automatisch raus, die Handversuche nicht.
+  quelle String @default("scheduled")
+
+  /// Hashtags fürs Reel - werden hinter die Caption gehängt.
+  ///
+  /// Frei geschriebene Zeichenkette, im Dashboard mit Rauten oder ohne
+  /// eintragbar; das Anzeige-Format wird beim Anhängen sauber gemacht (jedes
+  /// Wort bekommt genau eine Raute). Fünf Stück sind der Richtwert; erzwungen
+  /// wird die Anzahl nicht.
+  hashtags String @default("")
+
+  /// Feste Uhrzeiten (Schweizer Zeit), zu denen gepostet wird.
+  ///
+  /// Kommagetrennte Liste im Format "HH:MM" (z.B. "17:00,20:00"). Ist das Feld
+  /// gefuellt, gelten AUSSCHLIESSLICH diese Uhrzeiten - fensterVonMin,
+  /// fensterBisMin und minAbstandMin werden dann ignoriert. Bei jedem
+  /// Pinger-Aufruf wird geprueft, ob heute eine geplante Uhrzeit erreicht ist,
+  /// zu der noch nichts gepostet wurde. Die tatsaechliche Post-Zeit liegt
+  /// zwischen der geplanten Uhrzeit und dem naechsten Pinger-Klopfer.
+  ///
+  /// Leer = alte Betriebsart mit Fenster und Mindestabstand.
+  postingTimes String @default("")
+
+  /// Trend-Sound-Pool: wird gezogen, wenn ein Video keinen eigenen Sound hat.
+  ///
+  /// Format: JSON-Liste [{ audioId, titel, tags? }]. Der Nutzer trägt im
+  /// Dashboard Instagram-Sound-Links ein (die eingelesene ID plus einen
+  /// optionalen Namen zur Wiedererkennung); "tags" hält die Stimmungs-/Genre-
+  /// Merkmale des Sounds (Schlüssel aus dem SoundTag-Katalog). Beim Posten wird
+  /// aus den Sounds gewählt, deren Tags zur Sparten-Auswahl (soundTags) passen.
+  /// Ohne Pool und ohne eigenen Sound wird das Video NICHT gepostet - stumme
+  /// Reels sind ausgeschlossen.
+  trendSounds Json @default("[]")
+
+  /// Die für diese Sparte gewählten Stimmungs-/Genre-Tags (Schlüssel aus dem
+  /// SoundTag-Katalog), als JSON-Liste. Ist sie gesetzt, kommen für diese
+  /// Sparte nur Pool-Sounds infrage, deren eigene Tags mindestens einen dieser
+  /// Tags treffen. Leer = keine Einschränkung (der ganze Pool zählt).
+  soundTags Json @default("[]")
+
+  updatedAt DateTime @updatedAt
+}
+
+/// Der GLOBALE Katalog der Stimmungs- und Genre-Tags, mit denen sich Sounds
+/// beschreiben lassen ("aggressiv", "episch", "Hip-Hop/Trap", ...).
+///
+/// Bewusst genau eine gemeinsame Liste für alle vier Sparten: fügt der Nutzer
+/// im Dashboard einen Tag hinzu oder entfernt einen, ändert sich damit die
+/// Auswahl in JEDER Sparte. Welche dieser Tags eine Sparte tatsächlich nutzt,
+/// steht getrennt an der Sparte (PostZeitplan.soundTags) - der Katalog liefert
+/// nur die möglichen Tags.
+model SoundTag {
+  id String @id @default(cuid())
+
+  /// Stabiler Schlüssel (Slug), unter dem der Tag an Sounds und Sparten
+  /// referenziert wird - z.B. "episch". Wird aus dem Label abgeleitet und
+  /// bleibt gleich, auch wenn das Label später umbenannt wird.
+  key String @unique
+
+  /// Anzeigename im Dashboard, z.B. "Episch" oder "Hip-Hop/Trap".
+  label String
+
+  /// "stimmung" (Adjektiv/Energie) oder "genre". Nur zur Gruppierung in der
+  /// Oberfläche; für den Abgleich sind alle Tags gleichwertig.
+  kind String @default("stimmung")
+
+  /// Reihenfolge in der Auswahl.
+  sortIndex Int @default(0)
+
+  createdAt DateTime @default(now())
+}
+
+/// Protokoll jeder Prüfung der Posting-Automatik - was der Pinger bei jedem
+/// Anklopfen für eine Sparte entschieden hat.
+///
+/// Warum eine eigene Tabelle und nicht das allgemeine ActivityLog: bisher
+/// hinterliess ein Lauf, der NICHTS zu posten fand, keine Spur. Damit war von
+/// aussen nicht zu unterscheiden, ob der Pinger gar nicht lief, ob es kein
+/// postbares Video gab oder ob die Uhrzeit noch nicht erreicht war - genau die
+/// Frage, die "um 10:00 wurde nichts gepostet" aufwirft. Diese Tabelle hält
+/// den Ausgang jeder Prüfung fest, auch den ergebnislosen.
+///
+/// Aufeinanderfolgende gleiche Ergebnisse derselben Sparte werden zu einer
+/// Zeile zusammengefasst (nur ihr Zeitstempel wandert mit), damit ein
+/// stündlich klopfender Pinger vor der ersten Post-Uhrzeit nicht Dutzende
+/// gleicher "noch nicht fällig"-Zeilen erzeugt. Ein tatsächlicher Post bekommt
+/// immer eine eigene Zeile.
+model PostLauf {
+  id String @id @default(cuid())
+
+  /// Wann diese Prüfung stattfand (bei zusammengefassten Zeilen: die letzte).
+  at DateTime @default(now())
+
+  /// Die Sparte: "promo", "viral", "sports" oder "clothing".
+  track String
+
+  /// Wurde tatsächlich gepostet?
+  gepostet Boolean @default(false)
+
+  /// Warum nicht gepostet wurde (bzw. der Hinweis beim Trockenlauf). Leer bei
+  /// einem erfolgreichen Post.
+  grund String?
+
+  /// Instagram-Media-ID bei einem erfolgreichen Post.
+  mediaId String?
+
+  /// Titel des betroffenen Videos, soweit bekannt - fürs Dashboard.
+  videoTitel String?
+
+  @@index([at])
+  @@index([track, at])
+}

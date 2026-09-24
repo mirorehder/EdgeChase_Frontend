@@ -13,12 +13,19 @@
     "prisma:deploy": "prisma migrate deploy"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.658.1",
     "@google/genai": "^0.15.0",
     "@prisma/client": "^5.20.0",
+    "@remotion/lambda": "^4.0.190",
+    "@remotion/layout-utils": "^4.0.190",
+    "google-auth-library": "^9.14.1",
+    "googleapis": "^144.0.0",
     "next": "^14.2.15",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "web-push": "^3.6.7"
+    "remotion": "^4.0.190",
+    "web-push": "^3.6.7",
+    "zod": "4.4.3"
   },
   "devDependencies": {
     "@types/node": "^20.16.10",

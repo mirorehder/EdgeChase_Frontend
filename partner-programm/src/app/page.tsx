@@ -118,6 +118,10 @@ export default async function StartSeite() {
         Beschwerde oder grossem Betrag eskaliert er an dich.
       </p>
 
+      <p className="subtitle" style={{ marginTop: 0 }}>
+        <a href="/content">→ Content-Generator</a> (Werbevideos automatisch erstellen &amp; posten)
+      </p>
+
       <Schalter start={config?.enabled ?? true} wartend={wartend} />
 
       {!autoErkennung && (
