@@ -938,6 +938,22 @@ const VIRAL_MIN_SECONDS_PER_SCENE = 0.7;
 
 const VIRAL_DEFAULT_TOTAL_SECONDS = 13;
 
+/**
+ * So viele Einstellungen braucht ein Edit mindestens - darunter wirkt er wie ein
+ * abgebrochener Clip. Wird auch als Untergrenze für die Auswahl genutzt: gibt es
+ * genug taugliche Clips, entsteht immer ein Video mit mindestens so vielen
+ * Szenen.
+ *
+ * Der Grund, warum das eine eigene Untergrenze braucht: in den Kleider-Sparten
+ * (apparel) haben die Clips keine kurzen Trickfenster, sondern ~1,8s lange
+ * Ausschnitte. Bei einer knappen Ziellänge war die Längenbremse (used >=
+ * totalSeconds) sonst schon nach zwei Szenen erreicht, und der Edit fiel an
+ * dieser Mindestzahl durch - Tag für Tag. Bei den viralen Sparten sind die
+ * Szenen kurz genug, dass diese Zahl längst vorher erreicht ist; dort ändert
+ * die Untergrenze nichts.
+ */
+const VIRAL_MIN_SCENES = 3;
+
 /** Ersatzleute über die gewünschte Anzahl hinaus. */
 const VIRAL_POOL_SPARE = 6;
 
@@ -1074,6 +1090,57 @@ export function viralSceneWindow(clip: {
  * der Moment nicht aus dem Nichts kommt.
  */
 const PEAK_VORLAUF_ANTEIL = 0.4;
+
+export interface SzenenKandidat {
+  clipId: string;
+  driveFileId: string;
+  startMs: number;
+  seconds: number;
+}
+
+/**
+ * Füllt die Einstellungen eines Edits nach Reihenfolge und Ziellänge - der
+ * Kern, an dem sich der Kleider-Fehler zeigte, deshalb als reine, prüfbare
+ * Funktion herausgezogen.
+ *
+ * Regeln:
+ *  - Die Ziellänge ist eine Obergrenze, keine Quote: lieber etwas länger als
+ *    eine abgeschnittene letzte Einstellung.
+ *  - ABER erst ab `minSzenen` greift diese Bremse. Sonst reichen bei langen
+ *    Einstellungen (Kleider-Clips: ~1,8s) schon zwei, um die Ziellänge zu
+ *    erreichen, und der Edit fällt an der Mindestzahl durch. Bis `minSzenen`
+ *    erreicht ist, wird also weiter gefüllt, solange Kandidaten da sind.
+ */
+export function fuelleSzenenNachBudget(
+  kandidaten: SzenenKandidat[],
+  totalSeconds: number,
+  minSzenen = VIRAL_MIN_SCENES,
+): ComposedScene[] {
+  const scenes: ComposedScene[] = [];
+  let used = 0;
+
+  for (const k of kandidaten) {
+    if (
+      scenes.length >= minSzenen &&
+      used + k.seconds > totalSeconds + VIRAL_MAX_SECONDS_PER_SCENE
+    ) {
+      break;
+    }
+
+    scenes.push({
+      clipId: k.clipId,
+      driveFileId: k.driveFileId,
+      startMs: k.startMs,
+      endMs: k.startMs + Math.round(k.seconds * 1000),
+      seconds: k.seconds,
+    });
+    used += k.seconds;
+
+    if (scenes.length >= minSzenen && used >= totalSeconds) break;
+  }
+
+  return scenes;
+}
 
 /**
  * Schneidet die Eröffnungseinstellung zu.
@@ -1235,43 +1302,37 @@ export async function composeViralVideo(
     momentArt: c.momentArt ?? undefined,
   }));
 
+  // Mindestens VIRAL_MIN_SCENES anpeilen, sofern es so viele Kandidaten gibt -
+  // sonst könnte ein Konzept mit kleiner Clipzahl gar nicht genug Szenen liefern
+  // und der Edit fiele unten an der Mindestzahl durch. Ein Konzept, das mehr
+  // will, bekommt weiterhin mehr (wantedCount).
+  const zielAnzahl = Math.min(candidates.length, Math.max(wantedCount, VIRAL_MIN_SCENES));
+
   // Der Text des Konzepts geht mit: ohne ihn waehlt die Auswahl nach Spektakel
   // und kann inhaltlich danebenliegen, ohne dass ein Fehler vorliegt.
   const orderedIds = await selectViralScenes(
     payload,
-    Math.min(wantedCount, candidates.length),
+    zielAnzahl,
     options.hookText,
     options.themeHint ?? "",
   );
   const byId = new Map(candidates.map((c) => [c.id, c]));
 
-  const scenes: ComposedScene[] = [];
-  let used = 0;
-
-  for (const id of orderedIds) {
-    const clip = byId.get(id);
-    if (!clip) continue;
-
-    const { startMs, seconds } = viralSceneWindow(clip);
-
-    // Die Zielllänge ist eine Obergrenze, keine Quote: lieber ein Video, das
-    // 12,4s statt 13,0s lang ist, als eine angeschnittene letzte Landung.
-    if (used + seconds > totalSeconds + VIRAL_MAX_SECONDS_PER_SCENE) break;
-
-    scenes.push({
-      clipId: clip.id,
-      driveFileId: clip.driveFileId,
-      startMs,
-      endMs: startMs + Math.round(seconds * 1000),
-      seconds,
+  const szenenKandidaten = orderedIds
+    .map((id) => byId.get(id))
+    .filter((c): c is NonNullable<typeof c> => !!c)
+    .map((clip) => {
+      const { startMs, seconds } = viralSceneWindow(clip);
+      return { clipId: clip.id, driveFileId: clip.driveFileId, startMs, seconds };
     });
-    used += seconds;
-    if (used >= totalSeconds) break;
-  }
 
-  if (scenes.length < 3) {
+  const scenes = fuelleSzenenNachBudget(szenenKandidaten, totalSeconds);
+
+  if (scenes.length < VIRAL_MIN_SCENES) {
     throw new Error("Zu wenige verwertbare Höhepunkte für einen Edit.");
   }
+
+  const used = scenes.reduce((summe, s) => summe + s.seconds, 0);
 
   // Die Bewertungen mitschreiben: nur so lässt sich nachsehen, ob wirklich die
   // stärksten Tricks im Video gelandet sind, statt es dem Video ansehen zu
