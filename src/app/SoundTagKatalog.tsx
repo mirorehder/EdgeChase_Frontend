@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import type { SoundTagDef, TagArt } from "@/lib/soundTags";
+import { STANDARD_SOUND_TAGS, type SoundTagDef, type TagArt } from "@/lib/soundTags";
 
 /**
  * Der GLOBALE Editor für die Stimmungs-/Genre-Tags.
@@ -38,25 +38,49 @@ export function SoundTagKatalog({ katalog }: { katalog: SoundTagDef[] }) {
     setTags(tags.filter((_, i) => i !== index));
   }
 
-  async function speichern() {
+  /** Die übergebene Liste speichern und den Stand übernehmen. */
+  async function speichereListe(liste: SoundTagDef[], erfolg: string) {
     setLaeuft(true);
     setMeldung(null);
     try {
       const res = await fetch("/api/sound-tags", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tags: tags.map((t) => ({ key: t.key, label: t.label, kind: t.kind })) }),
+        body: JSON.stringify({ tags: liste.map((t) => ({ key: t.key, label: t.label, kind: t.kind })) }),
       });
       const daten = await res.json();
       if (!res.ok) throw new Error(daten.error ?? "Konnte nicht gespeichert werden.");
       setTags(daten.tags as SoundTagDef[]);
-      setMeldung({ text: "Gespeichert - gilt für alle Sparten.", fehler: false });
+      setMeldung({ text: erfolg, fehler: false });
       router.refresh();
     } catch (err) {
       setMeldung({ text: err instanceof Error ? err.message : String(err), fehler: true });
     } finally {
       setLaeuft(false);
     }
+  }
+
+  function speichern() {
+    return speichereListe(tags, "Gespeichert - gilt für alle Sparten.");
+  }
+
+  /**
+   * Fehlende Standard-Tags ergänzen und sofort speichern - für "ich habe aus
+   * Versehen welche gelöscht". Bewusst NICHT zurücksetzen: vorhandene Tags
+   * (auch selbst hinzugefügte) bleiben unangetastet, es kommen nur die aus der
+   * Vorschlagsliste dazu, die gerade fehlen (nach Schlüssel oder Name).
+   */
+  function standardWiederherstellen() {
+    const vorhandeneKeys = new Set(tags.map((t) => t.key).filter(Boolean));
+    const vorhandeneLabels = new Set(tags.map((t) => t.label.toLowerCase()));
+    const fehlend = STANDARD_SOUND_TAGS.filter(
+      (s) => !vorhandeneKeys.has(s.key) && !vorhandeneLabels.has(s.label.toLowerCase()),
+    );
+    if (fehlend.length === 0) {
+      setMeldung({ text: "Alle Standard-Tags sind bereits vorhanden.", fehler: false });
+      return;
+    }
+    void speichereListe([...tags, ...fehlend], `${fehlend.length} Standard-Tag(s) wiederhergestellt.`);
   }
 
   const stimmungen = tags.filter((t) => t.kind === "stimmung");
@@ -118,6 +142,9 @@ export function SoundTagKatalog({ katalog }: { katalog: SoundTagDef[] }) {
           <div className="actions" style={{ marginBottom: 0 }}>
             <button onClick={speichern} disabled={laeuft}>
               {laeuft ? "Speichert …" : "Katalog speichern"}
+            </button>
+            <button type="button" className="secondary" onClick={standardWiederherstellen} disabled={laeuft}>
+              Standard-Tags wiederherstellen
             </button>
           </div>
         </div>
