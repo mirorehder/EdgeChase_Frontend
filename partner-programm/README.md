@@ -22,10 +22,27 @@ Web-Push) sind vom Coupon-Automaten **kopiert und angepasst**, nicht importiert.
 
 ## Die zwei Trigger
 
-1. **Kommentar** unter einem Reel, das die Video-Analyse (Gemini, Text als
-   Fallback) als Partner-Aufruf klassifiziert.
+1. **Kommentar** unter einem Reel, das als Partner-Aufruf gilt.
 2. **Direkte DM** ans EdgeChase-Konto mit Bezug aufs Partner-Programm — ein
    Ki-Torwächter (`istPartnerInteresse`) entscheidet, ob ein Onboarding startet.
+
+## Reel-Erkennung: Allowlist (Vorgabe) vs. Auto
+
+Gesteuert über `PartnerConfig.autoErkennung`:
+
+- **Allowlist (Vorgabe, `false`):** Ein Reel löst **nur** Onboarding aus, wenn es
+  im Dashboard von Hand als Partner-Aufruf markiert wurde
+  (`PartnerMedia.ueberschreibung = true`). Solange nicht markiert, wird
+  **garantiert keine Partner-DM** verschickt — auch wenn darunter kommentiert
+  wird. Die KI-Video-Analyse läuft nicht (spart Kosten). Jedes kommentierte Reel
+  wird trotzdem registriert und erscheint im Dashboard zum Markieren; von
+  Kommentierenden unter nicht-markierten Reels werden **keine Daten** gespeichert
+  (Zweckbindung).
+- **Auto (`true`):** Die Gemini-Video-Analyse (Text als Fallback) entscheidet je
+  Reel; manuelle Übersteuerung geht weiter vor.
+
+Der An/Aus-Schalter (`enabled`) ist davon unabhängig: er hält den ganzen Automaten
+an, `autoErkennung` steuert nur, *welche* Reels zählen.
 
 ## Aufnahme per Polling (kein eigener Webhook)
 

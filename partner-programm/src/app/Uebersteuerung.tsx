@@ -10,10 +10,12 @@ export function Uebersteuerung({
   mediaId,
   ueberschreibung,
   automatischErkannt,
+  autoErkennung = true,
 }: {
   mediaId: string;
   ueberschreibung: boolean | null;
   automatischErkannt: boolean;
+  autoErkennung?: boolean;
 }) {
   const [wert, setWert] = useState(ueberschreibung);
   const [busy, setBusy] = useState(false);
@@ -43,9 +45,11 @@ export function Uebersteuerung({
   return (
     <div className="ig-uebersteuerung">
       <span className="ig-schwach">
-        {wert === null
-          ? `Automatisch erkannt: ${automatischErkannt ? "ja" : "nein"}`
-          : `Von Hand ${wert ? "aktiviert" : "ausgeschlossen"}`}
+        {wert !== null
+          ? `Von Hand ${wert ? "aktiviert" : "ausgeschlossen"}`
+          : autoErkennung
+            ? `Automatisch erkannt: ${automatischErkannt ? "ja" : "nein"}`
+            : "Nicht markiert"}
       </span>
 
       {aktiv ? (

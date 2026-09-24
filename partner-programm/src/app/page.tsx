@@ -104,8 +104,9 @@ export default async function StartSeite() {
   const gesamtProvisionOffen = rundeChf(aufbereitet.reduce((s, a) => s + a.offen, 0));
   const monatProvisionGesamt = rundeChf(aufbereitet.reduce((s, a) => s + a.monatProvision, 0));
 
-  const aktiveMedien = medien.filter(istEffektivAufruf);
-  const andereMedien = medien.filter((m) => !istEffektivAufruf(m)).slice(0, 15);
+  const autoErkennung = config?.autoErkennung ?? false;
+  const aktiveMedien = medien.filter((m) => istEffektivAufruf(m, autoErkennung));
+  const andereMedien = medien.filter((m) => !istEffektivAufruf(m, autoErkennung)).slice(0, 60);
 
   return (
     <main>
@@ -118,6 +119,15 @@ export default async function StartSeite() {
       </p>
 
       <Schalter start={config?.enabled ?? true} wartend={wartend} />
+
+      {!autoErkennung && (
+        <div className="ig-warnung" style={{ marginTop: 16 }}>
+          <strong>Manueller Modus (Allowlist).</strong> Der Bot reagiert nur auf Reels, die du
+          unten selbst als Partner-Aufruf markierst. Unmarkierte Reels lösen garantiert keine
+          Partner-DM aus — auch wenn jemand darunter kommentiert. Jedes kommentierte Reel taucht
+          zum Markieren auf.
+        </div>
+      )}
 
       {env.vapidPublicKey && <PushEinrichten vapidPublicKey={env.vapidPublicKey} />}
 
@@ -232,10 +242,14 @@ export default async function StartSeite() {
         ))
       )}
 
-      <h2 className="abschnitt-titel">Partner-Aufruf-Reels</h2>
+      <h2 className="abschnitt-titel">
+        {autoErkennung ? "Partner-Aufruf-Reels" : "Freigegebene Partner-Reels"}
+      </h2>
       {aktiveMedien.length === 0 ? (
         <p className="empty-state">
-          Noch kein Reel als Partner-Aufruf erkannt. Das passiert beim ersten Kommentar darunter.
+          {autoErkennung
+            ? "Noch kein Reel als Partner-Aufruf erkannt. Das passiert beim ersten Kommentar darunter."
+            : "Noch kein Reel freigegeben. Markiere unten ein Reel als Partner-Aufruf, damit der Bot darauf reagiert."}
         </p>
       ) : (
         <div className="ig-reels">
@@ -259,6 +273,7 @@ export default async function StartSeite() {
                 mediaId={media.id}
                 ueberschreibung={media.ueberschreibung}
                 automatischErkannt={media.istAufruf}
+                autoErkennung={autoErkennung}
               />
             </div>
           ))}
@@ -267,9 +282,13 @@ export default async function StartSeite() {
 
       {andereMedien.length > 0 && (
         <>
-          <h2 className="abschnitt-titel">Andere zuletzt gesehene Reels</h2>
+          <h2 className="abschnitt-titel">
+            {autoErkennung ? "Andere zuletzt gesehene Reels" : "Kommentierte Reels — zum Markieren"}
+          </h2>
           <p className="subtitle">
-            Nicht als Partner-Aufruf erkannt. Gehört eines doch dazu, hier von Hand nachtragen.
+            {autoErkennung
+              ? "Nicht als Partner-Aufruf erkannt. Gehört eines doch dazu, hier von Hand nachtragen."
+              : "Reels, unter denen kommentiert wurde. Ist eines ein Partner-Aufruf, hier als solches markieren — erst dann schreibt der Bot Kommentierende an."}
           </p>
           <div className="ig-reels">
             {andereMedien.map((media) => (
@@ -292,6 +311,7 @@ export default async function StartSeite() {
                   mediaId={media.id}
                   ueberschreibung={media.ueberschreibung}
                   automatischErkannt={media.istAufruf}
+                  autoErkennung={autoErkennung}
                 />
               </div>
             ))}

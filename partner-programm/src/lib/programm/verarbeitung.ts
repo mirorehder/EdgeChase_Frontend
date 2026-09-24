@@ -85,12 +85,21 @@ export async function istEingeschaltet(): Promise<boolean> {
   return config?.enabled ?? true;
 }
 
-/** Gilt das Reel als Partner-Aufruf - Übersteuerung geht vor Erkennung. */
-export function istEffektivAufruf(media: {
-  istAufruf: boolean;
-  ueberschreibung: boolean | null;
-}): boolean {
-  return media.ueberschreibung ?? media.istAufruf;
+/**
+ * Gilt das Reel als Partner-Aufruf?
+ *
+ * Manuelle Markierung (`ueberschreibung`) geht IMMER vor. Ohne Markierung
+ * entscheidet der Modus: im Allowlist-Modus (autoErkennung=false, Vorgabe) zählt
+ * ein Reel NIE von selbst - erst die manuelle Freigabe im Dashboard macht es zum
+ * Partner-Aufruf, vorher wird garantiert keine DM verschickt. Im Auto-Modus
+ * zählt zusätzlich die KI-Erkennung (`istAufruf`).
+ */
+export function istEffektivAufruf(
+  media: { istAufruf: boolean; ueberschreibung: boolean | null },
+  autoErkennung = false,
+): boolean {
+  if (media.ueberschreibung !== null) return media.ueberschreibung;
+  return autoErkennung ? media.istAufruf : false;
 }
 
 /**
@@ -98,7 +107,7 @@ export function istEffektivAufruf(media: {
  * Beim ersten Auftauchen: Video-Analyse mit Gemini, Text-Erkennung als
  * Fallback, plus eine Push ans Dashboard.
  */
-async function medienInfo(mediaId: string) {
+async function medienInfo(mediaId: string, autoErkennung: boolean) {
   const bekannt = await prisma.partnerMedia.findUnique({ where: { id: mediaId } });
 
   if (bekannt && Date.now() - bekannt.aktualisiertAm.getTime() < MEDIA_FRISCH_MS) {
@@ -111,7 +120,8 @@ async function medienInfo(mediaId: string) {
   let istAufruf = bekannt?.istAufruf ?? false;
   let analyseHinweis = bekannt?.analyseHinweis ?? null;
 
-  if (istErstAnalyse) {
+  if (istErstAnalyse && autoErkennung) {
+    // Auto-Modus: die KI schaut sich das Video an.
     const videoAntwort =
       videoUrl && (mediaType === "VIDEO" || mediaType === "REELS")
         ? await analysiereVideo(videoUrl, caption)
@@ -124,6 +134,9 @@ async function medienInfo(mediaId: string) {
       istAufruf = istPartnerAufruf(caption);
       analyseHinweis = "Text-Erkennung (Video nicht analysierbar)";
     }
+  } else if (istErstAnalyse) {
+    // Allowlist-Modus: keine KI, das Reel wartet auf die manuelle Markierung.
+    analyseHinweis = "Wartet auf manuelle Markierung";
   }
 
   const captionDaten = { caption, permalink, sprache: spracheAusCaption(caption) };
@@ -135,9 +148,11 @@ async function medienInfo(mediaId: string) {
 
   if (istErstAnalyse) {
     const kopfzeile = caption.split("\n")[0].slice(0, 80).trim() || "(ohne Text)";
-    const status = istAufruf ? "als Partner-Aufruf erkannt" : "nicht als Partner-Aufruf erkannt";
+    const titel = autoErkennung
+      ? `Neues Reel: ${istAufruf ? "als Partner-Aufruf erkannt" : "nicht als Partner-Aufruf erkannt"}`
+      : "Neues kommentiertes Reel — im Dashboard prüfen";
     await sendePush({
-      titel: `Neues Reel: ${status}`,
+      titel,
       rumpf: kopfzeile,
       url: "/",
     }).catch((fehler) => console.error("Push für neues Reel fehlgeschlagen", fehler));
@@ -238,7 +253,9 @@ async function eskaliere(
  * verschicken (öffnet das DM-Fenster). Kein Aufruf-Reel → verworfen.
  */
 export async function verarbeiteNeue(hoechstens = 10): Promise<number> {
-  if (!(await istEingeschaltet())) return 0;
+  const config = await prisma.partnerConfig.findUnique({ where: { id: "default" } });
+  if (!(config?.enabled ?? true)) return 0;
+  const autoErkennung = config?.autoErkennung ?? false;
 
   const offene = await prisma.partner.findMany({
     where: { status: "neu" },
@@ -266,8 +283,8 @@ export async function verarbeiteNeue(hoechstens = 10): Promise<number> {
         continue;
       }
 
-      const media = await medienInfo(partner.triggerMediaId);
-      if (!istEffektivAufruf(media)) {
+      const media = await medienInfo(partner.triggerMediaId, autoErkennung);
+      if (!istEffektivAufruf(media, autoErkennung)) {
         await prisma.partner.update({
           where: { id: partner.id },
           data: { status: "verworfen", letzteBotAktion: "kein Partner-Reel" },
@@ -581,7 +598,7 @@ async function wendeAnEntscheidung(
  * "neu"-Zeilen an. Nur Kommentare jünger als der Wasserstand werden betrachtet;
  * die eigentliche Doppelsperre bleibt der Unique-Constraint.
  */
-async function polleKommentare(cutoffMs: number): Promise<number> {
+async function polleKommentare(cutoffMs: number, autoErkennung: boolean): Promise<number> {
   const [juengste, medien] = await Promise.all([
     ladeKontoMedien(MEDIEN_JE_LAUF).catch((fehler) => {
       console.error("Medienliste lesen fehlgeschlagen", fehler);
@@ -590,21 +607,28 @@ async function polleKommentare(cutoffMs: number): Promise<number> {
     prisma.partnerMedia.findMany(),
   ]);
 
-  // Jüngste Medien plus bekannte Partner-Reels (auch ältere, die noch Kommentare
-  // bekommen) - als Menge, damit keine Media-ID doppelt abgefragt wird.
-  const partnerMediaIds = medien.filter(istEffektivAufruf).map((m) => m.id);
-  const mediaIds = Array.from(new Set([...juengste, ...partnerMediaIds]));
+  // Jüngste Medien plus bereits freigegebene Reels (auch ältere, die noch
+  // Kommentare bekommen) - als Menge, damit keine Media-ID doppelt abgefragt wird.
+  const freigegebeneIds = medien.filter((m) => istEffektivAufruf(m, autoErkennung)).map((m) => m.id);
+  const mediaIds = Array.from(new Set([...juengste, ...freigegebeneIds]));
 
   const gesammelt: WebhookKommentar[] = [];
   for (const mediaId of mediaIds) {
     try {
       const kommentare = await ladeKommentareVonMedia(mediaId);
-      for (const kommentar of kommentare) {
-        if (kommentar.erstelltMs !== null && kommentar.erstelltMs < cutoffMs) continue;
-        gesammelt.push(kommentar);
+      const neue = kommentare.filter((k) => k.erstelltMs === null || k.erstelltMs >= cutoffMs);
+      if (neue.length === 0) continue;
+
+      // Jedes kommentierte Reel registrieren, damit es im Dashboard auftaucht
+      // (und dort markiert werden kann). ABER nur Kommentare auf freigegebenen
+      // Reels lösen Onboarding aus - auf nicht-freigegebenen Reels wird keine
+      // Person gespeichert (Zweckbindung: keine Daten ohne Partner-Bezug).
+      const media = await medienInfo(mediaId, autoErkennung);
+      if (istEffektivAufruf(media, autoErkennung)) {
+        gesammelt.push(...neue);
       }
     } catch (fehler) {
-      console.error(`Kommentare von ${mediaId} lesen fehlgeschlagen`, fehler);
+      console.error(`Kommentare/Reel ${mediaId} verarbeiten fehlgeschlagen`, fehler);
     }
   }
 
@@ -659,6 +683,7 @@ export async function polleEingaenge(): Promise<{ kommentare: number; nachrichte
   if (!(await istEingeschaltet())) return { kommentare: 0, nachrichten: 0 };
 
   const config = await prisma.partnerConfig.findUnique({ where: { id: "default" } });
+  const autoErkennung = config?.autoErkennung ?? false;
   const jetzt = Date.now();
   const stand = new Date(jetzt);
 
@@ -679,7 +704,7 @@ export async function polleEingaenge(): Promise<{ kommentare: number; nachrichte
     const kommentarCutoff = config?.letzterKommentarScan
       ? config.letzterKommentarScan.getTime() - UEBERLAPP_MS
       : jetzt - ERSTLAUF_RUECKBLICK_MS;
-    kommentare = await polleKommentare(kommentarCutoff);
+    kommentare = await polleKommentare(kommentarCutoff, autoErkennung);
   }
 
   // Wasserstände getrennt fortschreiben: den Kommentar-Stand nur, wenn diesmal

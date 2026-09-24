@@ -264,6 +264,16 @@ model PartnerConfig {
 
   enabled Boolean @default(true)
 
+  /// Reel-Erkennung: false = Allowlist-Modus (Vorgabe). Dann löst ein Reel erst
+  /// Onboarding aus, wenn es im Dashboard von Hand als Partner-Aufruf markiert
+  /// wurde (`PartnerMedia.ueberschreibung = true`) - die KI-Video-Analyse läuft
+  /// nicht, es wird garantiert keine Partner-DM verschickt, solange nicht
+  /// markiert ist. true = automatische Erkennung (Gemini-Video-Analyse
+  /// entscheidet, manuelle Übersteuerung geht weiter vor). Bewusst getrennt vom
+  /// An/Aus-Schalter: der Automat kann laufen, aber nur auf freigegebene Reels
+  /// reagieren.
+  autoErkennung Boolean @default(false)
+
   /// Wasserstände des Pollers (Zeitpunkt des jeweils letzten Laufs). Weil die
   /// beiden Apps sich eine Meta-App teilen und darum keinen eigenen Webhook
   /// bekommen können, holt sich dieser Automat neue Kommentare und DMs im
