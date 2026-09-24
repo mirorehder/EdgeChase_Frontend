@@ -56,6 +56,11 @@ export function ConceptLibrary({ track }: { track: Track }) {
   const [soundEntwurf, setSoundEntwurf] = useState("");
   const [soundFehler, setSoundFehler] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  // Neues Konzept von Hand (ohne Video).
+  const [neuOffen, setNeuOffen] = useState(false);
+  const [neuTitel, setNeuTitel] = useState("");
+  const [neuHook, setNeuHook] = useState("");
+  const [neuBeschreibung, setNeuBeschreibung] = useState("");
 
   async function load() {
     const res = await fetch(`/api/concepts?track=${track}`, { cache: "no-store" });
@@ -97,6 +102,44 @@ export function ConceptLibrary({ track }: { track: Track }) {
       await load();
     } catch (err) {
       setSoundFehler(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function neuesKonzept() {
+    const hookText = neuHook.trim();
+    if (!hookText) {
+      setFehler(true);
+      setNote("Bitte einen Hook-Text eingeben.");
+      return;
+    }
+    setBusy("neu");
+    setFehler(false);
+    setNote("Konzept wird angelegt …");
+    try {
+      const res = await fetch("/api/concepts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          manual: true,
+          track,
+          title: neuTitel,
+          hookText,
+          description: neuBeschreibung,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setNote(`Konzept „${data.title}" erstellt.`);
+      setNeuTitel("");
+      setNeuHook("");
+      setNeuBeschreibung("");
+      setNeuOffen(false);
+      await load();
+    } catch (err) {
+      setFehler(true);
+      setNote(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(null);
     }
@@ -249,14 +292,71 @@ export function ConceptLibrary({ track }: { track: Track }) {
             <span className="ordner-zahl">{concepts.length}</span>
           </button>
         </h2>
-        <button
-          className="secondary"
-          onClick={() => fileRef.current?.click()}
-          disabled={busy !== null}
-        >
-          {busy === "upload" ? "Wird verarbeitet …" : "Referenzvideo hochladen"}
-        </button>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button
+            className="secondary"
+            onClick={() => {
+              setNeuOffen(!neuOffen);
+              setNote(null);
+              setFehler(false);
+            }}
+            disabled={busy !== null}
+          >
+            {neuOffen ? "Abbrechen" : "Neues Konzept"}
+          </button>
+          <button
+            className="secondary"
+            onClick={() => fileRef.current?.click()}
+            disabled={busy !== null}
+          >
+            {busy === "upload" ? "Wird verarbeitet …" : "Referenzvideo hochladen"}
+          </button>
+        </div>
       </div>
+
+      {neuOffen && (
+        <div className="clip-editor">
+          <label>
+            Bezeichnung (optional)
+            <input
+              value={neuTitel}
+              placeholder="z.B. Rabatt-Aufruf Herbst"
+              onChange={(e) => setNeuTitel(e.target.value)}
+            />
+          </label>
+          <label>
+            Hook-Text - der Text, der im Video steht
+            <textarea
+              rows={4}
+              value={neuHook}
+              placeholder={"Zeilenumbrüche werden ins Video übernommen"}
+              onChange={(e) => setNeuHook(e.target.value)}
+            />
+          </label>
+          <label>
+            Kurze Beschreibung (Regie - worauf es bei der Clipauswahl ankommt)
+            <textarea
+              rows={2}
+              value={neuBeschreibung}
+              placeholder={
+                nachKrassheit
+                  ? "z.B. möglichst Fails, hohe Sprünge"
+                  : "z.B. Oberteile gut sichtbar, Bewegung, Nahaufnahmen"
+              }
+              onChange={(e) => setNeuBeschreibung(e.target.value)}
+            />
+            <span className="clip-meta">
+              Steuert die Clipwahl, steht nicht im Bild. Länge und Anzahl bekommen Vorgaben, die du
+              danach am Konzept ändern kannst.
+            </span>
+          </label>
+          <div className="actions" style={{ marginBottom: 0 }}>
+            <button onClick={neuesKonzept} disabled={busy !== null || !neuHook.trim()}>
+              {busy === "neu" ? "Legt an …" : "Konzept erstellen"}
+            </button>
+          </div>
+        </div>
+      )}
 
       {auf && (
         <p className="chat-hint">
