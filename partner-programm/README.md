@@ -27,6 +27,25 @@ Web-Push) sind vom Coupon-Automaten **kopiert und angepasst**, nicht importiert.
 2. **Direkte DM** ans EdgeChase-Konto mit Bezug aufs Partner-Programm — ein
    Ki-Torwächter (`istPartnerInteresse`) entscheidet, ob ein Onboarding startet.
 
+## Aufnahme per Polling (kein eigener Webhook)
+
+Diese App teilt sich die Meta-App mit dem Coupon-Automaten. Eine Meta-App hat
+pro Instagram-Objekt aber nur **eine** Webhook-Callback-URL — die gehört dem
+Live-Coupon-Automaten. Ein zweiter Webhook würde ihn überschreiben. Deshalb
+bekommt das Partner-Programm **keinen eigenen Webhook**, sondern fragt Kommentare
+und DMs im Zeitplan **aktiv ab** (`polleEingaenge` in `verarbeitung.ts`, getaktet
+über `/api/process`, siehe `vercel.json`). Die Meta-App bleibt dabei komplett
+unangetastet.
+
+Nur Ereignisse jünger als der gespeicherte Wasserstand (`PartnerConfig`) werden
+betrachtet; die eigentliche Doppelsperre bleiben die Unique-Constraints
+(`igMessageId`, `triggerCommentId`, `igUserId`). Ist der Automat ausgeschaltet,
+wird nicht abgefragt und der Wasserstand nicht bewegt — beim Wiedereinschalten
+werden die Ereignisse erneut gesehen. Latenz = Zeitplan-Takt (Vorgabe 10 Min,
+braucht den Vercel-**Pro**-Plan; Hobby deckelt Cron auf einmal täglich). Der
+`/api/webhook`-Endpunkt bleibt im Code, wird aber nicht registriert — falls das
+Programm später eine eigene Meta-App bekommt, ist er sofort einsatzbereit.
+
 ## Der Konversations-Zustandsautomat
 
 Jede Person hat einen `status`:
@@ -79,8 +98,10 @@ Onboarding-DM verlinkt sie; die akzeptierte Fassung wird je Person in
 2. `npm install`
 3. `npm run prisma:deploy` (Migrationen) bzw. `npm run prisma:migrate` (lokal)
 4. `npm run dev`
-5. Meta-Webhook auf `…/api/webhook` registrieren (macht der Betreiber selbst —
-   **nicht** die `comments`/`messages`-Abos des Coupon-Automaten anfassen).
+5. **Kein** Meta-Webhook nötig — die App holt Kommentare und DMs per Polling
+   (`/api/process`, Zeitplan in `vercel.json`). Die Webhook-Abos des
+   Coupon-Automaten bleiben unangetastet. Für brauchbare Latenz den Vercel-Pro-
+   Plan (Cron alle 10 Min); auf Hobby läuft der Poll nur einmal täglich.
 6. Wix-Automation `orders/created` → `…/api/wix-webhook?secret=<WIX_WEBHOOK_SECRET>`.
 
 ## Wichtige Dateien

@@ -264,6 +264,17 @@ model PartnerConfig {
 
   enabled Boolean @default(true)
 
+  /// Wasserstände des Pollers (Zeitpunkt des jeweils letzten Laufs). Weil die
+  /// beiden Apps sich eine Meta-App teilen und darum keinen eigenen Webhook
+  /// bekommen können, holt sich dieser Automat neue Kommentare und DMs im
+  /// Zeitplan aktiv ab. Nur Ereignisse jünger als der Wasserstand werden
+  /// betrachtet - so läuft die Gemini-Torwächter-Prüfung nicht bei jedem Lauf
+  /// erneut über dieselben alten Fremd-DMs. Die eigentliche Doppelsperre bleiben
+  /// die Unique-Constraints (igMessageId, triggerCommentId, igUserId); der
+  /// Wasserstand ist nur die Effizienz-Schranke davor.
+  letzterKommentarScan DateTime?
+  letzterDmScan        DateTime?
+
   updatedAt DateTime @updatedAt
 }
 

@@ -2,6 +2,9 @@ import { prisma } from "../db";
 import { env } from "../env";
 import {
   antworteAufKommentar,
+  ladeKommentareVonMedia,
+  ladeKontoMedien,
+  ladeKonversationen,
   ladeMedia,
   sendeDirektNachricht,
   sendePrivateAntwort,
@@ -47,6 +50,23 @@ const MEDIA_FRISCH_MS = 24 * 60 * 60 * 1000;
 
 /** So viele frühere Nachrichten bekommt der Bot als Verlauf. */
 const VERLAUF_LAENGE = 8;
+
+/**
+ * Wie weit der allererste Poll-Lauf zurückschaut (danach steuert der
+ * Wasserstand). Bewusst kurz gehalten: der Automat geht frisch live und soll
+ * nicht die ganze Kommentar-Historie alter Reels nachträglich anschreiben.
+ */
+const ERSTLAUF_RUECKBLICK_MS = 30 * 60 * 1000;
+
+/**
+ * Überlappung: der Poller schaut ein Stück über den letzten Wasserstand hinaus
+ * zurück, damit an der Zeitgrenze nichts durchrutscht. Doppelte fängt ohnehin
+ * die Doppelsperre ab (igMessageId, triggerCommentId, igUserId).
+ */
+const UEBERLAPP_MS = 3 * 60 * 1000;
+
+/** So viele der jüngsten Medien werden je Lauf nach neuen Kommentaren abgesucht. */
+const MEDIEN_JE_LAUF = 15;
 
 /** Ist der Automat eingeschaltet? Fehlt die Zeile, gilt er als eingeschaltet. */
 export async function istEingeschaltet(): Promise<boolean> {
@@ -542,4 +562,111 @@ async function wendeAnEntscheidung(
       return { ergebnis: "eskaliert", grund: entscheidung.begruendung || "Eskalation" };
     }
   }
+}
+
+/**
+ * Holt neue Kommentare unter den jüngsten und den bekannten Partner-Reels ab und
+ * legt daraus - über denselben Weg wie der Webhook (nimmKommentareAuf) - die
+ * "neu"-Zeilen an. Nur Kommentare jünger als der Wasserstand werden betrachtet;
+ * die eigentliche Doppelsperre bleibt der Unique-Constraint.
+ */
+async function polleKommentare(cutoffMs: number): Promise<number> {
+  const [juengste, medien] = await Promise.all([
+    ladeKontoMedien(MEDIEN_JE_LAUF).catch((fehler) => {
+      console.error("Medienliste lesen fehlgeschlagen", fehler);
+      return [] as string[];
+    }),
+    prisma.partnerMedia.findMany(),
+  ]);
+
+  // Jüngste Medien plus bekannte Partner-Reels (auch ältere, die noch Kommentare
+  // bekommen) - als Menge, damit keine Media-ID doppelt abgefragt wird.
+  const partnerMediaIds = medien.filter(istEffektivAufruf).map((m) => m.id);
+  const mediaIds = Array.from(new Set([...juengste, ...partnerMediaIds]));
+
+  const gesammelt: WebhookKommentar[] = [];
+  for (const mediaId of mediaIds) {
+    try {
+      const kommentare = await ladeKommentareVonMedia(mediaId);
+      for (const kommentar of kommentare) {
+        if (kommentar.erstelltMs !== null && kommentar.erstelltMs < cutoffMs) continue;
+        gesammelt.push(kommentar);
+      }
+    } catch (fehler) {
+      console.error(`Kommentare von ${mediaId} lesen fehlgeschlagen`, fehler);
+    }
+  }
+
+  return nimmKommentareAuf(gesammelt);
+}
+
+/**
+ * Holt die eingehenden DMs der jüngsten Konversationen ab und schickt jede - in
+ * zeitlicher Reihenfolge, damit der Zustandsautomat sauber fortschreitet - durch
+ * verarbeiteEingehendeNachricht. Eigene Nachrichten werden übergangen; die
+ * igMessageId-Doppelsperre fängt bereits verarbeitete DMs ab.
+ */
+async function polleNachrichten(cutoffMs: number): Promise<number> {
+  let nachrichten;
+  try {
+    nachrichten = await ladeKonversationen();
+  } catch (fehler) {
+    console.error("Konversationen lesen fehlgeschlagen", fehler);
+    return 0;
+  }
+
+  const relevant = nachrichten
+    .filter((n) => n.senderId && n.senderId !== env.igUserId)
+    .filter((n) => n.erstelltMs === null || n.erstelltMs >= cutoffMs)
+    .sort((a, b) => (a.erstelltMs ?? 0) - (b.erstelltMs ?? 0));
+
+  let verarbeitet = 0;
+  for (const nachricht of relevant) {
+    try {
+      const ergebnis = await verarbeiteEingehendeNachricht({
+        senderId: nachricht.senderId,
+        text: nachricht.text,
+        messageId: nachricht.messageId,
+        timestamp: nachricht.erstelltMs ?? undefined,
+      });
+      if (ergebnis.ergebnis !== "doppelt") verarbeitet += 1;
+    } catch (fehler) {
+      console.error(`DM ${nachricht.messageId} verarbeiten fehlgeschlagen`, fehler);
+    }
+  }
+  return verarbeitet;
+}
+
+/**
+ * Der Poll-Lauf: der Ersatz für den Webhook, den diese App wegen der geteilten
+ * Meta-App nicht bekommen kann. Fragt Kommentare und DMs aktiv ab und schiebt
+ * sie durch dieselben Verarbeitungswege. Ist der Automat ausgeschaltet, wird
+ * gar nicht erst abgefragt und der Wasserstand nicht bewegt - so werden die
+ * Ereignisse beim Wiedereinschalten erneut gesehen statt still übersprungen.
+ */
+export async function polleEingaenge(): Promise<{ kommentare: number; nachrichten: number }> {
+  if (!(await istEingeschaltet())) return { kommentare: 0, nachrichten: 0 };
+
+  const config = await prisma.partnerConfig.findUnique({ where: { id: "default" } });
+  const jetzt = Date.now();
+
+  const kommentarCutoff = config?.letzterKommentarScan
+    ? config.letzterKommentarScan.getTime() - UEBERLAPP_MS
+    : jetzt - ERSTLAUF_RUECKBLICK_MS;
+  const dmCutoff = config?.letzterDmScan
+    ? config.letzterDmScan.getTime() - UEBERLAPP_MS
+    : jetzt - ERSTLAUF_RUECKBLICK_MS;
+
+  const kommentare = await polleKommentare(kommentarCutoff);
+  const nachrichten = await polleNachrichten(dmCutoff);
+
+  // Wasserstand erst nach erfolgreichem Lauf setzen.
+  const stand = new Date(jetzt);
+  await prisma.partnerConfig.upsert({
+    where: { id: "default" },
+    create: { id: "default", letzterKommentarScan: stand, letzterDmScan: stand },
+    update: { letzterKommentarScan: stand, letzterDmScan: stand },
+  });
+
+  return { kommentare, nachrichten };
 }

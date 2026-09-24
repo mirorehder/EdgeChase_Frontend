@@ -1,12 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { env } from "@/lib/env";
-import { verarbeiteNeue } from "@/lib/programm/verarbeitung";
+import { polleEingaenge, verarbeiteNeue } from "@/lib/programm/verarbeitung";
 
 /**
- * Arbeitet die neu eingegangenen Kommentare ab (Reel klassifizieren,
- * Sprachfrage verschicken). Angestossen von der Webhook-Route, aufrufbar auch
- * aus dem Vercel-Zeitplan (stündlich, siehe vercel.json) - so heilt sich ein
- * verlorener Anstoss von selbst.
+ * Der Herzschlag des Partner-Automaten. Weil sich diese App die Meta-App mit dem
+ * Coupon-Automaten teilt und darum keinen eigenen Webhook registrieren kann
+ * (eine App hat pro Instagram-Objekt nur EINE Callback-URL - die gehört dem
+ * Live-Automaten), holt der Zeitplan hier neue Kommentare und DMs aktiv ab
+ * (polleEingaenge) und arbeitet anschliessend die "neu"-Zeilen ab
+ * (verarbeiteNeue: Reel klassifizieren, Sprachfrage verschicken).
+ *
+ * Getaktet über vercel.json. Fällt ein Lauf aus, holt der nächste alles nach -
+ * der Wasserstand sorgt dafür, dass nichts doppelt und nichts übersprungen wird.
  */
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -33,8 +38,13 @@ async function lauf(request: NextRequest) {
     return NextResponse.json({ error: "Nicht autorisiert." }, { status: 401 });
   }
 
+  const gepollt = await polleEingaenge();
   const angeschrieben = await verarbeiteNeue();
-  return NextResponse.json({ angeschrieben });
+  return NextResponse.json({
+    kommentare: gepollt.kommentare,
+    nachrichten: gepollt.nachrichten,
+    angeschrieben,
+  });
 }
 
 export async function POST(request: NextRequest) {

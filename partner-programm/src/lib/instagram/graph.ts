@@ -238,6 +238,127 @@ export function nachrichtenAusPayload(payload: unknown): EingehendeNachricht[] {
   return nachrichten;
 }
 
+// ---------------------------------------------------------------------------
+// Polling
+//
+// Weil das Partner-Programm sich die Meta-App mit dem Coupon-Automaten teilt und
+// eine App pro Instagram-Objekt nur EINE Webhook-Callback-URL haben kann (die
+// gehört dem Live-Automaten), kann dieser Automat keinen eigenen Webhook
+// registrieren. Statt auf Push zu warten, fragt er Kommentare und DMs im
+// Zeitplan aktiv ab. Diese Lese-Funktionen liefern die Rohdaten dafür; die
+// Verarbeitung (und die Doppelsperren) sind dieselben wie beim Webhook.
+// ---------------------------------------------------------------------------
+
+/** ISO-8601-Zeit von Meta ("2026-09-24T10:00:00+0000") als ms, oder null. */
+function zeitInMs(wert?: string): number | null {
+  if (!wert) return null;
+  const ms = Date.parse(wert);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+/** Ein per Polling gelesener Kommentar - dieselbe Gestalt wie WebhookKommentar. */
+export type GepollterKommentar = WebhookKommentar & { erstelltMs: number | null };
+
+/** Eine per Polling gelesene DM - dieselbe Gestalt wie EingehendeNachricht. */
+export type GepollteNachricht = EingehendeNachricht & { erstelltMs: number | null };
+
+/**
+ * Die IDs der letzten Medien des Kontos. Reine ID-Liste (klein gehalten), um
+ * darunter nach neuen Kommentaren zu suchen. Die Klassifikation, ob ein Reel
+ * ein Partner-Aufruf ist, passiert weiter faul in verarbeitung.ts - erst wenn
+ * ein Kommentar auftaucht.
+ */
+export async function ladeKontoMedien(limit = 15): Promise<string[]> {
+  const antwort = await graph<{ data?: Array<{ id?: string }> }>(`${env.igUserId}/media`, {
+    method: "GET",
+    query: { fields: "id", limit: String(limit) },
+  });
+  return (antwort.data ?? []).map((m) => m.id).filter((id): id is string => Boolean(id));
+}
+
+/**
+ * Die Top-Level-Kommentare unter einem Medium. Der Endpunkt liefert nur
+ * Top-Level-Kommentare (Thread-Antworten hängen unter `replies`), also fällt die
+ * parentId-Prüfung des Webhook-Wegs hier von selbst weg. `from.id` ist auf
+ * dieser App verfügbar (der Coupon-Automat liest es ebenso) und ist dieselbe
+ * scoped ID, die auch der Webhook liefert - so lässt sich Kommentar und spätere
+ * DM derselben Person zuordnen.
+ */
+export async function ladeKommentareVonMedia(
+  mediaId: string,
+  limit = 50,
+): Promise<GepollterKommentar[]> {
+  const antwort = await graph<{
+    data?: Array<{
+      id?: string;
+      text?: string;
+      timestamp?: string;
+      username?: string;
+      from?: { id?: string; username?: string };
+    }>;
+  }>(`${mediaId}/comments`, {
+    method: "GET",
+    query: { fields: "id,text,timestamp,username,from{id,username}", limit: String(limit) },
+  });
+
+  return (antwort.data ?? [])
+    .filter((k): k is { id: string } & typeof k => Boolean(k.id))
+    .map((k) => ({
+      id: k.id,
+      text: k.text ?? "",
+      mediaId,
+      authorId: k.from?.id,
+      authorUsername: k.from?.username ?? k.username,
+      erstelltMs: zeitInMs(k.timestamp),
+    }));
+}
+
+/**
+ * Die eingehenden DMs der letzten Konversationen, flach ausgerollt. Holt die
+ * Konversationen samt der jüngsten Nachrichten in einem Aufruf (verschachtelte
+ * Feld-Expansion). Eigene Nachrichten (from.id == Konto) sind mit dabei und
+ * werden vom Aufrufer übergangen - hier bleibt die Funktion eine reine
+ * Leseschicht.
+ */
+export async function ladeKonversationen(
+  limit = 25,
+  nachrichtenJeKonversation = 20,
+): Promise<GepollteNachricht[]> {
+  const antwort = await graph<{
+    data?: Array<{
+      id?: string;
+      messages?: {
+        data?: Array<{
+          id?: string;
+          created_time?: string;
+          from?: { id?: string };
+          message?: string;
+        }>;
+      };
+    }>;
+  }>(`${env.igUserId}/conversations`, {
+    method: "GET",
+    query: {
+      fields: `id,updated_time,messages.limit(${nachrichtenJeKonversation}){id,created_time,from,message}`,
+      limit: String(limit),
+    },
+  });
+
+  const nachrichten: GepollteNachricht[] = [];
+  for (const konversation of antwort.data ?? []) {
+    for (const m of konversation.messages?.data ?? []) {
+      if (!m.id || !m.message) continue; // leere Texte (Sticker/Bilder) übergehen
+      nachrichten.push({
+        senderId: m.from?.id ?? "",
+        text: m.message,
+        messageId: m.id,
+        erstelltMs: zeitInMs(m.created_time),
+      });
+    }
+  }
+  return nachrichten;
+}
+
 /** Ob und wofür das Konto Webhook-Ereignisse abonniert hat. */
 export async function leseAbo(): Promise<unknown> {
   return graph(`${env.igUserId}/subscribed_apps`, { method: "GET" });
