@@ -2,7 +2,7 @@ import { prisma } from "../db";
 import { env } from "../env";
 import { sendePush } from "../push";
 import { erstelleGutschein } from "../wix/coupons";
-import { formuliereAntwort, formuliereDm } from "./antwort";
+import { formuliereAntwort, formuliereOptin } from "./antwort";
 import { antworteAufKommentar, ladeMedia, sendePrivateAntwort, type WebhookKommentar } from "./graph";
 import { istAktionsReel, leseNameAusHandle, leseNameAusText, spracheAusCaption } from "./namen";
 import { istEchterName } from "./namenspruefung";
@@ -18,12 +18,25 @@ import { analysiereVideo } from "./videoanalyse";
  * deshalb nur entgegen, hier passiert die Arbeit.
  */
 
-/** Die Konditionen der Aktion - überall dieselben, deshalb an einer Stelle. */
+/**
+ * Statische Konditionen der Aktion. Die Prozentzahl steht nicht mehr hier -
+ * sie ist ein Konfigurationswert, der sich vom Dashboard aus ändern lässt.
+ * Siehe holeAktivenRabatt().
+ */
 export const GUTSCHEIN = {
-  prozent: 15,
   gueltigTage: 7,
   tag: "Instagram",
 } as const;
+
+/**
+ * Der aktuell im Dashboard hinterlegte Rabattsatz. Fallback auf 25% - so
+ * bleibt die Verarbeitung auch dann bedient, wenn die Config-Zeile gelöscht
+ * wurde oder ein Migrations-Fehler den Wert wegräumt.
+ */
+export async function holeAktivenRabatt(): Promise<number> {
+  const config = await prisma.instagramConfig.findUnique({ where: { id: "default" } });
+  return config?.rabattProzent ?? 25;
+}
 
 /** So viele frühere Antworten bekommt das Modell als Negativbeispiel. */
 const NEGATIVBEISPIELE = 8;
@@ -273,9 +286,11 @@ async function fuehreAus(zeile: {
     };
   }
 
+  const rabatt = await holeAktivenRabatt();
+
   const gutschein = await erstelleGutschein({
     code: name,
-    prozent: GUTSCHEIN.prozent,
+    prozent: rabatt,
     gueltigTage: GUTSCHEIN.gueltigTage,
     tag: GUTSCHEIN.tag,
   });
@@ -283,14 +298,18 @@ async function fuehreAus(zeile: {
   // Ab hier ist der Gutschein in der Welt. Was danach schiefgeht, darf den
   // Vorgang nicht mehr abbrechen: ohne öffentliche Antwort stünde die Person
   // ganz ohne Rückmeldung da, obwohl ihr Code längst bereitliegt.
+  //
+  // Zwei-Stufen-DM: die Erst-DM fragt nur nach einer Ja-Antwort. Sobald die
+  // Person zurückschreibt, öffnet sich Metas 24-Stunden-Fenster - dann geht
+  // in wiedersendung.ts die zweite DM mit dem tatsächlichen Code raus. Grund:
+  // DMs von Business-Accounts an Nicht-Follower landen in den Anfragen ohne
+  // Push-Benachrichtigung; ein aktiver Reply verschiebt die Konversation ins
+  // Hauptpostfach und macht spätere Nachrichten sichtbar.
   let dmGesendet = false;
   let dmFehler: string | undefined;
 
   try {
-    await sendePrivateAntwort(
-      zeile.id,
-      formuliereDm(name, gutschein.code, GUTSCHEIN.prozent),
-    );
+    await sendePrivateAntwort(zeile.id, formuliereOptin(name, rabatt));
     dmGesendet = true;
   } catch (fehler) {
     dmFehler = fehler instanceof Error ? fehler.message : String(fehler);

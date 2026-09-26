@@ -57,6 +57,7 @@ type KommentarZeile = {
   nachgefasstAm: Date | null;
   codeEingeloestAm: Date | null;
   codeErneutGesendetAm: Date | null;
+  codeGesendetAm: Date | null;
 };
 
 function KommentarListe({ eintraege }: { eintraege: KommentarZeile[] }) {
@@ -96,6 +97,9 @@ function KommentarListe({ eintraege }: { eintraege: KommentarZeile[] }) {
                 {zeile.couponCode ? (
                   <>
                     <code>{zeile.couponCode}</code>{" "}
+                    {zeile.dmGesendet && zeile.codeGesendetAm === null && (
+                      <span title="Wartet auf Opt-in-Antwort der Person">⏳</span>
+                    )}
                     {zeile.codeErneutGesendetAm && (
                       <span title="Code auf DM-Nachfrage erneut verschickt">📩</span>
                     )}
@@ -130,6 +134,8 @@ export default async function StartSeite() {
     gesamtEingeloest,
     gesamtNachgefasst,
     gesamtWiederversandt,
+    gesamtWartetAufOptin,
+    gesamtOptinBeantwortet,
   ] = await Promise.all([
     prisma.instagramConfig.findUnique({ where: { id: "default" } }),
     // Die Menge ist überschaubar - ein paar Kommentare je Reel -, deshalb
@@ -146,6 +152,10 @@ export default async function StartSeite() {
     prisma.instagramComment.count({ where: { codeEingeloestAm: { not: null } } }),
     prisma.instagramComment.count({ where: { nachgefasstAm: { not: null } } }),
     prisma.instagramComment.count({ where: { codeErneutGesendetAm: { not: null } } }),
+    prisma.instagramComment.count({
+      where: { dmGesendet: true, codeGesendetAm: null, couponCode: { not: null } },
+    }),
+    prisma.instagramComment.count({ where: { codeGesendetAm: { not: null } } }),
   ]);
 
   const verarbeitet = zeilen.filter((z) => z.status === "verarbeitet");
@@ -221,11 +231,16 @@ export default async function StartSeite() {
       <h1>Instagram-Kommentar-Automat</h1>
       <p className="subtitle">
         Kommentiert jemand seinen Namen unter einem Promo-Reel, entsteht ein Gutschein über{" "}
-        {GUTSCHEIN.prozent}% ({GUTSCHEIN.gueltigTage} Tage, einmal einlösbar), geht per DM raus und
-        wird öffentlich beantwortet. Ausgelöst von Instagram selbst, nicht von einem Zeitplan.
+        {config?.rabattProzent ?? 25}% ({GUTSCHEIN.gueltigTage} Tage, einmal einlösbar). Erst-DM ist
+        eine Ja-Nachfrage, der Code kommt in der zweiten DM nach der Antwort. Öffentlicher Reply
+        weist auf Nachrichtenanfragen hin. Ausgelöst von Instagram, nicht von einem Zeitplan.
       </p>
 
-      <Schalter start={config?.enabled ?? true} wartend={wartend} />
+      <Schalter
+        start={config?.enabled ?? true}
+        wartend={wartend}
+        rabattStart={config?.rabattProzent ?? 25}
+      />
 
       {env.vapidPublicKey && <PushEinrichten vapidPublicKey={env.vapidPublicKey} />}
 
@@ -283,6 +298,15 @@ export default async function StartSeite() {
         <div className="stat-card">
           <div className="value">{gesamtWiederversandt}</div>
           <div className="label">Code erneut geschickt</div>
+        </div>
+        <div className="stat-card">
+          <div className="value">
+            {gesamtOptinBeantwortet}
+            {gesamtWartetAufOptin > 0 && (
+              <span className="ig-schwach"> ({gesamtWartetAufOptin} offen)</span>
+            )}
+          </div>
+          <div className="label">Opt-in beantwortet</div>
         </div>
       </div>
 

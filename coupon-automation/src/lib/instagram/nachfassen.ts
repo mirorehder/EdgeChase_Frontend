@@ -47,10 +47,11 @@ const FENSTER_ENDE_H = 6.5 * 24;
  * ohnehin nicht mehr möglich wäre.
  */
 function formuliereNachfass(name: string, code: string): string {
-  const grund = `Hey ${name}, code ${code} still good on edgechase.com ✨`;
-  const link = env.whatsappChannelUrl;
-  if (!link) return grund;
-  return `${grund}\nPS: join our WhatsApp channel for BTS + extra discount → ${link}`;
+  return (
+    `Hey ${name}, dein Code ${code} ist noch gültig auf edgechase.com ✨\n` +
+    `PS: Unsere Herbst-Kollektion droppt bald — komm in unseren WhatsApp-Kanal, ` +
+    `damit du sie als Erste*r siehst: ${env.whatsappChannelUrl}`
+  );
 }
 
 export type NachfassAbschluss = {
@@ -70,6 +71,11 @@ export async function nachfasseOffene(hoechstens = 20): Promise<NachfassAbschlus
     where: {
       status: "verarbeitet",
       dmGesendet: true,
+      // Nur Personen, die den Code tatsächlich per DM bekommen haben - bei
+      // Zeilen mit codeGesendetAm=null steht der Opt-in noch aus, ein Nachfass
+      // wäre verwirrend ("dein Code ${code}" ohne dass sie ihn je gesehen
+      // hat).
+      codeGesendetAm: { not: null },
       couponCode: { not: null },
       couponId: { not: null },
       nachgefasstAm: null,

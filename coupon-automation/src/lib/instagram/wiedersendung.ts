@@ -3,7 +3,7 @@ import { prisma } from "../db";
 import { env } from "../env";
 import { formuliereDm } from "./antwort";
 import { sendeDirektNachricht, type EingehendeNachricht } from "./graph";
-import { GUTSCHEIN } from "./verarbeitung";
+import { holeAktivenRabatt } from "./verarbeitung";
 
 /**
  * Wenn jemand nach einem bereits verschickten Code fragt, den Code erneut
@@ -87,6 +87,7 @@ async function fragtNachCode(text: string): Promise<boolean | null> {
 
 export type WiedersendungErgebnis =
   | { ergebnis: "wiederversandt"; commentId: string; code: string }
+  | { ergebnis: "code_nach_optin"; commentId: string; code: string }
   | { ergebnis: "kein_kommentar" }
   | { ergebnis: "kein_code_gefragt" }
   | { ergebnis: "abkuehlung"; commentId: string }
@@ -121,8 +122,34 @@ export async function verarbeiteEingehendeNachricht(
     return { ergebnis: "kein_kommentar" };
   }
 
-  // Abkühlungsfenster prüfen, bevor wir das Modell fragen: eine Kette schneller
-  // Nachfragen soll nicht in mehreren Ki-Aufrufen enden.
+  const rabatt = await holeAktivenRabatt();
+
+  // ERSTER PFAD: Zwei-Stufen-DM, Teil 2. Die Person hat die Opt-in-DM
+  // bekommen (dmGesendet=true), aber der Code selbst wurde noch nicht
+  // geschickt (codeGesendetAm=null). Jede eingehende Nachricht zählt als
+  // Zustimmung, weil der Kontakt bereits im offenen 24-h-Fenster liegt und
+  // wir sie sonst in den Anfragen zurücklassen würden. Kein Ki-Aufruf, kein
+  // Text-Match - der Reply IST das Opt-in.
+  if (kommentar.dmGesendet && kommentar.codeGesendetAm === null) {
+    const codeText = formuliereDm(kommentar.name, kommentar.couponCode, rabatt);
+    try {
+      await sendeDirektNachricht(nachricht.senderId, codeText);
+      await prisma.instagramComment.update({
+        where: { id: kommentar.id },
+        data: { codeGesendetAm: new Date() },
+      });
+      return { ergebnis: "code_nach_optin", commentId: kommentar.id, code: kommentar.couponCode };
+    } catch (fehler) {
+      return {
+        ergebnis: "fehler",
+        hinweis: fehler instanceof Error ? fehler.message : String(fehler),
+      };
+    }
+  }
+
+  // ZWEITER PFAD: Code wurde bereits (früher oder eben gerade) ausgeliefert.
+  // Nachfragen ("wo ist mein code?") werden hier bearbeitet - mit Ki-
+  // Klassifikation und Abkühlungsfenster gegen Ketten schneller Wiederholung.
   if (
     kommentar.codeErneutGesendetAm &&
     Date.now() - kommentar.codeErneutGesendetAm.getTime() < ABKUEHLUNG_MS
@@ -134,7 +161,7 @@ export async function verarbeiteEingehendeNachricht(
   if (gefragt === null) return { ergebnis: "klassifikation_ausgefallen" };
   if (gefragt === false) return { ergebnis: "kein_code_gefragt" };
 
-  const dmText = formuliereDm(kommentar.name, kommentar.couponCode, GUTSCHEIN.prozent);
+  const dmText = formuliereDm(kommentar.name, kommentar.couponCode, rabatt);
 
   try {
     await sendeDirektNachricht(nachricht.senderId, dmText);

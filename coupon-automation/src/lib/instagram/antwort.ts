@@ -23,9 +23,29 @@ const MAX_ZEICHEN = 220;
 
 export function formuliereDm(name: string, code: string, prozent: number): string {
   return (
-    `Hey ${name}! Thanks for dropping your name — here's your code: ${code}. ` +
+    `Hey ${name}! Here's your code: ${code}. ` +
     `It's good for ${prozent}% off at checkout on edgechase.com, valid for one week. ` +
     `Happy shopping! 🛒`
+  );
+}
+
+/**
+ * Opt-in-DM als Erst-Kontakt: fragt nach einer kurzen Bestätigung, bevor der
+ * eigentliche Code kommt. Zwei Gründe:
+ *
+ * 1. Instagram legt DMs von Business-Accounts an Nicht-Follower in die
+ *    Nachrichtenanfragen - ohne Push-Benachrichtigung. Der Code darin geht
+ *    oft unter. Fragen wir stattdessen nach einer Ja-Antwort, wird beim
+ *    Antworten die Konversation in die Haupt-Inbox verschoben und ein
+ *    24-Stunden-Fenster geöffnet, in dem wir freizügig antworten dürfen.
+ * 2. Wer aktiv "JA" schreibt, hat echtes Interesse - die tatsächliche
+ *    Einlösungsquote steigt entsprechend, weil wir weniger Impulskommentare
+ *    beliefern, sondern gezielt Kaufinteressierte.
+ */
+export function formuliereOptin(name: string, prozent: number): string {
+  return (
+    `Hey ${name}! 👋 I've got your ${prozent}% code ready for you. ` +
+    `Reply YES and I'll send it over 🎁`
   );
 }
 
@@ -39,14 +59,14 @@ export function formuliereDm(name: string, code: string, prozent: number): strin
  */
 const VORRAT: Record<"de" | "en", Array<(name: string) => string>> = {
   de: [
-    (n) => `Schau mal in deine DMs, ${n}! 📩 Falls nichts da ist, steht dein Profil vermutlich auf privat – dann schreib uns kurz selbst, wir schicken dir den Code sofort.`,
-    (n) => `${n}, ist bei dir in den DMs gelandet! Kommt nichts an, liegt's meist an einem privaten Profil – schreib uns einfach zuerst, dann kriegst du ihn von uns.`,
-    (n) => `Dein Code ist unterwegs zu dir, ${n} ✨ Nichts im Postfach? Dann ist dein Account wohl privat – melde dich kurz per DM und wir schicken ihn nach.`,
+    (n) => `Schau in deine DMs, ${n}! 📩 Falls nichts angekommen ist, check auch kurz deine Nachrichtenanfragen — Instagram versteckt DMs von neuen Kontakten manchmal dort.`,
+    (n) => `${n}, ist bei dir in den DMs gelandet ✨ Nichts zu sehen? Dann schau in deinen Nachrichtenanfragen — dort landen Nachrichten von Konten, denen du noch nicht folgst.`,
+    (n) => `Dein Code ist unterwegs, ${n} 🔥 Findest du nichts im normalen Postfach, wirf einen Blick in die Nachrichtenanfragen — Insta sortiert neue Chats manchmal dorthin.`,
   ],
   en: [
-    (n) => `Check your DMs, ${n}! 📩 Nothing there? Your profile is probably private – just message us first and we'll send the code over.`,
-    (n) => `Sent it straight to your inbox, ${n} 🔥 If it didn't show up, your account is likely private – drop us a DM and we'll sort you out.`,
-    (n) => `Your code is on its way, ${n}! Can't find it? That usually means a private profile – message us first and we'll get it to you.`,
+    (n) => `Check your DMs, ${n}! 📩 Nothing there? Also peek into your message requests — Instagram sometimes hides DMs from new contacts there.`,
+    (n) => `Sent it your way, ${n} ✨ If it didn't show up, check your message requests folder — new chats often land there first.`,
+    (n) => `Your code is on the way, ${n} 🔥 Can't find it in your inbox? Check your message requests too — Instagram tucks new conversations away there.`,
   ],
 };
 
@@ -112,17 +132,17 @@ export async function formuliereAntwort(wunsch: AntwortWunsch): Promise<string> 
 
   const lage = wunsch.dmGelungen
     ? [
-        `Die Person heisst ${wunsch.name} und hat gerade per DM ihren Rabattcode bekommen.`,
+        `Die Person heisst ${wunsch.name} und hat gerade per DM eine Nachricht von uns bekommen.`,
         ``,
         `Die Antwort muss auf ${sprachname} sein und beides enthalten:`,
         `1. den Hinweis, in die DMs zu schauen`,
-        `2. den Hinweis, dass bei einem privaten Profil nichts ankommt und die Person uns dann selbst kurz anschreiben soll`,
+        `2. den Hinweis, auch in den Nachrichtenanfragen (englisch: message requests) zu schauen, weil Instagram DMs von neuen Kontakten oft dort versteckt`,
       ]
     : [
-        `Die Person heisst ${wunsch.name}. Ihr Code ist bereit, aber die DM konnte nicht zugestellt werden.`,
+        `Die Person heisst ${wunsch.name}. Wir konnten leider keine DM zustellen.`,
         ``,
         `Die Antwort muss auf ${sprachname} sein und die Person bitten, uns selbst kurz eine DM zu schreiben,`,
-        `damit wir ihr den Code zurückschicken können. Behaupte auf keinen Fall, es liege schon etwas in ihrem Postfach.`,
+        `damit wir zurückschicken können. Behaupte auf keinen Fall, es liege schon etwas in ihrem Postfach.`,
       ];
 
   const anweisung = [

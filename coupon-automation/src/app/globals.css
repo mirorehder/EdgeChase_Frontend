@@ -326,6 +326,34 @@ button {
   font-size: 12px;
 }
 
+.ig-rabatt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+  font-size: 13px;
+}
+
+.ig-rabatt label {
+  color: var(--muted);
+}
+
+.ig-rabatt input {
+  width: 64px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.ig-rabatt-einheit {
+  color: var(--muted);
+  margin-left: -4px;
+}
+
 .push-einrichten {
   display: flex;
   align-items: center;

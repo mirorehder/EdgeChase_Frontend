@@ -81,6 +81,16 @@ model InstagramComment {
   /// Doppel-Versenden bei mehrfacher Nachfrage kurz hintereinander.
   codeErneutGesendetAm DateTime?
 
+  /// Wann der Code als DM tatsächlich an die Person raus ist. Mit dem
+  /// Zwei-Stufen-DM-Ablauf ist das erst nach dem Opt-in der Person: die
+  /// erste DM (dmGesendet) ist nur die JA-Nachfrage, der Code kommt in einer
+  /// zweiten DM aus wiedersendung.ts.
+  ///
+  /// Für alte Zeilen (vor Umstellung auf Zwei-Stufen-DM) wird dieses Feld in
+  /// der Migration auf updatedAt gesetzt - dort war der Code Teil der Erst-DM,
+  /// also gilt er als ausgeliefert.
+  codeGesendetAm DateTime?
+
   /// Der Wortlaut der öffentlichen Antwort. Wird den nächsten Formulierungen
   /// als Negativbeispiel mitgegeben, damit sich die Antworten unterscheiden
   /// und nicht nach Textbaustein aussehen.
@@ -113,6 +123,12 @@ model InstagramConfig {
   id String @id @default("default")
 
   enabled Boolean @default(true)
+
+  /// Aktueller Rabattsatz für die im Kommentar-Automat erzeugten Codes.
+  /// Bewusst in der Datenbank, nicht als Umgebungsvariable: soll sich vom
+  /// Dashboard aus ohne Neubereitstellung anpassen lassen (z. B. für zeitlich
+  /// begrenzte Aktionen).
+  rabattProzent Int @default(25)
 
   updatedAt DateTime @updatedAt
 }

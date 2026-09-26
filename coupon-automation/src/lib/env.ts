@@ -69,8 +69,12 @@ export const env = {
    * WhatsApp-Hinweis raus. So kann der Link jederzeit ohne Codeänderung
    * gesetzt oder wieder entfernt werden.
    */
-  get whatsappChannelUrl(): string | null {
-    return process.env.WHATSAPP_CHANNEL_URL || null;
+  get whatsappChannelUrl(): string {
+    // Fest hinterlegter Fallback, damit die Erinnerungs-DM den WhatsApp-Kanal
+    // immer bewirbt, auch ohne dass in Vercel eine Umgebungsvariable gesetzt
+    // ist. Über WHATSAPP_CHANNEL_URL trotzdem überschreibbar, falls sich der
+    // Kanal-Link ändert.
+    return process.env.WHATSAPP_CHANNEL_URL || "https://whatsapp.com/channel/0029VbCIdte72WTvUuuOHw3C";
   },
   /**
    * VAPID-Schlüssel für Web-Push. Werden einmal je Projekt erzeugt und in
