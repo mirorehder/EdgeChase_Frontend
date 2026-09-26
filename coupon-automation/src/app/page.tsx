@@ -240,6 +240,15 @@ export default async function StartSeite() {
         weist auf Nachrichtenanfragen hin. Ausgelöst von Instagram, nicht von einem Zeitplan.
       </p>
 
+      <a
+        className="ig-externer-link"
+        href="https://content-generator-cloud.vercel.app"
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        Promo-Generator öffnen →
+      </a>
+
       <Schalter
         start={config?.enabled ?? true}
         wartend={wartend}

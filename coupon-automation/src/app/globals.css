@@ -120,6 +120,23 @@ button {
    Instagram-Kommentar-Automat
    ========================================================================== */
 
+.ig-externer-link {
+  display: inline-block;
+  margin-bottom: 20px;
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  text-decoration: none;
+  font-size: 13px;
+}
+
+.ig-externer-link:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 .ig-schalter {
   display: flex;
   align-items: center;
