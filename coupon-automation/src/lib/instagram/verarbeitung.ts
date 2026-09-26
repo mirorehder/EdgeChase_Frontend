@@ -309,7 +309,10 @@ async function fuehreAus(zeile: {
   let dmFehler: string | undefined;
 
   try {
-    await sendePrivateAntwort(zeile.id, formuliereOptin(name, rabatt));
+    await sendePrivateAntwort(
+      zeile.id,
+      formuliereOptin(name, rabatt, media.sprache === "de" ? "de" : "en"),
+    );
     dmGesendet = true;
   } catch (fehler) {
     dmFehler = fehler instanceof Error ? fehler.message : String(fehler);

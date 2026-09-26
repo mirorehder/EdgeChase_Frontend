@@ -21,7 +21,19 @@ const MODELL = "gemini-3.1-flash-lite";
 /** Länger als das wird unter einem Reel nicht mehr gelesen. */
 const MAX_ZEICHEN = 220;
 
-export function formuliereDm(name: string, code: string, prozent: number): string {
+export function formuliereDm(
+  name: string,
+  code: string,
+  prozent: number,
+  sprache: "de" | "en" = "en",
+): string {
+  if (sprache === "de") {
+    return (
+      `Hey ${name}! Hier ist dein Code: ${code}. ` +
+      `Gilt für ${prozent}% Rabatt beim Checkout auf edgechase.com, sieben Tage lang. ` +
+      `Viel Spass beim Stöbern! 🛒`
+    );
+  }
   return (
     `Hey ${name}! Here's your code: ${code}. ` +
     `It's good for ${prozent}% off at checkout on edgechase.com, valid for one week. ` +
@@ -42,7 +54,17 @@ export function formuliereDm(name: string, code: string, prozent: number): strin
  *    Einlösungsquote steigt entsprechend, weil wir weniger Impulskommentare
  *    beliefern, sondern gezielt Kaufinteressierte.
  */
-export function formuliereOptin(name: string, prozent: number): string {
+export function formuliereOptin(
+  name: string,
+  prozent: number,
+  sprache: "de" | "en" = "en",
+): string {
+  if (sprache === "de") {
+    return (
+      `Hey ${name}! 👋 Dein ${prozent}%-Code liegt bereit. ` +
+      `Antworte kurz mit JA und er ist unterwegs 🎁`
+    );
+  }
   return (
     `Hey ${name}! 👋 I've got your ${prozent}% code ready for you. ` +
     `Reply YES and I'll send it over 🎁`

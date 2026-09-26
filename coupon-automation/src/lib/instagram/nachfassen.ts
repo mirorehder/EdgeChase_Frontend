@@ -52,19 +52,26 @@ const ERINNERUNG_SPAETESTENS_H = 7 * 24 - 4;
  * Wortlaut der Nachfass-DM.
  *
  * Bewusst knapp - der Code läuft ohnehin nach sieben Tagen ab, das reicht als
- * Dringlichkeit. Der Ton bleibt derselbe wie in der Erst-DM (englisch), damit
- * die Nachricht wie eine Erinnerung im selben Gespräch wirkt.
+ * Dringlichkeit. Sprache wählt sich nach dem Reel (spracheAusCaption) - fällt
+ * die Person auf ein deutschsprachiges Reel, kommt Deutsch, sonst Englisch.
  *
- * Ist ein WhatsApp-Kanal-Link hinterlegt, wird er als PS angehängt: da drüben
- * lassen sich Personen legitim ansprechen (Opt-in nach dem Beitritt), während
- * eine Wiederkontakt-DM auf Instagram nach Ablauf des Sieben-Tage-Fensters
- * ohnehin nicht mehr möglich wäre.
+ * Der WhatsApp-Kanal wird als PS angehängt: da drüben lassen sich Personen
+ * legitim ansprechen (Opt-in nach dem Beitritt), während eine Wiederkontakt-DM
+ * auf Instagram nach Ablauf des Sieben-Tage-Fensters ohnehin nicht mehr
+ * möglich wäre.
  */
-function formuliereNachfass(name: string, code: string): string {
+function formuliereNachfass(name: string, code: string, sprache: "de" | "en"): string {
+  if (sprache === "de") {
+    return (
+      `Hey ${name}, dein Code ${code} ist noch gültig auf edgechase.com ✨\n` +
+      `PS: Unsere Herbst-Kollektion droppt bald — komm in unseren WhatsApp-Kanal, ` +
+      `damit du sie als Erste*r siehst: ${env.whatsappChannelUrl}`
+    );
+  }
   return (
-    `Hey ${name}, dein Code ${code} ist noch gültig auf edgechase.com ✨\n` +
-    `PS: Unsere Herbst-Kollektion droppt bald — komm in unseren WhatsApp-Kanal, ` +
-    `damit du sie als Erste*r siehst: ${env.whatsappChannelUrl}`
+    `Hey ${name}, your code ${code} is still valid on edgechase.com ✨\n` +
+    `PS: our fall collection is dropping soon — join our WhatsApp channel to see ` +
+    `it first: ${env.whatsappChannelUrl}`
   );
 }
 
@@ -76,11 +83,46 @@ function formuliereNachfass(name: string, code: string): string {
  * hat den Code bewusst nicht eingelöst, will aber vielleicht doch noch
  * zugreifen. Kurz halten, damit der Code als Blickfang stehen bleibt.
  */
-function formuliereErinnerung(name: string, code: string, prozent: number): string {
+function formuliereErinnerung(
+  name: string,
+  code: string,
+  prozent: number,
+  sprache: "de" | "en",
+): string {
+  if (sprache === "de") {
+    return (
+      `${name}, letzte Erinnerung: dein Code ${code} (${prozent}% Rabatt) läuft heute ab. ` +
+      `Schnapp dir noch was auf edgechase.com 🔥`
+    );
+  }
   return (
-    `${name}, letzte Erinnerung: dein Code ${code} (${prozent}% Rabatt) läuft heute ab. ` +
-    `Schnapp dir noch was auf edgechase.com 🔥`
+    `${name}, last reminder: your code ${code} (${prozent}% off) expires today. ` +
+    `Grab something quick on edgechase.com 🔥`
   );
+}
+
+/**
+ * Lädt die Sprachen aller in der Liste vorkommenden Reels in einem einzigen
+ * Aufruf. Ein Nachfass-Lauf betrifft meist mehrere Kommentare desselben
+ * Reels; ohne Bündelung wäre es N+1.
+ */
+async function ladeSprachen(mediaIds: string[]): Promise<Map<string, "de" | "en">> {
+  const einmalig = Array.from(new Set(mediaIds));
+  if (einmalig.length === 0) return new Map();
+  const medien = await prisma.instagramMedia.findMany({
+    where: { id: { in: einmalig } },
+    select: { id: true, sprache: true },
+  });
+  const karte = new Map<string, "de" | "en">();
+  for (const m of medien) {
+    karte.set(m.id, m.sprache === "de" ? "de" : "en");
+  }
+  return karte;
+}
+
+/** Fällt Englisch, wenn wir das Reel (oder seine Sprache) nicht kennen. */
+function spracheFuer(mediaId: string, karte: Map<string, "de" | "en">): "de" | "en" {
+  return karte.get(mediaId) ?? "en";
 }
 
 export type NachfassAbschluss = {
@@ -115,6 +157,7 @@ export async function nachfasseOffene(hoechstens = 20): Promise<NachfassAbschlus
     take: hoechstens,
   });
 
+  const sprachen = await ladeSprachen(kandidaten.map((z) => z.mediaId));
   const abschluesse: NachfassAbschluss[] = [];
 
   for (const zeile of kandidaten) {
@@ -155,7 +198,10 @@ export async function nachfasseOffene(hoechstens = 20): Promise<NachfassAbschlus
     // muss, um ein 24-Stunden-Fenster zu öffnen, ist hier egal - wir nutzen
     // gar nicht dieses Fenster.
     try {
-      await sendePrivateAntwort(zeile.id, formuliereNachfass(zeile.name, zeile.couponCode));
+      await sendePrivateAntwort(
+        zeile.id,
+        formuliereNachfass(zeile.name, zeile.couponCode, spracheFuer(zeile.mediaId, sprachen)),
+      );
       await prisma.instagramComment.update({
         where: { id: zeile.id },
         data: { nachgefasstAm: new Date() },
@@ -227,6 +273,7 @@ export async function erinnereBaldAblaufende(hoechstens = 20): Promise<Erinnerun
   });
 
   const rabatt = await holeAktivenRabatt();
+  const sprachen = await ladeSprachen(kandidaten.map((z) => z.mediaId));
   const abschluesse: ErinnerungsAbschluss[] = [];
 
   for (const zeile of kandidaten) {
@@ -258,7 +305,15 @@ export async function erinnereBaldAblaufende(hoechstens = 20): Promise<Erinnerun
     }
 
     try {
-      await sendePrivateAntwort(zeile.id, formuliereErinnerung(zeile.name, zeile.couponCode, rabatt));
+      await sendePrivateAntwort(
+        zeile.id,
+        formuliereErinnerung(
+          zeile.name,
+          zeile.couponCode,
+          rabatt,
+          spracheFuer(zeile.mediaId, sprachen),
+        ),
+      );
       await prisma.instagramComment.update({
         where: { id: zeile.id },
         data: { erinnerungGesendetAm: new Date() },

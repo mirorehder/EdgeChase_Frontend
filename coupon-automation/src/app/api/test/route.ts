@@ -161,7 +161,7 @@ export async function GET(request: NextRequest) {
         }
 
         return NextResponse.json({
-          dm: formuliereDm(name, name.toUpperCase(), await holeAktivenRabatt()),
+          dm: formuliereDm(name, name.toUpperCase(), await holeAktivenRabatt(), sprache),
           antworten,
         });
       }

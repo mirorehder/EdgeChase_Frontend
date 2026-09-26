@@ -123,6 +123,13 @@ export async function verarbeiteEingehendeNachricht(
   }
 
   const rabatt = await holeAktivenRabatt();
+  // Sprache des Reels, unter dem die Person kommentiert hat - damit die
+  // Wiederversand-DM in derselben Sprache läuft wie die Erst-DM.
+  const media = await prisma.instagramMedia.findUnique({
+    where: { id: kommentar.mediaId },
+    select: { sprache: true },
+  });
+  const sprache: "de" | "en" = media?.sprache === "de" ? "de" : "en";
 
   // ERSTER PFAD: Zwei-Stufen-DM, Teil 2. Die Person hat die Opt-in-DM
   // bekommen (dmGesendet=true), aber der Code selbst wurde noch nicht
@@ -131,7 +138,7 @@ export async function verarbeiteEingehendeNachricht(
   // wir sie sonst in den Anfragen zurücklassen würden. Kein Ki-Aufruf, kein
   // Text-Match - der Reply IST das Opt-in.
   if (kommentar.dmGesendet && kommentar.codeGesendetAm === null) {
-    const codeText = formuliereDm(kommentar.name, kommentar.couponCode, rabatt);
+    const codeText = formuliereDm(kommentar.name, kommentar.couponCode, rabatt, sprache);
     try {
       await sendeDirektNachricht(nachricht.senderId, codeText);
       await prisma.instagramComment.update({
@@ -161,7 +168,7 @@ export async function verarbeiteEingehendeNachricht(
   if (gefragt === null) return { ergebnis: "klassifikation_ausgefallen" };
   if (gefragt === false) return { ergebnis: "kein_code_gefragt" };
 
-  const dmText = formuliereDm(kommentar.name, kommentar.couponCode, rabatt);
+  const dmText = formuliereDm(kommentar.name, kommentar.couponCode, rabatt, sprache);
 
   try {
     await sendeDirektNachricht(nachricht.senderId, dmText);
