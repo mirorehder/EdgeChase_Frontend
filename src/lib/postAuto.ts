@@ -18,6 +18,7 @@ import { istVerwendbar } from "./sound";
 import { normalisiereTagKeys, passtZuSparte } from "./soundTags";
 import { posteReel } from "./instagram";
 import { logActivity } from "./activity";
+import { meldeAlsPromoReel } from "./couponAutomationBridge";
 import {
   bucketFromServeUrl,
   deletePostCopy,
@@ -617,6 +618,15 @@ export async function posteFaelliges(track: Track, jetzt = new Date()): Promise<
       `(${trackBeschreibung(track).label}), Media-ID ${ergebnis.mediaId}, Sound: ${soundText}.`,
     { track, videoId: kandidat.id },
   );
+
+  // Nachbar-App (Coupon-Automat) benachrichtigen, damit sie die Media-ID
+  // ohne eigene Video-Analyse als Promo-Reel erkennt. Nur für die Promo-
+  // Sparte. Fehler oder fehlende Konfiguration dürfen den Post nicht
+  // rückwirkend gefährden - deshalb noch ein zusätzlicher .catch, obwohl
+  // meldeAlsPromoReel intern bereits alles abfängt.
+  if (ergebnis.mediaId) {
+    await meldeAlsPromoReel(track, ergebnis.mediaId, kandidat.id).catch(() => {});
+  }
 
   // Die öffentliche Kopie wird nach dem Post nicht mehr gebraucht.
   if (isRenderStorageConfigured()) {
