@@ -58,6 +58,7 @@ type KommentarZeile = {
   codeEingeloestAm: Date | null;
   codeErneutGesendetAm: Date | null;
   codeGesendetAm: Date | null;
+  erinnerungGesendetAm: Date | null;
 };
 
 function KommentarListe({ eintraege }: { eintraege: KommentarZeile[] }) {
@@ -105,6 +106,9 @@ function KommentarListe({ eintraege }: { eintraege: KommentarZeile[] }) {
                     )}
                     {zeile.nachgefasstAm && !zeile.codeEingeloestAm && (
                       <span title="Nachfass-DM verschickt">🔔</span>
+                    )}
+                    {zeile.erinnerungGesendetAm && !zeile.codeEingeloestAm && (
+                      <span title="Ablauf-Erinnerung verschickt">⏰</span>
                     )}
                     {zeile.codeEingeloestAm && <span title="Eingelöst">✅</span>}
                   </>

@@ -91,6 +91,12 @@ model InstagramComment {
   /// also gilt er als ausgeliefert.
   codeGesendetAm DateTime?
 
+  /// Wann die Ablauf-Erinnerung raus ist (ca. 12 h vor Ende der 7-Tage-
+  /// Gültigkeit). Dient als Sperre gegen Mehrfach-Versand: solange der
+  /// Zeitstempel gesetzt ist - egal ob Versand erfolgreich oder Meta die
+  /// DM abgelehnt hat - wird die Zeile nicht erneut aufgegriffen.
+  erinnerungGesendetAm DateTime?
+
   /// Der Wortlaut der öffentlichen Antwort. Wird den nächsten Formulierungen
   /// als Negativbeispiel mitgegeben, damit sich die Antworten unterscheiden
   /// und nicht nach Textbaustein aussehen.

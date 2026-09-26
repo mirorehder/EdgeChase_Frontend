@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { env } from "@/lib/env";
-import { nachfasseOffene } from "@/lib/instagram/nachfassen";
+import { erinnereBaldAblaufende, nachfasseOffene } from "@/lib/instagram/nachfassen";
 import { verarbeiteOffene } from "@/lib/instagram/verarbeitung";
 
 /**
@@ -53,6 +53,13 @@ async function lauf(request: NextRequest) {
     console.error("Nachfass im process-Lauf fehlgeschlagen", fehler);
     return [] as Awaited<ReturnType<typeof nachfasseOffene>>;
   });
+  // Ablauf-Erinnerungen (12 h vor Schluss) laufen im selben Rhythmus mit.
+  // Fällt der eigene Zeitplan aus, greift die Erinnerung immer noch, sobald
+  // ein neuer Kommentar diese Route auslöst.
+  const erinnerungen = await erinnereBaldAblaufende().catch((fehler) => {
+    console.error("Erinnerungs-Lauf fehlgeschlagen", fehler);
+    return [] as Awaited<ReturnType<typeof erinnereBaldAblaufende>>;
+  });
 
   return NextResponse.json({
     verarbeitet: ergebnisse.filter((e) => e.status === "verarbeitet").length,
@@ -61,6 +68,7 @@ async function lauf(request: NextRequest) {
     einzelheiten: ergebnisse,
     nachgefasst: nachfass.filter((e) => e.ergebnis === "nachgefasst").length,
     eingeloest: nachfass.filter((e) => e.ergebnis === "eingeloest").length,
+    erinnert: erinnerungen.filter((e) => e.ergebnis === "erinnert").length,
   });
 }
 

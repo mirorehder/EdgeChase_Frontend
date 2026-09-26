@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { env } from "@/lib/env";
-import { nachfasseOffene } from "@/lib/instagram/nachfassen";
+import { erinnereBaldAblaufende, nachfasseOffene } from "@/lib/instagram/nachfassen";
 
 /**
  * Nachfass-Lauf: erinnert an ungenutzte Codes 48 Stunden nach der Erstellung.
@@ -28,6 +28,13 @@ async function lauf(request: NextRequest) {
   }
 
   const ergebnisse = await nachfasseOffene();
+  // Ablauf-Erinnerungen im selben Lauf mitnehmen. Sie greifen ein anderes
+  // Zeitfenster (144 - 164 h) und einen eigenen Zeitstempel, also gibt es
+  // keine Doppel-DMs - die Zeilen überlappen sich nicht.
+  const erinnerungen = await erinnereBaldAblaufende().catch((fehler) => {
+    console.error("Erinnerungs-Lauf fehlgeschlagen", fehler);
+    return [] as Awaited<ReturnType<typeof erinnereBaldAblaufende>>;
+  });
 
   return NextResponse.json({
     nachgefasst: ergebnisse.filter((e) => e.ergebnis === "nachgefasst").length,
@@ -35,6 +42,11 @@ async function lauf(request: NextRequest) {
     keineMoeglich: ergebnisse.filter((e) => e.ergebnis === "keine_dm_moeglich").length,
     fehler: ergebnisse.filter((e) => e.ergebnis === "fehler").length,
     einzelheiten: ergebnisse,
+    erinnert: erinnerungen.filter((e) => e.ergebnis === "erinnert").length,
+    erinnerungEingeloest: erinnerungen.filter((e) => e.ergebnis === "eingeloest").length,
+    erinnerungKeineMoeglich: erinnerungen.filter((e) => e.ergebnis === "keine_dm_moeglich").length,
+    erinnerungFehler: erinnerungen.filter((e) => e.ergebnis === "fehler").length,
+    erinnerungen,
   });
 }
 
