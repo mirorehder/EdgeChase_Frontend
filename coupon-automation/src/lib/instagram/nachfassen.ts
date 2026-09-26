@@ -2,7 +2,7 @@ import { prisma } from "../db";
 import { env } from "../env";
 import { nutzungen } from "../wix/coupons";
 import { sendePrivateAntwort } from "./graph";
-import { holeAktivenRabatt } from "./verarbeitung";
+import { holeAktiveGueltigTage, holeAktivenRabatt } from "./verarbeitung";
 
 /**
  * Nachfassen bei Codes, die 48 Stunden alt sind und noch nicht eingelöst
@@ -36,17 +36,35 @@ const NACHFASSEN_NACH_H = 48;
 const FENSTER_ENDE_H = 6.5 * 24;
 
 /**
- * Zeitfenster für die Ablauf-Erinnerung.
- *
- * Der Gutschein läuft 7 Tage (168 h) nach der Erstellung. Die Erinnerung soll
- * ungefähr 12 h vor Schluss rausgehen - aber der Zeitplan feuert nicht
- * sekundengenau, und die Zeile darf nicht zwischen zwei Läufen durchrutschen.
- * Deshalb ein Fenster von 144 h bis 164 h Alter: der Aufräum-Lauf hat rund
- * einen Tag Zeit, die Zeile zu greifen, und die letzten vier Stunden bleiben
- * als Puffer gegen Metas 7-Tage-Frist frei.
+ * Metas Frist für private Antworten auf einen Kommentar (168 h) minus einem
+ * kleinen Puffer. Danach lehnt die Graph-API jede DM zu diesem Kommentar ab -
+ * sowohl Nachfassen als auch Ablauf-Erinnerung.
  */
-const ERINNERUNG_FRUEHESTENS_H = 6 * 24;
-const ERINNERUNG_SPAETESTENS_H = 7 * 24 - 4;
+const META_DM_FENSTER_ENDE_H = 7 * 24 - 4;
+
+/**
+ * Zeitfenster für die Ablauf-Erinnerung, in Abhängigkeit der Gültigkeitsdauer.
+ *
+ * - Bei 4-7 Tagen Gültigkeit: 20-24 h vor dem tatsächlichen Ablauf, damit die
+ *   Person noch reagieren kann. Der Aufräum-Lauf hat ca. 20 h Zeit, die Zeile
+ *   zu greifen, sodass sie zwischen zwei Läufen nicht durchrutscht.
+ * - Bei ≤ 3 Tagen Gültigkeit: keine Erinnerung. Nachfassen (48 h) fällt
+ *   ohnehin schon nahe an den Ablauf, eine zweite DM wenige Stunden später
+ *   wäre eher aufdringlich als hilfreich.
+ * - Bei > 7 Tagen Gültigkeit: keine Erinnerung. Metas DM-Frist von 7 Tagen
+ *   lässt eine "läuft bald ab"-Nachricht in den letzten Stunden nicht mehr zu.
+ *
+ * null als Rückgabe: keine Erinnerung für diese Gültigkeitsdauer.
+ */
+function erinnerungsFenster(
+  gueltigTage: number,
+): { fruehestensH: number; spaetestensH: number } | null {
+  if (gueltigTage < 4 || gueltigTage > 7) return null;
+  const spaetestensH = Math.min(gueltigTage * 24 - 4, META_DM_FENSTER_ENDE_H);
+  const fruehestensH = Math.max(NACHFASSEN_NACH_H + 12, spaetestensH - 20);
+  if (fruehestensH >= spaetestensH) return null;
+  return { fruehestensH, spaetestensH };
+}
 
 /**
  * Wortlaut der Nachfass-DM.
@@ -76,27 +94,44 @@ function formuliereNachfass(name: string, code: string, sprache: "de" | "en"): s
 }
 
 /**
+ * Wie viel Zeit bis zum Ablauf, in kurzen Worten. Bewusst grob - die
+ * Erinnerung soll dringend wirken, nicht Uhrzeiten-genau.
+ */
+function ablaufIn(restStunden: number, sprache: "de" | "en"): string {
+  if (restStunden <= 24) {
+    return sprache === "de" ? "läuft heute ab" : "expires today";
+  }
+  const tage = Math.max(1, Math.round(restStunden / 24));
+  if (sprache === "de") {
+    return tage === 1 ? "läuft morgen ab" : `läuft in ${tage} Tagen ab`;
+  }
+  return tage === 1 ? "expires tomorrow" : `expires in ${tage} days`;
+}
+
+/**
  * Wortlaut der Ablauf-Erinnerung.
  *
  * Wenige Stunden vor Schluss geht der Ton eine Spur direkter als beim
- * ersten Nachfass - "läuft heute ab" trägt sich selbst, und die Person
- * hat den Code bewusst nicht eingelöst, will aber vielleicht doch noch
- * zugreifen. Kurz halten, damit der Code als Blickfang stehen bleibt.
+ * ersten Nachfass - die tatsächliche Restzeit wird beim Absenden anhand von
+ * createdAt und der aktuellen Gültigkeitsdauer errechnet und in den Text
+ * eingesetzt, damit die Aussage stimmt, egal wie die Config eingestellt ist.
  */
 function formuliereErinnerung(
   name: string,
   code: string,
   prozent: number,
   sprache: "de" | "en",
+  restStunden: number,
 ): string {
+  const ablauf = ablaufIn(restStunden, sprache);
   if (sprache === "de") {
     return (
-      `${name}, letzte Erinnerung: dein Code ${code} (${prozent}% Rabatt) läuft heute ab. ` +
+      `${name}, letzte Erinnerung: dein Code ${code} (${prozent}% Rabatt) ${ablauf}. ` +
       `Schnapp dir noch was auf edgechase.com 🔥`
     );
   }
   return (
-    `${name}, last reminder: your code ${code} (${prozent}% off) expires today. ` +
+    `${name}, last reminder: your code ${code} (${prozent}% off) ${ablauf}. ` +
     `Grab something quick on edgechase.com 🔥`
   );
 }
@@ -253,8 +288,14 @@ export type ErinnerungsAbschluss = {
  */
 export async function erinnereBaldAblaufende(hoechstens = 20): Promise<ErinnerungsAbschluss[]> {
   const jetzt = Date.now();
-  const obereGrenze = new Date(jetzt - ERINNERUNG_FRUEHESTENS_H * 60 * 60 * 1000);
-  const untereGrenze = new Date(jetzt - ERINNERUNG_SPAETESTENS_H * 60 * 60 * 1000);
+  const gueltigTage = await holeAktiveGueltigTage();
+  const fenster = erinnerungsFenster(gueltigTage);
+  // Bei Gültigkeit < 4 oder > 7 Tagen läuft keine Erinnerung. Gar nicht erst
+  // die DB fragen.
+  if (!fenster) return [];
+
+  const obereGrenze = new Date(jetzt - fenster.fruehestensH * 60 * 60 * 1000);
+  const untereGrenze = new Date(jetzt - fenster.spaetestensH * 60 * 60 * 1000);
 
   const kandidaten = await prisma.instagramComment.findMany({
     where: {
@@ -304,6 +345,16 @@ export async function erinnereBaldAblaufende(hoechstens = 20): Promise<Erinnerun
       continue;
     }
 
+    // Restzeit bis zum tatsächlichen Ablauf, gerechnet ab Kommentar-Erstellung
+    // plus Gültigkeitsdauer. Nie negativ (falls doch: der Nachfass-Text sagt
+    // dann "läuft heute ab", was in Wahrheit "gerade eben abgelaufen" heisst -
+    // ein akzeptabler Kompromiss gegenüber gar keiner Nachricht).
+    const restStunden = Math.max(
+      0,
+      (zeile.createdAt.getTime() + gueltigTage * 24 * 60 * 60 * 1000 - jetzt) /
+        (60 * 60 * 1000),
+    );
+
     try {
       await sendePrivateAntwort(
         zeile.id,
@@ -312,6 +363,7 @@ export async function erinnereBaldAblaufende(hoechstens = 20): Promise<Erinnerun
           zeile.couponCode,
           rabatt,
           spracheFuer(zeile.mediaId, sprachen),
+          restStunden,
         ),
       );
       await prisma.instagramComment.update({

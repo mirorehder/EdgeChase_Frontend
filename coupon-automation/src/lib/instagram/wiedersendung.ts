@@ -3,7 +3,7 @@ import { prisma } from "../db";
 import { env } from "../env";
 import { formuliereDm } from "./antwort";
 import { sendeDirektNachricht, type EingehendeNachricht } from "./graph";
-import { holeAktivenRabatt } from "./verarbeitung";
+import { holeAktiveGueltigTage, holeAktivenRabatt } from "./verarbeitung";
 
 /**
  * Wenn jemand nach einem bereits verschickten Code fragt, den Code erneut
@@ -123,6 +123,7 @@ export async function verarbeiteEingehendeNachricht(
   }
 
   const rabatt = await holeAktivenRabatt();
+  const gueltigTage = await holeAktiveGueltigTage();
   // Sprache des Reels, unter dem die Person kommentiert hat - damit die
   // Wiederversand-DM in derselben Sprache läuft wie die Erst-DM.
   const media = await prisma.instagramMedia.findUnique({
@@ -138,7 +139,13 @@ export async function verarbeiteEingehendeNachricht(
   // wir sie sonst in den Anfragen zurücklassen würden. Kein Ki-Aufruf, kein
   // Text-Match - der Reply IST das Opt-in.
   if (kommentar.dmGesendet && kommentar.codeGesendetAm === null) {
-    const codeText = formuliereDm(kommentar.name, kommentar.couponCode, rabatt, sprache);
+    const codeText = formuliereDm(
+      kommentar.name,
+      kommentar.couponCode,
+      rabatt,
+      sprache,
+      gueltigTage,
+    );
     try {
       await sendeDirektNachricht(nachricht.senderId, codeText);
       await prisma.instagramComment.update({
@@ -168,7 +175,13 @@ export async function verarbeiteEingehendeNachricht(
   if (gefragt === null) return { ergebnis: "klassifikation_ausgefallen" };
   if (gefragt === false) return { ergebnis: "kein_code_gefragt" };
 
-  const dmText = formuliereDm(kommentar.name, kommentar.couponCode, rabatt, sprache);
+  const dmText = formuliereDm(
+    kommentar.name,
+    kommentar.couponCode,
+    rabatt,
+    sprache,
+    gueltigTage,
+  );
 
   try {
     await sendeDirektNachricht(nachricht.senderId, dmText);

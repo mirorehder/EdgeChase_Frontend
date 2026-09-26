@@ -10,7 +10,7 @@ import {
   leseNameAusText,
   spracheAusCaption,
 } from "@/lib/instagram/namen";
-import { GUTSCHEIN, holeAktivenRabatt } from "@/lib/instagram/verarbeitung";
+import { GUTSCHEIN, holeAktiveGueltigTage, holeAktivenRabatt } from "@/lib/instagram/verarbeitung";
 import { freierCode } from "@/lib/wix/coupons";
 
 /**
@@ -69,7 +69,11 @@ export async function GET(request: NextRequest) {
           CRON_SECRET: gesetzt("CRON_SECRET"),
           igUserId: env.igUserId,
           wixSiteId: env.wixSiteId,
-          konditionen: { ...GUTSCHEIN, prozent: await holeAktivenRabatt() },
+          konditionen: {
+            ...GUTSCHEIN,
+            prozent: await holeAktivenRabatt(),
+            gueltigTage: await holeAktiveGueltigTage(),
+          },
         });
 
       case "wix": {
@@ -161,7 +165,13 @@ export async function GET(request: NextRequest) {
         }
 
         return NextResponse.json({
-          dm: formuliereDm(name, name.toUpperCase(), await holeAktivenRabatt(), sprache),
+          dm: formuliereDm(
+            name,
+            name.toUpperCase(),
+            await holeAktivenRabatt(),
+            sprache,
+            await holeAktiveGueltigTage(),
+          ),
           antworten,
         });
       }

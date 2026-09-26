@@ -14,10 +14,12 @@ export function Schalter({
   start,
   wartend,
   rabattStart,
+  gueltigTageStart,
 }: {
   start: boolean;
   wartend: number;
   rabattStart: number;
+  gueltigTageStart: number;
 }) {
   const [an, setAn] = useState(start);
   const [busy, setBusy] = useState(false);
@@ -25,6 +27,9 @@ export function Schalter({
   const [rabatt, setRabatt] = useState<string>(String(rabattStart));
   const [rabattGespeichert, setRabattGespeichert] = useState<number>(rabattStart);
   const [rabattBusy, setRabattBusy] = useState(false);
+  const [tage, setTage] = useState<string>(String(gueltigTageStart));
+  const [tageGespeichert, setTageGespeichert] = useState<number>(gueltigTageStart);
+  const [tageBusy, setTageBusy] = useState(false);
 
   async function umlegen() {
     const neu = !an;
@@ -70,7 +75,32 @@ export function Schalter({
     }
   }
 
+  async function tageSpeichern() {
+    const zahl = Number(tage);
+    if (!Number.isInteger(zahl) || zahl < 1 || zahl > 30) {
+      setFehler("Gültigkeit muss eine ganze Zahl zwischen 1 und 30 sein.");
+      return;
+    }
+    setTageBusy(true);
+    setFehler(null);
+
+    try {
+      const res = await fetch("/api/config", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ gueltigTage: zahl }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error ?? "Fehlgeschlagen.");
+      setTageGespeichert(zahl);
+    } catch (err) {
+      setFehler(err instanceof Error ? err.message : String(err));
+    } finally {
+      setTageBusy(false);
+    }
+  }
+
   const rabattVerändert = Number(rabatt) !== rabattGespeichert;
+  const tageVerändert = Number(tage) !== tageGespeichert;
 
   return (
     <div className={`ig-schalter ${an ? "ig-an" : "ig-aus"}`}>
@@ -107,6 +137,28 @@ export function Schalter({
             disabled={rabattBusy || !rabattVerändert}
           >
             {rabattBusy ? "…" : "Speichern"}
+          </button>
+        </div>
+
+        <div className="ig-rabatt">
+          <label htmlFor="tage">Gültigkeitsdauer</label>
+          <input
+            id="tage"
+            type="number"
+            min={1}
+            max={30}
+            step={1}
+            value={tage}
+            onChange={(e) => setTage(e.target.value)}
+            disabled={tageBusy}
+          />
+          <span className="ig-rabatt-einheit">Tage</span>
+          <button
+            className="ig-knopf ig-knopf-klein"
+            onClick={tageSpeichern}
+            disabled={tageBusy || !tageVerändert}
+          >
+            {tageBusy ? "…" : "Speichern"}
           </button>
         </div>
       </div>

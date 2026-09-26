@@ -136,6 +136,19 @@ model InstagramConfig {
   /// begrenzte Aktionen).
   rabattProzent Int @default(25)
 
+  /// Wie lange ein neu erzeugter Code gültig ist, in Tagen.
+  ///
+  /// Aus zwei Gründen konfigurierbar: kurze Gültigkeit (2-3 Tage) baut
+  /// Dringlichkeit auf und drückt die Einlöse-Quote nach oben; lange
+  /// Gültigkeit (14 Tage) hält den Code auch nach der Meta-DM-Frist noch am
+  /// Leben, was für Aktionen um den Black Friday oder Weihnachten reicht.
+  ///
+  /// Die Ablauf-Erinnerung 12 h vor Schluss läuft nur bei 4-7 Tagen: bei
+  /// kürzerer Laufzeit greift schon der 48-h-Nachfass, bei längerer schliesst
+  /// sich Metas 7-Tage-DM-Fenster vor dem Ablauf. Der Wortlaut aller DMs
+  /// passt sich der Tageszahl automatisch an.
+  gueltigTage Int @default(7)
+
   updatedAt DateTime @updatedAt
 }
 

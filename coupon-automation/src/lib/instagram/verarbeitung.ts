@@ -19,23 +19,32 @@ import { analysiereVideo } from "./videoanalyse";
  */
 
 /**
- * Statische Konditionen der Aktion. Die Prozentzahl steht nicht mehr hier -
- * sie ist ein Konfigurationswert, der sich vom Dashboard aus ändern lässt.
- * Siehe holeAktivenRabatt().
+ * Feste Konditionen der Aktion. Prozentzahl und Gültigkeitstage stehen NICHT
+ * hier - sie sind Konfigurationswerte, die sich vom Dashboard aus ändern
+ * lassen. Siehe holeAktivenRabatt() und holeAktiveGueltigTage().
  */
 export const GUTSCHEIN = {
-  gueltigTage: 7,
   tag: "Instagram",
 } as const;
 
+/** Vorgabe, wenn die Config-Zeile fehlt oder migrationsbedingt leer ist. */
+export const GUELTIG_TAGE_VORGABE = 7;
+export const RABATT_PROZENT_VORGABE = 25;
+
 /**
- * Der aktuell im Dashboard hinterlegte Rabattsatz. Fallback auf 25% - so
- * bleibt die Verarbeitung auch dann bedient, wenn die Config-Zeile gelöscht
+ * Der aktuell im Dashboard hinterlegte Rabattsatz. Fallback auf die Vorgabe -
+ * so bleibt die Verarbeitung auch dann bedient, wenn die Config-Zeile gelöscht
  * wurde oder ein Migrations-Fehler den Wert wegräumt.
  */
 export async function holeAktivenRabatt(): Promise<number> {
   const config = await prisma.instagramConfig.findUnique({ where: { id: "default" } });
-  return config?.rabattProzent ?? 25;
+  return config?.rabattProzent ?? RABATT_PROZENT_VORGABE;
+}
+
+/** Gültigkeitsdauer der Codes, in Tagen. Analog zu holeAktivenRabatt(). */
+export async function holeAktiveGueltigTage(): Promise<number> {
+  const config = await prisma.instagramConfig.findUnique({ where: { id: "default" } });
+  return config?.gueltigTage ?? GUELTIG_TAGE_VORGABE;
 }
 
 /** So viele frühere Antworten bekommt das Modell als Negativbeispiel. */
@@ -287,11 +296,12 @@ async function fuehreAus(zeile: {
   }
 
   const rabatt = await holeAktivenRabatt();
+  const gueltigTage = await holeAktiveGueltigTage();
 
   const gutschein = await erstelleGutschein({
     code: name,
     prozent: rabatt,
-    gueltigTage: GUTSCHEIN.gueltigTage,
+    gueltigTage,
     tag: GUTSCHEIN.tag,
   });
 

@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/db";
 import { env } from "@/lib/env";
-import { EIGENES_KONTO_HINWEIS, GUTSCHEIN, istEffektivAktion } from "@/lib/instagram/verarbeitung";
+import { EIGENES_KONTO_HINWEIS, istEffektivAktion } from "@/lib/instagram/verarbeitung";
 import { PushEinrichten } from "./PushEinrichten";
 import { Schalter } from "./Schalter";
 import { Uebersteuerung } from "./Uebersteuerung";
@@ -235,9 +235,10 @@ export default async function StartSeite() {
       <h1>Instagram-Kommentar-Automat</h1>
       <p className="subtitle">
         Kommentiert jemand seinen Namen unter einem Promo-Reel, entsteht ein Gutschein über{" "}
-        {config?.rabattProzent ?? 25}% ({GUTSCHEIN.gueltigTage} Tage, einmal einlösbar). Erst-DM ist
-        eine Ja-Nachfrage, der Code kommt in der zweiten DM nach der Antwort. Öffentlicher Reply
-        weist auf Nachrichtenanfragen hin. Ausgelöst von Instagram, nicht von einem Zeitplan.
+        {config?.rabattProzent ?? 25}% ({config?.gueltigTage ?? 7} Tage, einmal einlösbar).
+        Erst-DM ist eine Ja-Nachfrage, der Code kommt in der zweiten DM nach der Antwort.
+        Öffentlicher Reply weist auf Nachrichtenanfragen hin. Ausgelöst von Instagram, nicht von
+        einem Zeitplan.
       </p>
 
       <a
@@ -253,6 +254,7 @@ export default async function StartSeite() {
         start={config?.enabled ?? true}
         wartend={wartend}
         rabattStart={config?.rabattProzent ?? 25}
+        gueltigTageStart={config?.gueltigTage ?? 7}
       />
 
       {env.vapidPublicKey && <PushEinrichten vapidPublicKey={env.vapidPublicKey} />}
