@@ -41,12 +41,24 @@ const EXTERN_HINWEIS =
 const ANALYSE_HINWEIS = "Vom Promo-Generator gepostet.";
 const ANSTOSS_MS = 1200;
 
+/**
+ * Zwei zulässige Geheimnisse:
+ * - CRON_SECRET (dasselbe wie /api/process und /api/nachfassen).
+ * - PROMO_MEDIA_SECRET - ein dediziertes Zweit-Geheimnis nur für diese Route,
+ *   damit die Anbindung an den Promo-Generator ein eigenes, drehbares Wort
+ *   bekommt und CRON_SECRET nicht anfassen muss.
+ *
+ * Beide werden geprüft; passt eines, gilt der Aufruf als berechtigt.
+ */
 function istBerechtigt(request: NextRequest): boolean {
-  const secret = env.cronSecret;
-  return (
-    request.headers.get("x-api-key") === secret ||
-    request.headers.get("authorization") === `Bearer ${secret}`
+  const cronSecret = env.cronSecret;
+  const promoSecret = process.env.PROMO_MEDIA_SECRET?.trim() || null;
+  const kopf = request.headers.get("x-api-key") ?? "";
+  const bearer = request.headers.get("authorization") ?? "";
+  const kandidaten = [cronSecret, promoSecret].filter(
+    (s): s is string => Boolean(s),
   );
+  return kandidaten.some((s) => kopf === s || bearer === `Bearer ${s}`);
 }
 
 export async function POST(request: NextRequest) {
