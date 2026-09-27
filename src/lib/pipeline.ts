@@ -636,6 +636,9 @@ export async function composeVideo(
       desiredCount: wantedCount || undefined,
       themeHint: options.themeHint || undefined,
       fixedHookText: options.fixedHookText || undefined,
+      // Sparte durchreichen, damit der Hook-Text in der Sprache formuliert wird,
+      // in der das Reel spaeter auch gepostet wird ("promo" -> Deutsch).
+      track,
     },
   );
 

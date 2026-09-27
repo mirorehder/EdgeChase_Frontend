@@ -559,6 +559,12 @@ export async function posteFaelliges(track: Track, jetzt = new Date()): Promise<
   const captionRoh = kandidat.postCaption || kandidat.fileTitle || kandidat.hookText.replace(/\n/g, " ");
   const caption = mitHashtags(captionRoh, zeitplan.hashtags);
 
+  // Ortstag nur fuer die Promo-Sparte (Ziel-Markt DACH); andere Sparten posten
+  // wie bisher ohne Tag. Fehlt die Umgebungsvariable, wird stillschweigend
+  // uebersprungen - der Post selbst laeuft unveraendert weiter.
+  const locationId =
+    track === "promo" ? process.env.IG_LOCATION_ID_PROMO?.trim() || null : null;
+
   const ergebnis = await posteReel(track, {
     videoUrl: kandidat.publicUrl,
     caption,
@@ -567,6 +573,7 @@ export async function posteFaelliges(track: Track, jetzt = new Date()): Promise<
     // Ton drueber; der Originalton spielt in voller Lautstaerke.
     hatEigeneMusik: sound.hatEigeneMusik,
     alsTrialReel: zeitplan.alsTrialReel,
+    locationId,
   });
 
   if (ergebnis.trockenlauf) {
