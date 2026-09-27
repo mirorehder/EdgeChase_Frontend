@@ -74,6 +74,7 @@ export async function POST(request: NextRequest) {
         description: c.description ?? "",
       })),
       recentVideos.map((v) => v.hookText),
+      track,
     );
 
     if (result.status === "question" || !result.spec) {

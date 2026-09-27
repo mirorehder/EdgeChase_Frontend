@@ -84,7 +84,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Kein Video angegeben." }, { status: 400 });
     }
 
-    const analysis = await analyzeConcept(buffer, erlaubterTyp(body.mimeType));
+    // Sparte durchreichen: fuer "promo" wird der extrahierte Hook-Text sinnge-
+    // maess ins Deutsche uebersetzt, damit spaeter erzeugte Videos die
+    // Bildunterschrift in derselben Sprache tragen. Andere Sparten uebernehmen
+    // den Text wie bisher wortwoertlich.
+    const analysis = await analyzeConcept(buffer, erlaubterTyp(body.mimeType), track);
 
     const concept = await prisma.concept.create({
       data: {
