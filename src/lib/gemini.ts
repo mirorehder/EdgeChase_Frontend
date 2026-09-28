@@ -463,7 +463,17 @@ export interface SceneSelection {
 // Auftrag Abschnitt 1. Die Beispiele geben dem Modell den Rahmen für Ton und
 // Länge vor, ohne dass es sie wörtlich übernehmen soll (dafür sorgt der
 // recentHookTexts-Abgleich).
-const HOOK_EXAMPLES = [
+//
+// Zwei Sätze pro Sprache: die Sparte "promo" wird auf Deutsch gepostet (der
+// DACH-Anteil im Publikum ist unser Zielmarkt), die anderen Sparten posten
+// wie bisher auf Englisch. Welcher Satz greift, bestimmt der Track-Parameter.
+const HOOK_EXAMPLES_DE = [
+  "Die ersten 30, die ihren Namen kommentieren, bekommen einen persönlichen Code",
+  "Namen droppen - die ersten 30 bekommen einen eigenen Rabattcode",
+  "Kommentiere deinen Namen. Die ersten 30 kriegen einen Code für sich.",
+  "30 personalisierte Codes. Kommentiere deinen Namen, um dir einen zu holen.",
+];
+const HOOK_EXAMPLES_EN = [
   "First 30 people to comment their name get a custom discount code",
   "Drop your name below - first 30 get a personal code",
   "Comment your name. First 30 get a code made just for you.",
@@ -487,6 +497,12 @@ export interface SelectionOptions {
   themeHint?: string;
   /** Vorgegebener Hook-Text. Ist er gesetzt, formuliert das Modell keinen eigenen. */
   fixedHookText?: string;
+  /**
+   * Sparte, für die dieses Video entsteht. Bestimmt die Sprache des Hook-
+   * Textes: "promo" auf Deutsch (Ziel-Markt DACH), alle anderen Sparten
+   * bleiben Englisch. Ohne Angabe fällt der Aufruf auf Englisch zurück.
+   */
+  track?: Track;
 }
 
 export async function selectScenesAndHook(
@@ -508,6 +524,12 @@ export async function selectScenesAndHook(
     ? recentHookTexts.map((t) => `- ${t}`).join("\n")
     : "(noch keine)";
 
+  const aufDeutsch = options.track === "promo";
+  const spracheAdjektiv = aufDeutsch ? "deutschen" : "englischen";
+  const beispielListe = (aufDeutsch ? HOOK_EXAMPLES_DE : HOOK_EXAMPLES_EN)
+    .map((e) => `- ${e}`)
+    .join("\n");
+
   const prompt = `Du stellst ein 10-20 Sekunden langes Werbevideo für eine Streetwear-/Sport-Marke (EdgeChase) aus vorhandenen Clips zusammen.
 
 Kandidaten (bereits nach "Kleidung gut erkennbar" vorgefiltert):
@@ -517,12 +539,12 @@ Wähle ${desiredCount ? `genau ${desiredCount}` : "3 oder 4"} Clip-IDs aus diese
 
 Die Clips stammen aus verschiedenen Ordnern, deren Namen das jeweilige Thema angeben (z.B. Parkour, Rooftop, Training). Nutze das als Kontext: die Clips eines Videos sollen thematisch zueinander passen und einen erkennbaren roten Faden haben - vermeide es, thematisch unpassende Clips zu mischen. Innerhalb dieses Themas dann für Abwechslung sorgen.
 
-Formuliere außerdem einen kurzen englischen Hook-Text für das Video. Die Kernaussage muss immer dieselbe bleiben: die ersten 30 Personen, die ihren Namen kommentieren, bekommen einen persönlichen Rabattcode.
+Formuliere außerdem einen kurzen ${spracheAdjektiv} Hook-Text für das Video. Die Kernaussage muss immer dieselbe bleiben: die ersten 30 Personen, die ihren Namen kommentieren, bekommen einen persönlichen Rabattcode.
 
 HARTE VORGABE: höchstens ${MAX_HOOK_CHARS} Zeichen. Der Text steht als Overlay im Video und muss in drei kurze Zeilen passen - längere Sätze werden unlesbar klein. Ein einziger knapper Satz, keine Einleitungsfrage davor.
 
 Beispiele für Ton und Länge (nicht wörtlich übernehmen):
-${HOOK_EXAMPLES.map((e) => `- ${e}`).join("\n")}
+${beispielListe}
 
 Diese Formulierungen wurden zuletzt schon verwendet - der neue Text darf keiner davon wörtlich oder nahezu wörtlich gleichen:
 ${recentList}${
@@ -573,13 +595,14 @@ ${recentList}${
     );
   }
 
-  return validateSelection(raw, candidates, desiredCount);
+  return validateSelection(raw, candidates, desiredCount, aufDeutsch);
 }
 
 function validateSelection(
   raw: Partial<SceneSelection>,
   candidates: ClipCandidate[],
   desiredCount: number | null = null,
+  aufDeutsch = false,
 ): SceneSelection {
   const cap = desiredCount ?? 4;
   const candidateIds = new Set(candidates.map((c) => c.id));
@@ -600,8 +623,13 @@ function validateSelection(
   // tatsächlichen Textbreite - eigene Umbrüche im Text führen dort zu
   // unsauberen Zeilen.
   const proposed = raw.hookText?.replace(/\s+/g, " ").trim();
+  // Bei leerem oder zu langem Vorschlag greift ein Rueckfall auf einen der
+  // eingebauten Beispieltexte - in derselben Sprache wie der Prompt, damit
+  // ein Promo-Video nicht ploetzlich einen englischen Hook zeigt, wenn Gemini
+  // aussetzt.
+  const rueckfall = (aufDeutsch ? HOOK_EXAMPLES_DE : HOOK_EXAMPLES_EN)[0];
   const hookText =
-    proposed && proposed.length <= MAX_HOOK_CHARS ? proposed : HOOK_EXAMPLES[0];
+    proposed && proposed.length <= MAX_HOOK_CHARS ? proposed : rueckfall;
 
   return { selectedClipIds, hookText };
 }
@@ -926,6 +954,12 @@ export async function erfindeVideoTitel(input: TitleInput): Promise<string> {
       ? "ein schnell geschnittener Parkour-Edit fuer Instagram"
       : "ein kurzes Werbevideo einer Streetwear-Marke";
 
+  // Sparte "promo" wird auf Deutsch gepostet - der Dateititel dient bei
+  // fehlender eigener Caption auch als Instagram-Bildunterschrift und muss
+  // deshalb dieselbe Sprache haben wie der Hook. Alle anderen Sparten bleiben
+  // Englisch (bisheriges Verhalten).
+  const titelSprache = input.track === "promo" ? "Deutsch" : "Englisch";
+
   try {
     const ai = client();
     const response = await ai.models.generateContent({
@@ -942,7 +976,7 @@ ${szenen}
 
 ${texte ? `Eingeblendet steht im Video:\n${texte}` : "Im Video steht kein Text."}
 
-Finde einen Titel auf Englisch. Anforderungen:
+Finde einen Titel auf ${titelSprache}. Anforderungen:
 - Er muss zu genau DIESEM Video passen - greif auf, was oben tatsaechlich zu sehen ist, nicht auf Parkour im Allgemeinen.
 - Witzig und cool, wie eine Bildunterschrift, die jemand wirklich posten wuerde. Kein Behoerdendeutsch, keine Aufzaehlung, keine Erklaerung.
 - Hoechstens ${MAX_TITLE_CHARS} Zeichen.
@@ -1030,6 +1064,7 @@ export async function interpretChatRequest(
   turns: ChatTurn[],
   clips: ChatClipSummary[],
   recentHookTexts: string[],
+  track: Track = "promo",
 ): Promise<ChatResult> {
   const ai = client();
 
@@ -1044,10 +1079,18 @@ export async function interpretChatRequest(
     .map((t) => `${t.role === "user" ? "NUTZER" : "SYSTEM"}: ${t.content}`)
     .join("\n");
 
+  // Sparte "promo" spricht das DACH-Publikum an, deshalb wird der Hook auf
+  // Deutsch formuliert; die anderen Kleidungs-Sparten (Sports, Clothing)
+  // bleiben Englisch, weil sie eher international angesetzt sind.
+  const hookSprachRegel =
+    track === "promo"
+      ? "IMMER auf Deutsch, unabhängig von der Sprache des Nutzers."
+      : "IMMER auf Englisch, auch wenn der Nutzer deutsch schreibt.";
+
   const prompt = `Du hilfst dabei, ein Werbevideo für die Streetwear-/Sport-Marke EdgeChase zusammenzustellen. Der Nutzer beschreibt auf Deutsch, was er möchte. Deine Aufgabe ist es, daraus die Einstellungen abzuleiten - oder gezielt nachzufragen.
 
 EINSTELLBAR SIND:
-- hookText: der Text, der im Video steht. IMMER auf Englisch, auch wenn der Nutzer deutsch schreibt. Zeilenumbrüche mit \\n sind erlaubt und werden als gesetzte Umbrüche übernommen.
+- hookText: der Text, der im Video steht. ${hookSprachRegel} Zeilenumbrüche mit \\n sind erlaubt und werden als gesetzte Umbrüche übernommen.
 - textStyle: "banner" für kurze, grosse Schrift im oberen Bilddrittel (bis ca. 80 Zeichen). "reference" für längeren Fliesstext über mehrere Zeilen in abgerundeter Schrift mit kräftiger Kontur (bis ca. 200 Zeichen).
 - clipCount: 2 bis 8 Clips.
 - maxSecondsPerScene: 1.5 bis 4.0 Sekunden je Clip. Voreinstellung 2.5.
@@ -1393,9 +1436,19 @@ export interface ConceptAnalysis {
 export async function analyzeConcept(
   buffer: Buffer,
   mimeType: string,
+  track: Track = "promo",
 ): Promise<ConceptAnalysis> {
   const ai = client();
   const uploaded = await uploadForAnalysis(ai, buffer, mimeType);
+
+  // Bei Promo-Konzepten wird der Hook-Text sinngemaess ins Deutsche uebersetzt,
+  // damit spaeter erzeugte Videos auf Deutsch posten koennen. Bei allen anderen
+  // Sparten bleibt der Text wortwoertlich im Original - dort ist die Vorlage
+  // an sich das Interessante, nicht die Sprache.
+  const textRegel =
+    track === "promo"
+      ? `Antworte auf Deutsch. Beim hookText und den textPhases: nimm sinngemaess ins Deutsche - Kernaussage, Ton und Rhythmus des Originals sollen erhalten bleiben, aber der Wortlaut soll Deutsch sein. Zeilenumbrueche des Originals mit \\n uebernehmen.`
+      : `Antworte auf Deutsch, ausser bei hookText - der bleibt wortwoertlich im Original.`;
 
   try {
     const response = await ai.models.generateContent({
@@ -1409,12 +1462,12 @@ export async function analyzeConcept(
               videoMetadata: { fps: ANALYSIS_FPS },
             },
             {
-              text: `Du wertest ein fremdes Werbevideo als Gestaltungsvorlage aus. Antworte auf Deutsch, ausser bei hookText - der bleibt wortwoertlich im Original.
+              text: `Du wertest ein fremdes Werbevideo als Gestaltungsvorlage aus. ${textRegel}
 
 title: eine kurze Bezeichnung, an der man das Konzept wiedererkennt (3-6 Woerter).
 
 textPhases: die eingeblendeten Texte in ihrer Reihenfolge. WICHTIG: viele dieser Videos zeigen nacheinander MEHRERE verschiedene Texte, und erst die Abfolge ergibt den Sinn - etwa erst ein unterstellter Vorwurf in Anfuehrungszeichen, dann die Antwort darauf. Schau das ganze Video an und lege fuer JEDEN Textwechsel eine eigene Phase an. Wechselt der Text nie, ist es genau eine Phase. Fuer jede Phase:
-  - text: der Wortlaut wortwoertlich, mit den Zeilenumbruechen des Originals als \\n. Aendere nichts daran, auch keine Tippfehler und keine Anfuehrungszeichen.
+  - text: ${track === "promo" ? "der Wortlaut sinngemaess ins Deutsche uebersetzt (Ton, Rhythmus und Punchline erhalten), mit Zeilenumbruechen des Originals als \\n." : "der Wortlaut wortwoertlich, mit den Zeilenumbruechen des Originals als \\n. Aendere nichts daran, auch keine Tippfehler und keine Anfuehrungszeichen."}
   - seconds: wie lange dieser Text zu sehen ist.
   - role: "setup" fuer den Aufbau (die Behauptung, die Frage, der Vorwurf), "payoff" fuer die Antwort oder Pointe, "plain" wenn es nur einen durchgehenden Text gibt.
   - sceneHint: was waehrend dieses Textes im Bild zu sehen ist, in wenigen Worten und auf Deutsch - zum Beispiel "ruhig am Wasser stehend, kein Trick" oder "Gesicht spricht in die Kamera" oder "schnelle Montage von Backflips". Das ist wichtig: danach wird spaeter das eigene Bildmaterial ausgesucht.
@@ -1422,7 +1475,7 @@ textPhases: die eingeblendeten Texte in ihrer Reihenfolge. WICHTIG: viele dieser
   - refStartMs, refEndMs: nur wenn useReference true ist - Anfang und Ende genau dieses zu uebernehmenden Ausschnitts im Video, in Millisekunden ab Videobeginn. Sonst 0.
 Zeitabschnitte am Ende ohne Text (Abspann, Logo, Handle) gehoeren NICHT in die Liste.
 
-hookText: der Wortlaut der ersten Phase, unveraendert.
+hookText: der text-Wert der ersten Phase (unveraendert uebernommen).
 
 textStyle: "banner", wenn es ein kurzer Satz in grosser Schrift ist (bis etwa 80 Zeichen, hoechstens drei Zeilen). "reference", wenn es laengerer Fliesstext ueber mehrere Zeilen ist.
 

@@ -86,6 +86,13 @@ export interface PostAuftrag {
    */
   hatEigeneMusik?: boolean;
   alsTrialReel: boolean;
+  /**
+   * Facebook-Places-ID, die als sichtbarer Ortstag am Reel haengt (z.B.
+   * "Basel, Switzerland"). Metadatum, KEIN Zuschauer-Filter - der Algorithmus
+   * kann es als schwaches regionales Signal werten. Wird nur mitgegeben,
+   * wenn gesetzt; leer laesst Instagram den Post ohne Tag.
+   */
+  locationId?: string | null;
 }
 
 export interface PostErgebnis {
@@ -301,6 +308,13 @@ export async function posteReelMit(
   // freigegeben). In einem form-codierten Body steht es als JSON-Zeichenkette.
   if (auftrag.alsTrialReel) {
     anlegen.set("trial_params", JSON.stringify({ graduation_strategy: "MANUAL" }));
+  }
+  // Ortstag ("Basel, Switzerland" etc.). Wird nur mitgegeben, wenn eine ID
+  // vorliegt - andernfalls postet Instagram wie bisher ohne Tag. Eine falsche
+  // Places-ID koennte den Container ablehnen, deshalb muss die ID vor dem
+  // Setzen ueberprueft werden (siehe /api/post/place-search).
+  if (auftrag.locationId) {
+    anlegen.set("location_id", auftrag.locationId);
   }
 
   const containerRes = await netz(`${GRAPH}/${igUserId}/media`, {
