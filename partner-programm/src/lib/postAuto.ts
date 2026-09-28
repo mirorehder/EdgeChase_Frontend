@@ -30,6 +30,7 @@ import {
   chMinutenImTag,
   chTagesBeginn,
   chFormatUhrzeit,
+  chFormatZeitstempel,
   formatUhrzeit,
   parseUhrzeit,
 } from "./zeit";
@@ -671,6 +672,150 @@ export async function posteFaelliges(track: Track, jetzt = new Date()): Promise<
     { gepostet: true, mediaId: ergebnis.mediaId },
     kandidatTitel,
   );
+}
+
+export interface SofortPostErgebnis {
+  ok: boolean;
+  mediaId?: string;
+  grund?: string;
+  /** Keine Instagram-Zugangsdaten hinterlegt - es wurde nichts gepostet. */
+  trockenlauf?: boolean;
+}
+
+/**
+ * Postet GENAU dieses Video sofort - ausgelöst von Hand über den Post-Knopf am
+ * Video, unabhängig vom Zeitplan (Fenster, Tageslimit, Mindestabstand zählen
+ * hier nicht).
+ *
+ * Zum Testen gedacht, deshalb zwei bewusste Entscheidungen:
+ *  - IMMER als Test-Reel (alsTrialReel=true), damit ein Test nie versehentlich
+ *    öffentlich rausgeht. Kann das Konto keine Trial-Reels, verweigert
+ *    posteReelMit den Post ganz (siehe pruefeTrialFaehig).
+ *  - Der am Video hinterlegte Sound wird DIREKT angehängt, ohne die
+ *    "geprueft"-Hürde der Automatik - wer hier postet, will genau diesen Sound
+ *    testen. Nur ohne eigenen Sound gilt die übliche Rangfolge (Filmton/Pool).
+ *
+ * Nach erfolgreichem Post wird postedAt gesetzt; damit fällt das Video aus der
+ * Auswahl der Automatik (naechstesVideo verlangt postedAt = null) und wird NICHT
+ * ein zweites Mal veröffentlicht. Wie beim automatischen Posten wird das Reel
+ * anschliessend als Partner-Reel markiert.
+ */
+export async function posteVideoJetzt(videoId: string, jetzt = new Date()): Promise<SofortPostErgebnis> {
+  const video = await prisma.promoVideo.findUnique({ where: { id: videoId } });
+  if (!video) return { ok: false, grund: "Video nicht gefunden." };
+
+  const track = (video.track as Track) ?? "promo";
+
+  if (video.status !== "done") {
+    return { ok: false, grund: "Das Video ist noch nicht fertig gerendert." };
+  }
+  if (video.postedAt) {
+    return { ok: false, grund: `Schon gepostet am ${chFormatZeitstempel(video.postedAt)} CH.` };
+  }
+  if (!video.publicUrl) {
+    return {
+      ok: false,
+      grund:
+        "Keine öffentliche Kopie vorhanden - Instagram kann das Video nicht laden. " +
+        "Über die Nachrüst-Funktion eine Kopie anlegen und erneut versuchen.",
+    };
+  }
+
+  const zeitplan = await getPostZeitplan(track);
+
+  // Sound: den am Video hinterlegten Sound DIREKT anhängen (siehe oben). Nur
+  // ohne eigenen (oder als unauffindbar markierten) Sound die übliche Rangfolge.
+  const dateiName = video.driveFileName ?? video.fileTitle ?? "";
+  const eigenerSound = !!video.soundAudioId && video.soundStatus !== "unauffindbar";
+
+  let audioId: string | null;
+  let hatEigeneMusik = false;
+  let soundText: string;
+
+  if (eigenerSound) {
+    audioId = video.soundAudioId;
+    soundText = `hinterlegter Sound ${video.soundTitle ?? video.soundAudioId} (direkt angehängt)`;
+  } else {
+    const sound = waehleSound({
+      dateiName,
+      konzeptSound: { audioId: video.soundAudioId, status: video.soundStatus ?? "offen" },
+      trendPool: zeitplan.trendSounds,
+      spartenTags: zeitplan.soundTags,
+    });
+    if (sound.grund === "kein Sound verfügbar") {
+      return {
+        ok: false,
+        grund:
+          "Kein Sound: das Video hat keinen eigenen Sound, kein _music im Dateinamen und " +
+          "es ist kein Trend-Sound-Pool eingerichtet. Sound am Konzept setzen oder einen " +
+          "Trend-Sound eintragen.",
+      };
+    }
+    audioId = sound.audioId;
+    hatEigeneMusik = sound.hatEigeneMusik;
+    soundText =
+      sound.herkunft === "eigenerFilmton"
+        ? "Filmton (Video mit _music)"
+        : sound.herkunft === "pool"
+          ? `Pool-Sound "${sound.titel ?? sound.audioId}"`
+          : "kein Sound";
+  }
+
+  const captionRoh = video.postCaption || video.fileTitle || video.hookText.replace(/\n/g, " ");
+  const caption = mitHashtags(captionRoh, zeitplan.hashtags);
+
+  const ergebnis = await posteReel(track, {
+    videoUrl: video.publicUrl,
+    caption,
+    audioId,
+    hatEigeneMusik,
+    // Immer Test-Reel - siehe Funktionskommentar.
+    alsTrialReel: true,
+  });
+
+  if (ergebnis.trockenlauf) {
+    await logActivity(
+      `Sofort-Post (Trockenlauf, keine Zugangsdaten): "${caption.split("\n")[0]}" wäre jetzt rausgegangen.`,
+      { track, videoId: video.id },
+    );
+    return { ok: false, trockenlauf: true, grund: ergebnis.fehler ?? "Trockenlauf: keine Zugangsdaten" };
+  }
+
+  if (!ergebnis.ok) {
+    await prisma.promoVideo.update({
+      where: { id: video.id },
+      data: { postError: ergebnis.fehler ?? "unbekannter Fehler" },
+    });
+    await logActivity(`Sofort-Post fehlgeschlagen: ${ergebnis.fehler}`, {
+      level: "error",
+      track,
+      videoId: video.id,
+    });
+    return { ok: false, grund: ergebnis.fehler ?? "unbekannter Fehler" };
+  }
+
+  await prisma.promoVideo.update({
+    where: { id: video.id },
+    data: { postedMediaId: ergebnis.mediaId, postedAt: jetzt, postError: null },
+  });
+
+  // Wie beim automatischen Posten: von hier gepostete Reels als Partner-Reel
+  // markieren, damit der Partner-Bot (Allowlist) sie behandelt.
+  if (ergebnis.mediaId) {
+    await markiereAlsPartnerReel(ergebnis.mediaId, caption);
+  }
+
+  await logActivity(
+    `Von Hand als Test-Reel gepostet um ${chFormatUhrzeit(jetzt)} CH: "${caption.split("\n")[0]}" ` +
+      `(${trackBeschreibung(track).label}), Media-ID ${ergebnis.mediaId}, Sound: ${soundText}.`,
+    { track, videoId: video.id },
+  );
+
+  if (isRenderStorageConfigured()) {
+    await deletePostCopy(bucketFromServeUrl(env.remotionServeUrl), video.id).catch(() => {});
+  }
+
+  return { ok: true, mediaId: ergebnis.mediaId };
 }
 
 /**

@@ -28,6 +28,11 @@ export interface VideoZeile {
   driveUrl: string | null;
   driveFileName: string | null;
   lastError: string | null;
+  // Post-Status für den Post-Knopf.
+  postedAt: string | null;
+  postedMediaId: string | null;
+  postError: string | null;
+  hasPublicCopy: boolean;
   scenes: { clipName: string; seconds: number }[];
 }
 
@@ -65,6 +70,44 @@ function VideoEintrag({ zeile }: { zeile: VideoZeile }) {
   const [konzeptMeldung, setKonzeptMeldung] = useState<{ text: string; fehler: boolean } | null>(
     null,
   );
+  const [postMeldung, setPostMeldung] = useState<{ text: string; fehler: boolean } | null>(null);
+
+  /**
+   * Dieses eine Video jetzt sofort als Test-Reel posten. Nach Erfolg ist
+   * postedAt gesetzt, die Automatik nimmt es dann nicht mehr - so kann nichts
+   * doppelt rausgehen.
+   */
+  async function jetztPosten() {
+    if (
+      !window.confirm(
+        `„${titel}" jetzt als Test-Reel auf Instagram posten? Es geht als Trial-Reel raus ` +
+          "(nur an Nicht-Follower zum Test, nicht ins Profil) und wird danach nicht noch einmal " +
+          "automatisch gepostet.",
+      )
+    ) {
+      return;
+    }
+    setLaeuft(true);
+    setPostMeldung(null);
+    try {
+      const res = await fetch(`/api/jobs/${zeile.id}/post`, { method: "POST" });
+      const daten = await res.json();
+      if (!res.ok) throw new Error(daten.error ?? "Post fehlgeschlagen.");
+      if (daten.ok) {
+        setPostMeldung({
+          text: `Als Test-Reel gepostet ✓ (Media-ID ${daten.mediaId}). Wird nicht automatisch erneut gepostet.`,
+          fehler: false,
+        });
+        router.refresh();
+      } else {
+        setPostMeldung({ text: daten.error ?? "Konnte nicht gepostet werden.", fehler: true });
+      }
+    } catch (err) {
+      setPostMeldung({ text: err instanceof Error ? err.message : String(err), fehler: true });
+    } finally {
+      setLaeuft(false);
+    }
+  }
 
   function konzeptUmschalten() {
     const naechster = !konzeptOffen;
@@ -189,10 +232,38 @@ function VideoEintrag({ zeile }: { zeile: VideoZeile }) {
               hat sich noch nicht bewaehrt - und genau darum geht es hier. */}
           {zeile.status === "done" && (
             <div className="actions" style={{ marginBottom: 0 }}>
+              {zeile.postedAt ? (
+                // Schon gepostet: kein Knopf mehr, nur der Hinweis. So kann von
+                // Hand nichts doppelt rausgehen, und die Automatik nimmt es
+                // ohnehin nicht mehr (postedAt ist gesetzt).
+                <span className="video-meta">
+                  ✓ Gepostet am {formatDate(zeile.postedAt)}
+                  {zeile.postedMediaId ? ` · Media-ID ${zeile.postedMediaId}` : ""}
+                </span>
+              ) : (
+                <button onClick={jetztPosten} disabled={laeuft || !zeile.hasPublicCopy}>
+                  {laeuft ? "Wird gepostet …" : "Als Test-Reel posten"}
+                </button>
+              )}
               <button className="secondary" onClick={konzeptUmschalten} disabled={laeuft}>
                 {konzeptOffen ? "Abbrechen" : "Als Konzept speichern"}
               </button>
             </div>
+          )}
+
+          {/* Ohne öffentliche Kopie kann Instagram das Video nicht laden - dann
+              ist der Post-Knopf gesperrt und der Grund steht dabei. */}
+          {zeile.status === "done" && !zeile.postedAt && !zeile.hasPublicCopy && (
+            <p className="hinweis-text">
+              Noch keine öffentliche Kopie für Instagram vorhanden - der Post-Knopf ist deshalb
+              gesperrt. Ältere Videos bekommen die Kopie über „Für Instagram nachrüsten".
+            </p>
+          )}
+
+          {postMeldung && (
+            <p className={`action-message ${postMeldung.fehler ? "error" : ""}`}>
+              {postMeldung.text}
+            </p>
           )}
 
           {konzeptOffen && (
