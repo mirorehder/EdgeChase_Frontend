@@ -743,22 +743,24 @@ export async function posteVideoJetzt(videoId: string, jetzt = new Date()): Prom
       spartenTags: zeitplan.soundTags,
     });
     if (sound.grund === "kein Sound verfügbar") {
-      return {
-        ok: false,
-        grund:
-          "Kein Sound: das Video hat keinen eigenen Sound, kein _music im Dateinamen und " +
-          "es ist kein Trend-Sound-Pool eingerichtet. Sound am Konzept setzen oder einen " +
-          "Trend-Sound eintragen.",
-      };
+      // Selbst der Trend-Pool ist leer (kein Konzept-Sound, kein _music, keine
+      // Trend-Sounds eingerichtet). Den Test-Post NICHT blockieren, sondern mit
+      // dem Originalton des Videos posten - ein Stil-Sound käme nur aus einem
+      // befüllten Pool, und für einen Test ist Originalton besser als gar kein
+      // Post.
+      audioId = null;
+      hatEigeneMusik = false;
+      soundText = "kein Trend-Sound im Pool - mit Originalton gepostet";
+    } else {
+      audioId = sound.audioId;
+      hatEigeneMusik = sound.hatEigeneMusik;
+      soundText =
+        sound.herkunft === "eigenerFilmton"
+          ? "Filmton (Video mit _music)"
+          : sound.herkunft === "pool"
+            ? `Pool-Sound "${sound.titel ?? sound.audioId}"`
+            : "kein Sound";
     }
-    audioId = sound.audioId;
-    hatEigeneMusik = sound.hatEigeneMusik;
-    soundText =
-      sound.herkunft === "eigenerFilmton"
-        ? "Filmton (Video mit _music)"
-        : sound.herkunft === "pool"
-          ? `Pool-Sound "${sound.titel ?? sound.audioId}"`
-          : "kein Sound";
   }
 
   const captionRoh = video.postCaption || video.fileTitle || video.hookText.replace(/\n/g, " ");
