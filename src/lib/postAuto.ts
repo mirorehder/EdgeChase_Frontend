@@ -710,7 +710,12 @@ export async function posteVideoJetzt(videoId: string, jetzt = new Date()): Prom
     caption,
     audioId: sound.audioId,
     hatEigeneMusik: sound.hatEigeneMusik,
-    alsTrialReel: zeitplan.alsTrialReel,
+    // Der Post-Knopf ist zum Testen da - deshalb IMMER als Test-Reel, ganz
+    // unabhaengig davon, ob die Automatik der Sparte gerade echt oder als Trial
+    // postet. So kann ein Test nie versehentlich oeffentlich rausgehen. (Kann
+    // das Konto keine Trial-Reels, verweigert posteReelMit den Post ganz, statt
+    // oeffentlich zu posten - siehe pruefeTrialFaehig.)
+    alsTrialReel: true,
     locationId,
   });
 
@@ -751,7 +756,7 @@ export async function posteVideoJetzt(videoId: string, jetzt = new Date()): Prom
           ? `Pool-Sound "${sound.titel ?? sound.audioId}"`
           : "kein Sound";
   await logActivity(
-    `Von Hand gepostet um ${chFormatUhrzeit(jetzt)} CH: "${caption.split("\n")[0]}" ` +
+    `Von Hand als Test-Reel gepostet um ${chFormatUhrzeit(jetzt)} CH: "${caption.split("\n")[0]}" ` +
       `(${trackBeschreibung(track).label}), Media-ID ${ergebnis.mediaId}, Sound: ${soundText}.`,
     { track, videoId: video.id },
   );
