@@ -14,6 +14,7 @@ import { trackFromRequest, trackFromValue } from "@/lib/trackParam";
 import type { Track } from "@/lib/trackClient";
 import { logActivity } from "@/lib/activity";
 import { env } from "@/lib/env";
+import { audioIdAus, soundEingabePruefen } from "@/lib/sound";
 
 // Herunterladen aus dem Zwischenspeicher plus Gemini-Auswertung.
 export const maxDuration = 180;
@@ -46,6 +47,11 @@ export async function POST(request: NextRequest) {
       mimeType?: string;
       sourceUrl?: string;
       track?: string;
+      // Beim Upload direkt mitgegeben (vor der Videoauswahl im Dashboard):
+      // der Instagram-Sound-Link und die Bestätigung, dass der erste Teil des
+      // Videos 1:1 aus der Vorlage übernommen wird.
+      soundUrl?: string;
+      takeoverFirst?: boolean;
       // Manuelles Konzept ohne Video:
       manual?: boolean;
       title?: string;
@@ -53,6 +59,9 @@ export async function POST(request: NextRequest) {
       description?: string;
     };
     const track = trackFromValue(body.track);
+    // Nur in den Reels-Sparten sinnvoll; im Promo-Generator bleibt Fremdmaterial
+    // ganz aussen vor.
+    const takeoverFirst = body.takeoverFirst === true && track !== "promo";
 
     // Manuell angelegtes Konzept: kein Video, kein Rendern, kein Gemini - nur
     // der eingegebene Hook-Text und eine kurze Beschreibung. Steht bewusst vor
@@ -89,12 +98,26 @@ export async function POST(request: NextRequest) {
     // maess ins Deutsche uebersetzt, damit spaeter erzeugte Videos die
     // Bildunterschrift in derselben Sprache tragen. Andere Sparten uebernehmen
     // den Text wie bisher wortwoertlich.
-    const analysis = await analyzeConcept(buffer, erlaubterTyp(body.mimeType), track);
+    const analysis = await analyzeConcept(buffer, erlaubterTyp(body.mimeType), track, takeoverFirst);
 
     // Braucht das Konzept Fremdmaterial? Nur dann behalten wir das (kurze)
     // Referenzvideo - sonst wird es wie bisher sofort verworfen. Der Promo-
     // Generator bleibt bewusst aussen vor (er baut nicht über composeViralVideo).
+    // Bei bestätigter Übernahme (takeoverFirst) ist das ohnehin erzwungen.
     const brauchtReferenz = track !== "promo" && analysis.textPhases.some((p) => p.useReference);
+
+    // Beim Upload mitgegebener Sound: die audio_id aus dem Link lesen und als
+    // "offen" hinterlegen - genau wie der Sound-Knopf am Konzept, nur eben schon
+    // hier. Ein unbrauchbarer Link soll den Upload NICHT scheitern lassen: dann
+    // wird er übersprungen und vermerkt, das Video ist wichtiger.
+    const soundEingabe = (body.soundUrl ?? "").trim();
+    let soundFelder: { soundUrl: string; soundAudioId: string; soundStatus: string } | null = null;
+    if (soundEingabe) {
+      const gelesen = soundEingabePruefen(soundEingabe);
+      if (!gelesen.fehler && gelesen.audioId && audioIdAus(gelesen.audioId)) {
+        soundFelder = { soundUrl: soundEingabe, soundAudioId: gelesen.audioId, soundStatus: "offen" };
+      }
+    }
 
     const concept = await prisma.concept.create({
       data: {
@@ -109,8 +132,19 @@ export async function POST(request: NextRequest) {
         secondsPerScene: analysis.secondsPerScene,
         theme: analysis.theme || null,
         notes: analysis.notes || null,
+        // Bestätigte Übernahme = Fremdmaterial ausdrücklich an.
+        foreignMode: takeoverFirst ? "an" : "auto",
+        ...(soundFelder ?? {}),
       },
     });
+
+    if (soundEingabe && !soundFelder) {
+      await logActivity(
+        `Sound-Link zum Konzept "${concept.title}" war nicht lesbar und wurde übersprungen - ` +
+          "über den Sound-Knopf am Konzept nachtragen.",
+        { level: "error", track },
+      );
+    }
 
     // Das Referenzvideo am Konzept ablegen und die Adresse nachtragen. Nur bei
     // Fremdmaterial und nur, wenn der Render-Speicher eingerichtet ist -
