@@ -1437,6 +1437,10 @@ export async function analyzeConcept(
   buffer: Buffer,
   mimeType: string,
   track: Track = "promo",
+  // Der Nutzer hat beim Hochladen bestätigt, dass der ERSTE Teil des Videos 1:1
+  // aus der Vorlage übernommen werden soll. Dann muss die Analyse nicht mehr
+  // entscheiden OB, sondern nur noch WO dieser erste Teil endet.
+  takeoverFirst = false,
 ): Promise<ConceptAnalysis> {
   const ai = client();
   const uploaded = await uploadForAnalysis(ai, buffer, mimeType);
@@ -1450,6 +1454,14 @@ export async function analyzeConcept(
       ? `Antworte auf Deutsch. Beim hookText und den textPhases: nimm sinngemaess ins Deutsche - Kernaussage, Ton und Rhythmus des Originals sollen erhalten bleiben, aber der Wortlaut soll Deutsch sein. Zeilenumbrueche des Originals mit \\n uebernehmen.`
       : `Antworte auf Deutsch, ausser bei hookText - der bleibt wortwoertlich im Original.`;
 
+  // Wenn der Nutzer die Übernahme bestätigt hat, geht es nicht mehr um das OB,
+  // sondern nur noch um das WO: bis zu welchem Zeitpunkt reicht der übernommene
+  // erste Teil. Das steht bewusst ganz oben und sehr bestimmt, damit das Modell
+  // die Phase(n) dieses ersten Teils zuverlässig mit useReference markiert.
+  const uebernahmeRegel = takeoverFirst
+    ? `\n\nWICHTIG - FREMDMATERIAL: Der Nutzer hat bestätigt, dass der ERSTE Teil dieses Videos ein Ausschnitt ist, der 1:1 aus der Vorlage übernommen wird (z.B. ein Meme oder eine bestimmte Aufnahme, die der Text beschreibt). Deine Aufgabe ist NICHT zu entscheiden, ob übernommen wird - das steht fest -, sondern nur, WO dieser erste Teil endet: der Umschlagpunkt, ab dem eigenes Bildmaterial sinnvoll wird (meist der erste Text-/Szenenwechsel). Markiere ALLE Phasen von Videobeginn bis zu diesem Umschlagpunkt mit useReference=true und setze refStartMs (meist 0) und refEndMs auf Anfang und Ende dieses ersten Ausschnitts in Millisekunden. Die Phasen NACH dem Umschlagpunkt bleiben useReference=false (dort kommen eigene Clips).`
+    : "";
+
   try {
     const response = await ai.models.generateContent({
       model: MODEL,
@@ -1462,7 +1474,7 @@ export async function analyzeConcept(
               videoMetadata: { fps: ANALYSIS_FPS },
             },
             {
-              text: `Du wertest ein fremdes Werbevideo als Gestaltungsvorlage aus. ${textRegel}
+              text: `Du wertest ein fremdes Werbevideo als Gestaltungsvorlage aus. ${textRegel}${uebernahmeRegel}
 
 title: eine kurze Bezeichnung, an der man das Konzept wiedererkennt (3-6 Woerter).
 
@@ -1532,6 +1544,17 @@ notes: kurze Beobachtungen zur Gestaltung - Schriftart-Eindruck, Farben, Kontur,
     const totalSeconds = Math.max(1, raw.totalSeconds ?? 10);
 
     const textPhases = korrigierePhasen(raw.textPhases, raw.hookText, totalSeconds);
+
+    // Der Nutzer hat die Übernahme bestätigt - hat das Modell trotzdem keine
+    // Phase markiert, erzwingen wir wenigstens die erste als Fremdmaterial. So
+    // greift die Bestätigung verlässlich, auch wenn die Analyse den Ausschnitt
+    // nicht von selbst erkannt hätte. Das Fenster ist die Dauer der ersten
+    // Phase ab Videobeginn - genau der "erste Teil".
+    if (takeoverFirst && textPhases.length && !textPhases.some((p) => p.useReference)) {
+      textPhases[0].useReference = true;
+      textPhases[0].refStartMs = 0;
+      textPhases[0].refEndMs = Math.max(1, Math.round(textPhases[0].seconds * 1000));
+    }
 
     return {
       title: raw.title?.trim() || "Unbenanntes Konzept",

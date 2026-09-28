@@ -65,6 +65,11 @@ export function ConceptLibrary({ track }: { track: Track }) {
   const [soundEntwurf, setSoundEntwurf] = useState("");
   const [soundFehler, setSoundFehler] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  // Vor der Videoauswahl: Sound-Link und die Angabe, ob der erste Teil des
+  // Videos 1:1 übernommen wird. Beides wird beim Upload mitgeschickt.
+  const [uploadOffen, setUploadOffen] = useState(false);
+  const [uploadSound, setUploadSound] = useState("");
+  const [uploadUebernahme, setUploadUebernahme] = useState(false);
   // Neues Konzept von Hand (ohne Video).
   const [neuOffen, setNeuOffen] = useState(false);
   const [neuTitel, setNeuTitel] = useState("");
@@ -188,12 +193,29 @@ export function ConceptLibrary({ track }: { track: Track }) {
       const res = await fetch("/api/concepts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ uploadId, parts, mimeType: file.type, track }),
+        body: JSON.stringify({
+          uploadId,
+          parts,
+          mimeType: file.type,
+          track,
+          // Vor der Auswahl eingegeben:
+          soundUrl: uploadSound.trim() || undefined,
+          takeoverFirst: uploadUebernahme,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
 
-      setNote(`Konzept „${data.title}" gespeichert.`);
+      setNote(
+        data.referenceVideoUrl
+          ? `Konzept „${data.title}" gespeichert - erster Teil wird aus der Vorlage übernommen.`
+          : `Konzept „${data.title}" gespeichert.`,
+      );
+      // Panel zurücksetzen, damit die Angaben nicht beim nächsten Upload
+      // versehentlich wieder gelten.
+      setUploadOffen(false);
+      setUploadSound("");
+      setUploadUebernahme(false);
       await load();
     } catch (err) {
       setFehler(true);
@@ -340,13 +362,63 @@ export function ConceptLibrary({ track }: { track: Track }) {
           </button>
           <button
             className="secondary"
-            onClick={() => fileRef.current?.click()}
+            onClick={() => {
+              setUploadOffen(!uploadOffen);
+              setNote(null);
+              setFehler(false);
+            }}
             disabled={busy !== null}
           >
-            {busy === "upload" ? "Wird verarbeitet …" : "Referenzvideo hochladen"}
+            {busy === "upload"
+              ? "Wird verarbeitet …"
+              : uploadOffen
+                ? "Abbrechen"
+                : "Referenzvideo hochladen"}
           </button>
         </div>
       </div>
+
+      {uploadOffen && (
+        <div className="clip-editor">
+          <label>
+            Instagram-Sound (Link, optional)
+            <input
+              value={uploadSound}
+              placeholder="https://www.instagram.com/reels/audio/2243706922800068/"
+              onChange={(e) => setUploadSound(e.target.value)}
+            />
+            <span className="clip-meta">
+              Gleich hier eingeben, dann hängt der Sound schon am Konzept. Kann man später über den
+              Sound-Knopf ändern.
+            </span>
+          </label>
+
+          {track !== "promo" && (
+            <label className="schalter" style={{ alignItems: "flex-start" }}>
+              <input
+                type="checkbox"
+                checked={uploadUebernahme}
+                onChange={(e) => setUploadUebernahme(e.target.checked)}
+                style={{ marginTop: 3 }}
+              />
+              <span style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                Der erste Teil des Videos wird 1:1 aus der Vorlage übernommen (Fremdmaterial)
+                <span className="clip-meta">
+                  Für Memes/Vorlagen-Ausschnitte, die genau so im Video erscheinen sollen. Das Tool
+                  bestimmt selbst, bis wohin dieser erste Teil geht, und ab dort kommen deine eigenen
+                  Clips. Das kurze Referenzvideo wird dafür behalten.
+                </span>
+              </span>
+            </label>
+          )}
+
+          <div className="actions" style={{ marginBottom: 0 }}>
+            <button onClick={() => fileRef.current?.click()} disabled={busy !== null}>
+              {busy === "upload" ? "Wird verarbeitet …" : "Video auswählen"}
+            </button>
+          </div>
+        </div>
+      )}
 
       {neuOffen && (
         <div className="clip-editor">
