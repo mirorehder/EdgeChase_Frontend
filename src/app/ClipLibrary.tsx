@@ -101,9 +101,10 @@ export function ClipLibrary({ track }: { track: Track }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
 
-  // Zugeklappte Ordner. Offen ist die Voreinstellung - wer die Bibliothek
-  // öffnet, will meistens die Clips sehen.
-  const [zu, setZu] = useState<Set<string>>(new Set());
+  // Aufgeklappte Ordner. Zu ist die Voreinstellung: wie bei Konzepten und den
+  // erzeugten Videos startet auch die Clip-Bibliothek kompakt - man klappt den
+  // Ordner auf, dessen Clips man sehen will.
+  const [offeneOrdner, setOffeneOrdner] = useState<Set<string>>(new Set());
   const [beschreibungen, setBeschreibungen] = useState<Record<string, string>>({});
   const [neuerOrdner, setNeuerOrdner] = useState("");
 
@@ -450,7 +451,7 @@ export function ClipLibrary({ track }: { track: Track }) {
         <div className="ordner-liste">
           {gruppen.map(({ folder, clips: gruppeClips }) => {
             const schluessel = folder?.id ?? "ohne-ordner";
-            const offen = !zu.has(schluessel);
+            const offen = offeneOrdner.has(schluessel);
 
             return (
               <div key={schluessel} className="ordner">
@@ -459,7 +460,7 @@ export function ClipLibrary({ track }: { track: Track }) {
                     <button
                       className="ordner-titel"
                       onClick={() =>
-                        setZu((s) => {
+                        setOffeneOrdner((s) => {
                           const neu = new Set(s);
                           if (neu.has(schluessel)) neu.delete(schluessel);
                           else neu.add(schluessel);

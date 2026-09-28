@@ -395,6 +395,26 @@ model Concept {
   /// Gedaechtnisstuetze, nicht maschinell ausgewertet.
   notes String?
 
+  // --- Fremdmaterial aus dem Referenzvideo --------------------------------
+  //
+  // Manche Konzepte leben davon, dass ein Ausschnitt des Originals 1:1 im
+  // Video erscheint - ein Meme, eine Filmszene, genau die Ballsport-Aufnahmen,
+  // die der Text ("One Ball") beschreibt. Erst danach übernehmen die eigenen
+  // Clips. Für solche Konzepte behalten wir das (kurze) Referenzvideo und
+  // spielen daraus im Render nur das benötigte Fenster ab; die einzelne
+  // Textphase trägt dann useReference/refStartMs/refEndMs.
+
+  /// Öffentliche Adresse des behaltenen Referenzvideos (im Render-Bucket unter
+  /// concept-refs/<id>). Nur gesetzt, wenn mindestens eine Phase Fremdmaterial
+  /// braucht; wird beim Löschen des Konzepts mitgelöscht. null = kein
+  /// Fremdmaterial, das Video entsteht rein aus eigenen Clips.
+  referenceVideoUrl String?
+
+  /// Manuelle Übersteuerung des Fremdmaterials, falls sich die Analyse unsicher
+  /// ist: "auto" folgt der Analyse (Phasen mit useReference), "an" erzwingt
+  /// Fremdmaterial, "aus" verbietet es (rein eigene Clips).
+  foreignMode String @default("auto")
+
   /// Wann zuletzt ein Video nach diesem Konzept entstanden ist. Grundlage der
   /// Rotation: das am längsten nicht verwendete Konzept kommt als nächstes.
   lastUsedAt DateTime?

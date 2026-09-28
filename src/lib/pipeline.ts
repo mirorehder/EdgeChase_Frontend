@@ -513,6 +513,13 @@ export interface ComposedScene {
   startMs: number;
   endMs: number;
   seconds: number;
+  /**
+   * Fremdmaterial: die öffentliche Adresse des behaltenen Referenzvideos.
+   * Ist sie gesetzt, stammt diese Szene 1:1 aus der Vorlage - startMs/endMs
+   * sind dann das Fenster im Referenzvideo, und es wird nichts aus Drive
+   * geladen. clipId/driveFileId bleiben dabei leer.
+   */
+  sourceUrl?: string;
 }
 
 /** Eine Textphase auf der Zeitachse des fertigen Videos. */
@@ -1001,6 +1008,17 @@ export interface ViralComposeOptions {
    * eigentlichen Wunsch.
    */
   themeHint?: string;
+  /**
+   * Das behaltene Referenzvideo (öffentliche Adresse). Nur gesetzt, wenn das
+   * Konzept Fremdmaterial hat - dann können einzelne Phasen einen Ausschnitt
+   * daraus 1:1 zeigen.
+   */
+  referenceVideoUrl?: string | null;
+  /**
+   * Übersteuerung des Fremdmaterials: "auto" folgt der Analyse (Phasen mit
+   * useReference), "an" erzwingt es, "aus" verbietet es (rein eigene Clips).
+   */
+  foreignMode?: string | null;
 }
 
 /** Wie lang die Aufbau-Einstellung höchstens und mindestens sein darf. */
@@ -1227,6 +1245,175 @@ async function waehleAufbauSzene(
   };
 }
 
+/**
+ * Ob eine Phase ihren Bildinhalt 1:1 aus der Vorlage übernimmt.
+ *
+ * Nur mit brauchbarem Fenster (Ende nach Anfang) - ohne das gäbe es nichts
+ * abzuspielen, und die Phase gilt als eigene Aufnahme.
+ */
+function istFremdPhase(p: ConceptTextPhase): boolean {
+  return (
+    p.useReference === true &&
+    typeof p.refStartMs === "number" &&
+    typeof p.refEndMs === "number" &&
+    p.refEndMs > p.refStartMs
+  );
+}
+
+/**
+ * Entscheidet, ob für dieses Video Fremdmaterial verwendet wird.
+ *
+ * Voraussetzung ist immer ein behaltenes Referenzvideo und mindestens eine
+ * Phase mit erkanntem Ausschnitt. "aus" schaltet es ab (rein eigene Clips),
+ * "auto" und "an" folgen den erkannten Phasen - "an" ist die ausdrückliche
+ * Bestätigung des Nutzers, falls die Analyse unsicher war.
+ */
+function fremdmaterialAktiv(
+  foreignMode: string | null | undefined,
+  referenceVideoUrl: string | null | undefined,
+  phasen: ConceptTextPhase[],
+): boolean {
+  if (!referenceVideoUrl) return false;
+  if (foreignMode === "aus") return false;
+  return phasen.some(istFremdPhase);
+}
+
+/**
+ * Stellt einen Edit zusammen, bei dem einzelne Phasen einen Ausschnitt der
+ * Vorlage 1:1 zeigen (Meme, Filmszene, die im Text genannte Aufnahme).
+ *
+ * Anders als der Montage-Weg geht das Phase für Phase in der Reihenfolge des
+ * Konzepts vor: eine Fremdphase wird zu genau einer Szene aus dem
+ * Referenzvideo (Fenster refStartMs..refEndMs), eine eigene Phase wird aus den
+ * stärksten eigenen Clips gefüllt, bis ihre Dauer erreicht ist. Der Text jeder
+ * Phase liegt über genau diesem Abschnitt - beim "One Ball / Two Ball"-Beispiel
+ * steht also "One Ball" über den übernommenen Ballsport-Aufnahmen und erst
+ * danach kommen die eigenen Clips.
+ */
+async function composeViralVideoMitFremdmaterial(
+  track: Track,
+  options: ViralComposeOptions,
+  referenceVideoUrl: string,
+  phasen: ConceptTextPhase[],
+): Promise<ComposedVideo> {
+  const eigenePhasen = phasen.filter((p) => !istFremdPhase(p));
+  const eigeneSekunden = eigenePhasen.reduce((a, p) => a + Math.max(1, p.seconds), 0);
+
+  // Genug eigene Clips für alle eigenen Phasen sammeln - grob ein Clip je
+  // Sekunde, mindestens einer je Phase.
+  let orderedClips: Awaited<ReturnType<typeof viraleKandidaten>> = [];
+  if (eigenePhasen.length) {
+    const gewuenschteClips = Math.max(
+      eigenePhasen.length,
+      Math.round(eigeneSekunden / VIRAL_TARGET_SECONDS_PER_SCENE),
+    );
+    let candidates = await viraleKandidaten(track, gewuenschteClips, options.excludeClipIds ?? []);
+    if (candidates.length < eigenePhasen.length && (options.excludeClipIds ?? []).length) {
+      candidates = await viraleKandidaten(track, gewuenschteClips, []);
+    }
+    if (!candidates.length) {
+      throw new Error(
+        "Für den eigenen Teil dieses Edits stehen keine verwertbaren Höhepunkte bereit - erst die Clips analysieren.",
+      );
+    }
+
+    const beschreibungen = await folderDescriptions(track);
+    const payload: ViralCandidate[] = candidates.map((c) => ({
+      id: c.id,
+      description: c.description ?? "",
+      momentDescription: c.momentDescription ?? undefined,
+      stuntScore: bewertungVon(c, track),
+      trickMs: (c.highlightEndMs ?? 0) - (c.highlightStartMs ?? 0),
+      folderContext: c.rootFolderId ? beschreibungen.get(c.rootFolderId) : undefined,
+      momentArt: c.momentArt ?? undefined,
+    }));
+    const orderedIds = await selectViralScenes(
+      payload,
+      candidates.length,
+      options.hookText,
+      options.themeHint ?? "",
+    );
+    const byId = new Map(candidates.map((c) => [c.id, c]));
+    orderedClips = orderedIds
+      .map((id) => byId.get(id))
+      .filter((c): c is NonNullable<typeof c> => !!c);
+  }
+
+  const alleSzenen: ComposedScene[] = [];
+  const textPhases: ComposedTextPhase[] = [];
+  let cursorMs = 0;
+  let clipPtr = 0;
+
+  for (const phase of phasen) {
+    const phasenStartMs = cursorMs;
+
+    if (istFremdPhase(phase)) {
+      const dauerMs = phase.refEndMs! - phase.refStartMs!;
+      alleSzenen.push({
+        clipId: "",
+        driveFileId: "",
+        startMs: phase.refStartMs!,
+        endMs: phase.refEndMs!,
+        seconds: Math.round((dauerMs / 1000) * 100) / 100,
+        sourceUrl: referenceVideoUrl,
+      });
+      cursorMs += dauerMs;
+    } else {
+      // Eigene Clips füllen, bis die Dauer der Phase erreicht ist - aber
+      // mindestens einen, sonst bliebe die Phase textlos ohne Bild.
+      const zielSekunden = Math.max(1, phase.seconds);
+      let genutzt = 0;
+      let gesetzt = 0;
+      while (clipPtr < orderedClips.length) {
+        const clip = orderedClips[clipPtr];
+        const { startMs, seconds } = viralSceneWindow(clip);
+        alleSzenen.push({
+          clipId: clip.id,
+          driveFileId: clip.driveFileId,
+          startMs,
+          endMs: startMs + Math.round(seconds * 1000),
+          seconds,
+        });
+        cursorMs += Math.round(seconds * 1000);
+        genutzt += seconds;
+        gesetzt++;
+        clipPtr++;
+        if (gesetzt >= 1 && genutzt >= zielSekunden) break;
+      }
+    }
+
+    const dauerMs = cursorMs - phasenStartMs;
+    // Fremdphasen bekommen KEINE eigene Texteinblendung: der übernommene
+    // Ausschnitt trägt den Text der Vorlage schon in sich (er ist ja 1:1
+    // übernommen), ein zweites Overlay würde ihn doppeln. Nur eigene Phasen
+    // legen ihren Text über die Montage.
+    // Phasen ohne Bild (die Clips gingen aus) tragen wir gar nicht ein.
+    if (dauerMs > 0 && !istFremdPhase(phase)) {
+      textPhases.push({ text: phase.text, startMs: phasenStartMs, durationMs: dauerMs });
+    }
+  }
+
+  if (alleSzenen.length < 1) {
+    throw new Error("Zu wenige verwertbare Szenen für einen Edit mit Fremdmaterial.");
+  }
+
+  const fremdAnzahl = alleSzenen.filter((s) => s.sourceUrl).length;
+  const gesamt = alleSzenen.reduce((a, s) => a + s.seconds, 0);
+  await logActivity(
+    `${trackLabel(track)}: Edit mit Fremdmaterial zusammengestellt - ` +
+      `${alleSzenen.length} Szenen (${fremdAnzahl} aus der Vorlage), ${gesamt.toFixed(1)}s.`,
+    { track },
+  );
+
+  const fileTitle = await erfindeVideoTitel({
+    sceneDescriptions: await beschreibungenFuer(alleSzenen),
+    texts: phasen.map((p) => p.text),
+    track,
+  });
+
+  return { hookText: phasen[0].text, scenes: alleSzenen, textPhases, fileTitle };
+}
+
 /** Stellt einen viralen Edit aus den stärksten Höhepunkten zusammen. */
 export async function composeViralVideo(
   track: Track,
@@ -1236,6 +1423,14 @@ export async function composeViralVideo(
   const phasen: ConceptTextPhase[] = options.textPhases?.length
     ? options.textPhases
     : [{ text: options.hookText, seconds: gesamtSoll, role: "plain", sceneHint: "" }];
+
+  // Konzepte mit Fremdmaterial gehen einen eigenen Weg: dort muss ein
+  // Ausschnitt der Vorlage 1:1 an genau der Phase erscheinen, die ihn braucht.
+  // Der bewährte Montage-Weg unten bleibt für alle anderen Konzepte
+  // unangetastet.
+  if (fremdmaterialAktiv(options.foreignMode, options.referenceVideoUrl, phasen)) {
+    return composeViralVideoMitFremdmaterial(track, options, options.referenceVideoUrl!, phasen);
+  }
 
   // Bei mehreren Textphasen bekommt der Aufbau eine eigene, längere
   // Eröffnungseinstellung. Die Montage teilt sich den Rest.
@@ -1525,6 +1720,8 @@ export async function processJob(jobId: string): Promise<void> {
           driveFileId: s.driveFileId,
           startMs: s.startMs,
           endMs: s.endMs,
+          // Fremdmaterial: direkt aus dem Referenzvideo, ohne Drive-Spiegelung.
+          sourceUrl: s.sourceUrl,
         })),
         (job.textStyle as "banner" | "reference" | null) ?? undefined,
         job.videoVolume,
@@ -1613,7 +1810,8 @@ export async function processJob(jobId: string): Promise<void> {
       });
 
       await prisma.clip.updateMany({
-        where: { id: { in: scenes.map((s) => s.clipId) } },
+        // Fremdmaterial-Szenen (sourceUrl, ohne eigenen Clip) fallen raus.
+        where: { id: { in: scenes.map((s) => s.clipId).filter(Boolean) } },
         data: { lastUsedAt: new Date() },
       });
 
@@ -2058,6 +2256,10 @@ export async function createViralJobFromConcept(
     // Dialog. Ohne sie waehlte jeder Lauf beliebige Hoehepunkte, und die
     // Vorgabe "moeglichst Fails" oder "hohe Spruenge" bliebe wirkungslos.
     themeHint: concept.theme ?? undefined,
+    // Fremdmaterial: falls dieses Konzept einen Ausschnitt der Vorlage 1:1
+    // übernimmt, geht das behaltene Referenzvideo samt Übersteuerung mit.
+    referenceVideoUrl: concept.referenceVideoUrl,
+    foreignMode: concept.foreignMode,
   });
 
   // Eine ID, die Instagram nicht auflösen konnte, wird nicht weitergereicht -

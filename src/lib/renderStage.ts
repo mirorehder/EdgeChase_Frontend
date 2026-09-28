@@ -187,6 +187,54 @@ export async function deletePostCopy(bucket: string, jobId: string): Promise<voi
 }
 
 // ---------------------------------------------------------------------------
+// Behaltenes Referenzvideo für Konzepte mit Fremdmaterial
+//
+// Die allermeisten Konzepte lassen sich rein aus eigenen Clips bauen; dort
+// wird das hochgeladene Referenzvideo wie bisher sofort verworfen. Nur wenn
+// ein Ausschnitt 1:1 im Video erscheinen muss (Meme, Filmszene, genau die im
+// Text genannte Aufnahme), behalten wir das kurze Original hier. Der Render
+// spielt daraus nur das benötigte Fenster ab - kein separater Zuschnitt. Die
+// Kopie liegt am Konzept (concept-refs/<id>) und wird beim Löschen des
+// Konzepts mit entfernt, damit nichts unnötig liegen bleibt.
+// ---------------------------------------------------------------------------
+
+const REFERENCE_PREFIX = "concept-refs";
+
+function referenceKey(conceptId: string): string {
+  return `${REFERENCE_PREFIX}/${conceptId}.mp4`;
+}
+
+/** Legt das Referenzvideo eines Konzepts im Render-Bucket ab und gibt die
+ *  öffentliche Adresse zurück, über die Remotion Lambda es lädt. */
+export async function storeReference(
+  bucket: string,
+  conceptId: string,
+  buffer: Buffer,
+): Promise<string> {
+  await s3Client().send(
+    new PutObjectCommand({
+      Bucket: bucket,
+      Key: referenceKey(conceptId),
+      Body: buffer,
+      ContentType: "video/mp4",
+    }),
+  );
+  return referenceUrl(bucket, conceptId);
+}
+
+/** Öffentliche, unsignierte Adresse des behaltenen Referenzvideos - aus dem
+ *  gleichen Grund unsigniert wie clipUrl. */
+export function referenceUrl(bucket: string, conceptId: string): string {
+  return `https://${bucket}.s3.${env.remotionAwsRegion}.amazonaws.com/${referenceKey(conceptId)}`;
+}
+
+/** Entfernt das behaltene Referenzvideo - beim Löschen des Konzepts. */
+export async function deleteReference(bucket: string, conceptId: string): Promise<void> {
+  const { DeleteObjectCommand: Del } = await import("@aws-sdk/client-s3");
+  await s3Client().send(new Del({ Bucket: bucket, Key: referenceKey(conceptId) })).catch(() => {});
+}
+
+// ---------------------------------------------------------------------------
 // Zwischenablage für hochgeladene Referenzvideos
 //
 // Vercel nimmt pro Anfrage nur 4,5 MB entgegen, ein Reel ist schnell groesser.

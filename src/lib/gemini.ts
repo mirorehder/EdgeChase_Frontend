@@ -1339,6 +1339,20 @@ export interface ConceptTextPhase {
    * Kamera, moeglichst ein Gesicht.
    */
   sceneHint: string;
+  /**
+   * Muss der Bildinhalt dieser Phase 1:1 aus dem Referenzvideo uebernommen
+   * werden? Wahr nur bei Ausschnitten, die den Sinn tragen und sich nicht
+   * durch eigenes Material ersetzen lassen (ein Meme, eine Filmszene, genau
+   * die im Text genannten Aufnahmen). Bei false kommen eigene Clips.
+   */
+  useReference?: boolean;
+  /**
+   * Anfang und Ende des zu uebernehmenden Ausschnitts im Referenzvideo, in
+   * Millisekunden ab Videobeginn. Nur gesetzt, wenn useReference wahr ist -
+   * genau dieses Fenster spielt der Render aus dem behaltenen Referenzvideo.
+   */
+  refStartMs?: number;
+  refEndMs?: number;
 }
 
 /** Kürzer kann keine Phase sein - darunter ist nichts zu lesen. */
@@ -1361,22 +1375,31 @@ function korrigierePhasen(
     t.replace(/[ \t]+/g, " ").replace(/ ?\n ?/g, "\n").trim();
 
   let phasen = (raw ?? [])
-    .map((p) => ({
-      text: saeubern(p.text ?? ""),
-      seconds: Math.max(MIN_PHASE_SECONDS, p.seconds ?? 0),
-      role:
-        p.role === "setup" || p.role === "payoff" || p.role === "plain"
-          ? p.role
-          : ("plain" as const),
-      sceneHint: (p.sceneHint ?? "").trim(),
-    }))
+    .map((p) => {
+      // Fremdmaterial nur uebernehmen, wenn ein sinnvolles Fenster mitkommt:
+      // Ende nach Anfang. Sonst gilt die Phase als eigene Aufnahme.
+      const start = Math.max(0, Math.round(p.refStartMs ?? 0));
+      const ende = Math.round(p.refEndMs ?? 0);
+      const fremd = p.useReference === true && ende > start;
+      return {
+        text: saeubern(p.text ?? ""),
+        seconds: Math.max(MIN_PHASE_SECONDS, p.seconds ?? 0),
+        role:
+          p.role === "setup" || p.role === "payoff" || p.role === "plain"
+            ? p.role
+            : ("plain" as const),
+        sceneHint: (p.sceneHint ?? "").trim(),
+        useReference: fremd,
+        ...(fremd ? { refStartMs: start, refEndMs: ende } : {}),
+      };
+    })
     .filter((p) => p.text.length > 0);
 
   // Kam gar keine Liste, aber ein Text: als einzige Phase behandeln. So
   // verhalten sich ältere Antworten wie bisher.
   if (!phasen.length && hookText?.trim()) {
     phasen = [
-      { text: saeubern(hookText), seconds: totalSeconds, role: "plain", sceneHint: "" },
+      { text: saeubern(hookText), seconds: totalSeconds, role: "plain", sceneHint: "", useReference: false },
     ];
   }
 
@@ -1448,6 +1471,8 @@ textPhases: die eingeblendeten Texte in ihrer Reihenfolge. WICHTIG: viele dieser
   - seconds: wie lange dieser Text zu sehen ist.
   - role: "setup" fuer den Aufbau (die Behauptung, die Frage, der Vorwurf), "payoff" fuer die Antwort oder Pointe, "plain" wenn es nur einen durchgehenden Text gibt.
   - sceneHint: was waehrend dieses Textes im Bild zu sehen ist, in wenigen Worten und auf Deutsch - zum Beispiel "ruhig am Wasser stehend, kein Trick" oder "Gesicht spricht in die Kamera" oder "schnelle Montage von Backflips". Das ist wichtig: danach wird spaeter das eigene Bildmaterial ausgesucht.
+  - useReference: true NUR, wenn der Bildinhalt dieser Phase zwingend 1:1 aus dem Original uebernommen werden muss, weil der Witz oder Sinn genau an diesen konkreten Aufnahmen haengt und sich nicht durch eigenes Material ersetzen laesst - ein Meme, ein bekannter Filmausschnitt, oder genau die Aufnahme, die der Text beschreibt (etwa "One Ball" ueber Aufnahmen einer bestimmten Ballsportart, waehrend erst danach eigene Clips folgen). Im Normalfall false: eine Phase, deren Aussage sich mit eigenem Material nachstellen laesst, braucht KEIN Fremdmaterial. Sei zurueckhaltend, setze true nur im klaren Fall.
+  - refStartMs, refEndMs: nur wenn useReference true ist - Anfang und Ende genau dieses zu uebernehmenden Ausschnitts im Video, in Millisekunden ab Videobeginn. Sonst 0.
 Zeitabschnitte am Ende ohne Text (Abspann, Logo, Handle) gehoeren NICHT in die Liste.
 
 hookText: der text-Wert der ersten Phase (unveraendert uebernommen).
@@ -1483,6 +1508,9 @@ notes: kurze Beobachtungen zur Gestaltung - Schriftart-Eindruck, Farben, Kontur,
                   seconds: { type: Type.NUMBER },
                   role: { type: Type.STRING },
                   sceneHint: { type: Type.STRING },
+                  useReference: { type: Type.BOOLEAN },
+                  refStartMs: { type: Type.NUMBER },
+                  refEndMs: { type: Type.NUMBER },
                 },
                 required: ["text", "seconds", "role", "sceneHint"],
               },

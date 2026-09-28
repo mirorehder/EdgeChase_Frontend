@@ -10,6 +10,12 @@ interface TextPhase {
   seconds: number;
   role: string;
   sceneHint: string;
+  // Fremdmaterial: übernimmt diese Phase einen Ausschnitt der Vorlage 1:1?
+  // Nur Anzeige/Weitergabe - im Editor unangetastet mitgeführt, damit ein
+  // Bearbeiten von Text oder Länge das Fenster nicht verliert.
+  useReference?: boolean;
+  refStartMs?: number;
+  refEndMs?: number;
 }
 
 interface Concept {
@@ -24,6 +30,9 @@ interface Concept {
   secondsPerScene: number;
   theme: string | null;
   notes: string | null;
+  // Behaltenes Referenzvideo (nur bei Fremdmaterial) und die Übersteuerung.
+  referenceVideoUrl: string | null;
+  foreignMode: string;
   soundUrl: string | null;
   soundAudioId: string | null;
   soundKind: string | null;
@@ -228,6 +237,31 @@ export function ConceptLibrary({ track }: { track: Track }) {
     await load();
   }
 
+  /**
+   * Setzt die Fremdmaterial-Übersteuerung eines Konzepts. Der Knopf ist da,
+   * falls die Analyse unsicher war: "auto" folgt ihr, "an" bestätigt das
+   * Übernehmen, "aus" verbietet es (dann nur eigene Clips).
+   */
+  async function fremdmaterialSetzen(concept: Concept, modus: string) {
+    setBusy(`fremd-${concept.id}`);
+    setFehler(false);
+    try {
+      const res = await fetch(`/api/concepts/${concept.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ foreignMode: modus }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      await load();
+    } catch (err) {
+      setFehler(true);
+      setNote(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
   function oeffnen(concept: Concept) {
     if (offenId === concept.id) {
       setOffenId(null);
@@ -422,6 +456,7 @@ export function ConceptLibrary({ track }: { track: Track }) {
                               : `Text ${i + 1}`}
                           {" · "}
                           {phase.seconds}s
+                          {phase.useReference && " · aus Vorlage"}
                         </span>
                         <span className="clip-desc" style={{ whiteSpace: "pre-wrap" }}>
                           {phase.text}
@@ -438,6 +473,39 @@ export function ConceptLibrary({ track }: { track: Track }) {
                   </span>
                 )}
                 {concept.notes && <span className="clip-meta">{concept.notes}</span>}
+
+                {/* Fremdmaterial: nur wenn beim Hochladen ein Übernahme-
+                    Ausschnitt erkannt und das Referenzvideo behalten wurde.
+                    Der Schalter ist für den Fall, dass die Analyse unsicher
+                    war - man kann das Übernehmen bestätigen oder verbieten. */}
+                {concept.referenceVideoUrl && (
+                  <div className="fremdmaterial">
+                    <span className="clip-meta">
+                      Übernimmt einen Ausschnitt der Vorlage 1:1. Fremdmaterial:
+                    </span>
+                    <div className="tag-chips" style={{ marginTop: 4 }}>
+                      {[
+                        { wert: "auto", text: "Automatisch" },
+                        { wert: "an", text: "An" },
+                        { wert: "aus", text: "Aus" },
+                      ].map((opt) => {
+                        const aktiv = (concept.foreignMode || "auto") === opt.wert;
+                        return (
+                          <button
+                            key={opt.wert}
+                            type="button"
+                            className={aktiv ? "tag-chip wahl an" : "tag-chip wahl"}
+                            aria-pressed={aktiv}
+                            onClick={() => fremdmaterialSetzen(concept, opt.wert)}
+                            disabled={busy !== null || aktiv}
+                          >
+                            {opt.text}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
 
                 {/* Der Sound steht auch zugeklappt da: ob ein Edit seinen
                     eigenen Sound bekommt oder den Trend-Sound, ist beim
