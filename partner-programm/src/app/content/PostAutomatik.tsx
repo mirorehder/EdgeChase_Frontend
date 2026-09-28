@@ -43,6 +43,19 @@ function zuMinuten(zeit: string): number {
 }
 
 /**
+ * Ein paar brauchbare Trend-Sounds zum sofortigen Vorbefüllen des Pools - damit
+ * das Posten nicht am leeren Pool scheitert. Tags bleiben leer; ohne
+ * Stimmungs-Auswahl zählt ohnehin der ganze Pool. Später frei ersetzbar.
+ */
+const STANDARD_TREND_SOUNDS: TrendSoundEintrag[] = [
+  { audioId: "1133883188649895", titel: "She Doesn't Mind x Danza Kuduro (27s)", tags: [] },
+  { audioId: "420743174048876", titel: "TOO SWEET x RIVERS - ALTEGO MIX (37s)", tags: [] },
+  { audioId: "3927839087485325", titel: "We Are The People (me n u remix) (31s)", tags: [] },
+  { audioId: "1107660630498769", titel: "erewhon - Original-Audio (29s)", tags: [] },
+  { audioId: "28555807630688770", titel: "sevamakeup - Original-Audio (32s)", tags: [] },
+];
+
+/**
  * Die Posting-Automatik einer Sparte: an/aus, wie oft pro Tag, Zeitfenster,
  * Mindestabstand, Trial-Reel.
  *
@@ -82,6 +95,44 @@ export function PostAutomatik({
       const daten = await res.json();
       if (!res.ok) throw new Error(daten.error ?? "Konnte nicht gespeichert werden.");
       setMeldung({ text: "Gespeichert.", fehler: false });
+      router.refresh();
+    } catch (err) {
+      setMeldung({ text: err instanceof Error ? err.message : String(err), fehler: true });
+    } finally {
+      setLaeuft(false);
+    }
+  }
+
+  /**
+   * Füllt den Trend-Sound-Pool mit den Standard-Sounds vor und speichert sofort.
+   * Vorhandene Einträge bleiben; doppelte (gleiche audioId) werden nicht erneut
+   * hinzugefügt. So ist mit einem Klick garantiert ein Sound zum Posten da.
+   */
+  async function standardEinfuellen() {
+    const vorhanden = new Set(z.trendSounds.map((s) => s.audioId));
+    const zusatz = STANDARD_TREND_SOUNDS.filter((s) => !vorhanden.has(s.audioId));
+    if (zusatz.length === 0) {
+      setMeldung({ text: "Die Standard-Sounds sind schon im Pool.", fehler: false });
+      return;
+    }
+    const neu = [...z.trendSounds, ...zusatz];
+    setLaeuft(true);
+    setMeldung(null);
+    try {
+      const res = await fetch("/api/post-schedule", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          track,
+          ...z,
+          trendSounds: neu,
+          postingTimes: z.postingTimes.map(zuZeit),
+        }),
+      });
+      const daten = await res.json();
+      if (!res.ok) throw new Error(daten.error ?? "Konnte nicht gespeichert werden.");
+      setZ({ ...z, trendSounds: neu });
+      setMeldung({ text: `${zusatz.length} Standard-Sound(s) eingefüllt und gespeichert.`, fehler: false });
       router.refresh();
     } catch (err) {
       setMeldung({ text: err instanceof Error ? err.message : String(err), fehler: true });
@@ -235,6 +286,9 @@ export function PostAutomatik({
           <div className="actions" style={{ marginBottom: 0 }}>
             <button onClick={speichern} disabled={laeuft}>
               {laeuft ? "Speichert …" : "Speichern"}
+            </button>
+            <button className="secondary" onClick={standardEinfuellen} disabled={laeuft}>
+              Standard-Sounds einfüllen
             </button>
           </div>
         </div>
