@@ -79,8 +79,9 @@ function VideoEintrag({ zeile }: { zeile: VideoZeile }) {
   async function jetztPosten() {
     if (
       !window.confirm(
-        `„${titel}" jetzt auf Instagram posten? Das Video wird sofort veröffentlicht und danach ` +
-          "nicht noch einmal automatisch gepostet.",
+        `„${titel}" jetzt als Test-Reel auf Instagram posten? Es geht als Trial-Reel raus ` +
+          "(nur an Nicht-Follower zum Test, nicht ins Profil) und wird danach nicht noch einmal " +
+          "automatisch gepostet.",
       )
     ) {
       return;
@@ -93,7 +94,7 @@ function VideoEintrag({ zeile }: { zeile: VideoZeile }) {
       if (!res.ok) throw new Error(daten.error ?? "Post fehlgeschlagen.");
       if (daten.ok) {
         setPostMeldung({
-          text: `Gepostet ✓ (Media-ID ${daten.mediaId}). Wird nicht automatisch erneut gepostet.`,
+          text: `Als Test-Reel gepostet ✓ (Media-ID ${daten.mediaId}). Wird nicht automatisch erneut gepostet.`,
           fehler: false,
         });
         router.refresh();
@@ -245,7 +246,7 @@ function VideoEintrag({ zeile }: { zeile: VideoZeile }) {
                 </span>
               ) : (
                 <button onClick={jetztPosten} disabled={laeuft || !zeile.hasPublicCopy}>
-                  {laeuft ? "Wird gepostet …" : "Jetzt posten"}
+                  {laeuft ? "Wird gepostet …" : "Als Test-Reel posten"}
                 </button>
               )}
               <button className="secondary" onClick={konzeptUmschalten} disabled={laeuft}>
