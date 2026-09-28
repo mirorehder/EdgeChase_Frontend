@@ -742,25 +742,27 @@ export async function posteVideoJetzt(videoId: string, jetzt = new Date()): Prom
       trendPool: zeitplan.trendSounds,
       spartenTags: zeitplan.soundTags,
     });
+    // Kein Sound verfügbar: NICHT posten. Es darf kein Reel ohne Sound
+    // rausgehen - dann lieber ein klarer Hinweis, einen Trend-Sound-Pool
+    // einzurichten (oder am Konzept einen Sound zu setzen).
     if (sound.grund === "kein Sound verfügbar") {
-      // Selbst der Trend-Pool ist leer (kein Konzept-Sound, kein _music, keine
-      // Trend-Sounds eingerichtet). Den Test-Post NICHT blockieren, sondern mit
-      // dem Originalton des Videos posten - ein Stil-Sound käme nur aus einem
-      // befüllten Pool, und für einen Test ist Originalton besser als gar kein
-      // Post.
-      audioId = null;
-      hatEigeneMusik = false;
-      soundText = "kein Trend-Sound im Pool - mit Originalton gepostet";
-    } else {
-      audioId = sound.audioId;
-      hatEigeneMusik = sound.hatEigeneMusik;
-      soundText =
-        sound.herkunft === "eigenerFilmton"
-          ? "Filmton (Video mit _music)"
-          : sound.herkunft === "pool"
-            ? `Pool-Sound "${sound.titel ?? sound.audioId}"`
-            : "kein Sound";
+      return {
+        ok: false,
+        grund:
+          "Kein Sound: das Video hat keinen eigenen Sound, kein _music im Dateinamen und " +
+          "es ist kein Trend-Sound-Pool eingerichtet. Damit würde das Reel ohne Musik posten - " +
+          "das ist nicht erlaubt. Trag im Dashboard unter „Automatisch posten\" mindestens einen " +
+          "Trend-Sound ein oder setz am Konzept einen Sound.",
+      };
     }
+    audioId = sound.audioId;
+    hatEigeneMusik = sound.hatEigeneMusik;
+    soundText =
+      sound.herkunft === "eigenerFilmton"
+        ? "Filmton (Video mit _music)"
+        : sound.herkunft === "pool"
+          ? `Pool-Sound "${sound.titel ?? sound.audioId}"`
+          : "kein Sound";
   }
 
   const captionRoh = video.postCaption || video.fileTitle || video.hookText.replace(/\n/g, " ");
