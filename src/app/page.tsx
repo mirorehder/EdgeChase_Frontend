@@ -85,6 +85,12 @@ async function ladeSparte(track: Track): Promise<TrackData> {
     driveUrl: job.driveUrl,
     driveFileName: job.driveFileName,
     lastError: job.lastError,
+    // Für den Post-Knopf am Video: ob schon gepostet und ob eine öffentliche
+    // Kopie existiert (ohne die kann Instagram das Video nicht laden).
+    postedAt: job.postedAt ? job.postedAt.toISOString() : null,
+    postedMediaId: job.postedMediaId,
+    postError: job.postError,
+    hasPublicCopy: !!job.publicUrl,
     scenes: (job.scenes as unknown as ComposedScene[]).map((s) => ({
       clipName: clipNameById.get(s.clipId) ?? "(gelöscht)",
       seconds: s.seconds,

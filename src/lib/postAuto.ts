@@ -29,6 +29,7 @@ import {
   chMinutenImTag,
   chTagesBeginn,
   chFormatUhrzeit,
+  chFormatZeitstempel,
   formatUhrzeit,
   parseUhrzeit,
 } from "./zeit";
@@ -636,6 +637,131 @@ export async function posteFaelliges(track: Track, jetzt = new Date()): Promise<
     { gepostet: true, mediaId: ergebnis.mediaId },
     kandidatTitel,
   );
+}
+
+export interface SofortPostErgebnis {
+  ok: boolean;
+  mediaId?: string;
+  grund?: string;
+  /** Keine Instagram-Zugangsdaten hinterlegt - es wurde nichts gepostet. */
+  trockenlauf?: boolean;
+}
+
+/**
+ * Postet GENAU dieses Video sofort - ausgelöst von Hand über den Post-Knopf am
+ * Video, unabhängig vom Zeitplan (Fenster, Tageslimit, Mindestabstand zählen
+ * hier nicht).
+ *
+ * Sound, Bildunterschrift und Ortstag werden nach denselben Regeln bestimmt wie
+ * beim automatischen Posten - nur die Fälligkeit entfällt. Nach erfolgreichem
+ * Post wird postedAt gesetzt; damit fällt das Video aus der Auswahl der
+ * Automatik heraus (naechstesVideo verlangt postedAt = null) und wird NICHT ein
+ * zweites Mal veröffentlicht.
+ */
+export async function posteVideoJetzt(videoId: string, jetzt = new Date()): Promise<SofortPostErgebnis> {
+  const video = await prisma.promoVideo.findUnique({ where: { id: videoId } });
+  if (!video) return { ok: false, grund: "Video nicht gefunden." };
+
+  const track = (video.track as Track) ?? "promo";
+
+  if (video.status !== "done") {
+    return { ok: false, grund: "Das Video ist noch nicht fertig gerendert." };
+  }
+  // Schon gepostet: nicht noch einmal. Genau das soll der Doppel-Post
+  // verhindern - egal ob der erste Post von Hand oder automatisch kam.
+  if (video.postedAt) {
+    return { ok: false, grund: `Schon gepostet am ${chFormatZeitstempel(video.postedAt)} CH.` };
+  }
+  if (!video.publicUrl) {
+    return {
+      ok: false,
+      grund:
+        "Keine öffentliche Kopie vorhanden - Instagram kann das Video nicht laden. " +
+        "Über die Nachrüst-Funktion eine Kopie anlegen und erneut versuchen.",
+    };
+  }
+
+  const zeitplan = await getPostZeitplan(track);
+
+  const dateiName = video.driveFileName ?? video.fileTitle ?? "";
+  const sound = waehleSound({
+    dateiName,
+    konzeptSound: { audioId: video.soundAudioId, status: video.soundStatus ?? "offen" },
+    trendPool: zeitplan.trendSounds,
+    spartenTags: zeitplan.soundTags,
+  });
+  if (sound.grund === "kein Sound verfügbar") {
+    return {
+      ok: false,
+      grund:
+        "Kein Sound: das Video hat keinen eigenen Sound, kein _music im Dateinamen und " +
+        "es ist kein Trend-Sound-Pool eingerichtet. Sound am Konzept setzen oder einen " +
+        "Trend-Sound eintragen.",
+    };
+  }
+
+  const captionRoh = video.postCaption || video.fileTitle || video.hookText.replace(/\n/g, " ");
+  const caption = mitHashtags(captionRoh, zeitplan.hashtags);
+  const locationId =
+    track === "promo" ? process.env.IG_LOCATION_ID_PROMO?.trim() || null : null;
+
+  const ergebnis = await posteReel(track, {
+    videoUrl: video.publicUrl,
+    caption,
+    audioId: sound.audioId,
+    hatEigeneMusik: sound.hatEigeneMusik,
+    alsTrialReel: zeitplan.alsTrialReel,
+    locationId,
+  });
+
+  if (ergebnis.trockenlauf) {
+    await logActivity(
+      `Sofort-Post (Trockenlauf, keine Zugangsdaten): "${caption.split("\n")[0]}" wäre jetzt rausgegangen.`,
+      { track, videoId: video.id },
+    );
+    return { ok: false, trockenlauf: true, grund: ergebnis.fehler ?? "Trockenlauf: keine Zugangsdaten" };
+  }
+
+  if (!ergebnis.ok) {
+    await prisma.promoVideo.update({
+      where: { id: video.id },
+      data: { postError: ergebnis.fehler ?? "unbekannter Fehler" },
+    });
+    await logActivity(`Sofort-Post fehlgeschlagen: ${ergebnis.fehler}`, {
+      level: "error",
+      track,
+      videoId: video.id,
+    });
+    return { ok: false, grund: ergebnis.fehler ?? "unbekannter Fehler" };
+  }
+
+  // Erfolg: postedAt setzen - ab jetzt nimmt die Automatik dieses Video nicht
+  // mehr (naechstesVideo verlangt postedAt = null).
+  await prisma.promoVideo.update({
+    where: { id: video.id },
+    data: { postedMediaId: ergebnis.mediaId, postedAt: jetzt, postError: null },
+  });
+
+  const soundText =
+    sound.herkunft === "eigenerFilmton"
+      ? "Filmton (Video mit _music)"
+      : sound.herkunft === "konzept"
+        ? `Konzept-Sound ${sound.audioId}`
+        : sound.herkunft === "pool"
+          ? `Pool-Sound "${sound.titel ?? sound.audioId}"`
+          : "kein Sound";
+  await logActivity(
+    `Von Hand gepostet um ${chFormatUhrzeit(jetzt)} CH: "${caption.split("\n")[0]}" ` +
+      `(${trackBeschreibung(track).label}), Media-ID ${ergebnis.mediaId}, Sound: ${soundText}.`,
+    { track, videoId: video.id },
+  );
+
+  // Die öffentliche Kopie wird nach dem Post nicht mehr gebraucht.
+  if (isRenderStorageConfigured()) {
+    await deletePostCopy(bucketFromServeUrl(env.remotionServeUrl), video.id).catch(() => {});
+  }
+
+  return { ok: true, mediaId: ergebnis.mediaId };
 }
 
 /**
