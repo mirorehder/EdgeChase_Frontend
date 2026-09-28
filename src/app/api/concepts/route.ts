@@ -7,6 +7,7 @@ import {
   deleteUpload,
   deleteUploadParts,
   fetchUpload,
+  storeReference,
 } from "@/lib/renderStage";
 import { istBerechtigt } from "@/lib/ingestAuth";
 import { trackFromRequest, trackFromValue } from "@/lib/trackParam";
@@ -86,6 +87,11 @@ export async function POST(request: NextRequest) {
 
     const analysis = await analyzeConcept(buffer, erlaubterTyp(body.mimeType));
 
+    // Braucht das Konzept Fremdmaterial? Nur dann behalten wir das (kurze)
+    // Referenzvideo - sonst wird es wie bisher sofort verworfen. Der Promo-
+    // Generator bleibt bewusst aussen vor (er baut nicht über composeViralVideo).
+    const brauchtReferenz = track !== "promo" && analysis.textPhases.some((p) => p.useReference);
+
     const concept = await prisma.concept.create({
       data: {
         title: analysis.title,
@@ -101,6 +107,32 @@ export async function POST(request: NextRequest) {
         notes: analysis.notes || null,
       },
     });
+
+    // Das Referenzvideo am Konzept ablegen und die Adresse nachtragen. Nur bei
+    // Fremdmaterial und nur, wenn der Render-Speicher eingerichtet ist -
+    // scheitert die Ablage, bleibt das Konzept trotzdem bestehen (dann eben
+    // ohne den 1:1-Ausschnitt, statt gar keinem Konzept).
+    if (brauchtReferenz && bucket) {
+      try {
+        const referenceVideoUrl = await storeReference(bucket, concept.id, buffer);
+        await prisma.concept.update({
+          where: { id: concept.id },
+          data: { referenceVideoUrl },
+        });
+        concept.referenceVideoUrl = referenceVideoUrl;
+        await logActivity(
+          `Referenzvideo für "${concept.title}" behalten - ` +
+            `${analysis.textPhases.filter((p) => p.useReference).length} Phase(n) übernehmen einen Ausschnitt 1:1.`,
+          { track },
+        );
+      } catch (err) {
+        await logActivity(
+          `Referenzvideo für "${concept.title}" konnte nicht behalten werden: ` +
+            `${err instanceof Error ? err.message : String(err)}. Das Konzept nutzt vorerst nur eigene Clips.`,
+          { level: "error", track },
+        );
+      }
+    }
 
     await logActivity(
       `Konzept gespeichert: "${concept.title}" - ${concept.clipCount} Einstellungen, ` +

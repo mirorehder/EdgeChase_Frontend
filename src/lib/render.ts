@@ -15,6 +15,13 @@ export interface RenderScene {
   driveFileId: string;
   startMs: number;
   endMs: number;
+  /**
+   * Fremdmaterial: die fertige öffentliche Adresse, aus der Remotion diese
+   * Szene lädt (das behaltene Referenzvideo). Ist sie gesetzt, wird NICHT aus
+   * Drive gespiegelt - startMs/endMs sind dann das abzuspielende Fenster im
+   * Referenzvideo. Fehlt sie, gilt der bisherige Weg über driveFileId.
+   */
+  sourceUrl?: string;
 }
 
 // Jede Abfrage ist selbst ein Lambda-Aufruf. Bei drei Sekunden entsteht ein
@@ -127,6 +134,17 @@ export async function renderPromoVideo(
   };
 
   for (const scene of scenes) {
+    // Fremdmaterial: das Referenzvideo liegt schon öffentlich im Bucket, es
+    // wird direkt geladen und nur das Fenster startMs..endMs abgespielt.
+    if (scene.sourceUrl) {
+      props.scenes.push({
+        src: scene.sourceUrl,
+        startMs: scene.startMs,
+        durationMs: scene.endMs - scene.startMs,
+      });
+      continue;
+    }
+
     if (!(await isClipMirrored(bucket, scene.driveFileId))) {
       // Über die Platte, nicht über den Arbeitsspeicher: dieser Weg greift nur
       // bei einem Clip, der bei der Analyse nicht gespiegelt wurde - und das
