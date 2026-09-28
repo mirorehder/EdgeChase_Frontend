@@ -683,21 +683,50 @@ export async function posteVideoJetzt(videoId: string, jetzt = new Date()): Prom
 
   const zeitplan = await getPostZeitplan(track);
 
+  // Sound-Wahl für den Post-Knopf: den am Video hinterlegten Sound DIREKT
+  // anhängen - ohne die "geprueft"-Hürde der Automatik. Wer hier auf Posten
+  // drückt, will genau diesen Sound testen. Nur wenn gar kein eigener Sound
+  // gesetzt ist (oder er als unauffindbar markiert wurde), gilt die übliche
+  // Rangfolge (Filmton bei _music, sonst Trend-Pool).
+  //
+  // Hinweis zum Startversatz: Instagram hängt jeden Sound bei 0:00 an. Ein
+  // vollständiger Song liefe hier also im Intro - beim Direktanhängen liegt das
+  // in der Verantwortung des Nutzers, der den Sound bewusst gewählt hat. Für
+  // einen Test-Reel ist genau das gewollt.
   const dateiName = video.driveFileName ?? video.fileTitle ?? "";
-  const sound = waehleSound({
-    dateiName,
-    konzeptSound: { audioId: video.soundAudioId, status: video.soundStatus ?? "offen" },
-    trendPool: zeitplan.trendSounds,
-    spartenTags: zeitplan.soundTags,
-  });
-  if (sound.grund === "kein Sound verfügbar") {
-    return {
-      ok: false,
-      grund:
-        "Kein Sound: das Video hat keinen eigenen Sound, kein _music im Dateinamen und " +
-        "es ist kein Trend-Sound-Pool eingerichtet. Sound am Konzept setzen oder einen " +
-        "Trend-Sound eintragen.",
-    };
+  const eigenerSound = !!video.soundAudioId && video.soundStatus !== "unauffindbar";
+
+  let audioId: string | null;
+  let hatEigeneMusik = false;
+  let soundText: string;
+
+  if (eigenerSound) {
+    audioId = video.soundAudioId;
+    soundText = `hinterlegter Sound ${video.soundTitle ?? video.soundAudioId} (direkt angehängt)`;
+  } else {
+    const sound = waehleSound({
+      dateiName,
+      konzeptSound: { audioId: video.soundAudioId, status: video.soundStatus ?? "offen" },
+      trendPool: zeitplan.trendSounds,
+      spartenTags: zeitplan.soundTags,
+    });
+    if (sound.grund === "kein Sound verfügbar") {
+      return {
+        ok: false,
+        grund:
+          "Kein Sound: das Video hat keinen eigenen Sound, kein _music im Dateinamen und " +
+          "es ist kein Trend-Sound-Pool eingerichtet. Sound am Konzept setzen oder einen " +
+          "Trend-Sound eintragen.",
+      };
+    }
+    audioId = sound.audioId;
+    hatEigeneMusik = sound.hatEigeneMusik;
+    soundText =
+      sound.herkunft === "eigenerFilmton"
+        ? "Filmton (Video mit _music)"
+        : sound.herkunft === "pool"
+          ? `Pool-Sound "${sound.titel ?? sound.audioId}"`
+          : "kein Sound";
   }
 
   const captionRoh = video.postCaption || video.fileTitle || video.hookText.replace(/\n/g, " ");
@@ -708,8 +737,8 @@ export async function posteVideoJetzt(videoId: string, jetzt = new Date()): Prom
   const ergebnis = await posteReel(track, {
     videoUrl: video.publicUrl,
     caption,
-    audioId: sound.audioId,
-    hatEigeneMusik: sound.hatEigeneMusik,
+    audioId,
+    hatEigeneMusik,
     // Der Post-Knopf ist zum Testen da - deshalb IMMER als Test-Reel, ganz
     // unabhaengig davon, ob die Automatik der Sparte gerade echt oder als Trial
     // postet. So kann ein Test nie versehentlich oeffentlich rausgehen. (Kann
@@ -747,14 +776,6 @@ export async function posteVideoJetzt(videoId: string, jetzt = new Date()): Prom
     data: { postedMediaId: ergebnis.mediaId, postedAt: jetzt, postError: null },
   });
 
-  const soundText =
-    sound.herkunft === "eigenerFilmton"
-      ? "Filmton (Video mit _music)"
-      : sound.herkunft === "konzept"
-        ? `Konzept-Sound ${sound.audioId}`
-        : sound.herkunft === "pool"
-          ? `Pool-Sound "${sound.titel ?? sound.audioId}"`
-          : "kein Sound";
   await logActivity(
     `Von Hand als Test-Reel gepostet um ${chFormatUhrzeit(jetzt)} CH: "${caption.split("\n")[0]}" ` +
       `(${trackBeschreibung(track).label}), Media-ID ${ergebnis.mediaId}, Sound: ${soundText}.`,
