@@ -100,3 +100,34 @@ export function bewertungsart(track: Track): Bewertungsart {
 export function isTrack(value: unknown): value is Track {
   return typeof value === "string" && TRACKS.includes(value as Track);
 }
+
+/**
+ * Welche Sparten dieses Deployment bedient.
+ *
+ * Gesteuert über die Umgebungsvariable GENERATOR_TRACKS (z.B. "promo,sports,clothing"
+ * für die EdgeChase-App, "viral" für die Doc-Meiro-App). So lässt sich dieselbe
+ * Code-Basis als mehrere getrennte Vercel-Projekte betreiben - jedes zeigt und
+ * verarbeitet nur seine Sparten, globale Code-Änderungen gelten aber überall.
+ *
+ * Leer/ungesetzt = alle Sparten (unveränderte Voreinstellung). Nur serverseitig
+ * aufrufen: GENERATOR_TRACKS ist keine NEXT_PUBLIC-Variable und im Browser leer.
+ */
+export function erlaubteTrackKeys(): Track[] {
+  const roh = (process.env.GENERATOR_TRACKS ?? "").trim();
+  if (!roh) return [...TRACKS];
+  const gewuenscht = roh.split(/[,;\s]+/).map((s) => s.trim()).filter(Boolean);
+  const erlaubt = TRACKS.filter((t) => gewuenscht.includes(t));
+  // Fällt die Angabe unbrauchbar aus, lieber alle zeigen als eine leere App.
+  return erlaubt.length ? erlaubt : [...TRACKS];
+}
+
+/** Die Sparten-Beschreibungen dieses Deployments, in TRACK_LISTE-Reihenfolge. */
+export function erlaubteTrackListe(): TrackBeschreibung[] {
+  const erlaubt = new Set(erlaubteTrackKeys());
+  return TRACK_LISTE.filter((t) => erlaubt.has(t.key));
+}
+
+/** Ob dieses Deployment die Sparte bedient. */
+export function istErlaubterTrack(track: Track): boolean {
+  return erlaubteTrackKeys().includes(track);
+}

@@ -4,7 +4,7 @@ import {
   MIN_USABLE_ANALYSIS_VERSION,
   type ComposedScene,
 } from "@/lib/pipeline";
-import { TRACK_LISTE, bewertungsart, type Track } from "@/lib/trackClient";
+import { bewertungsart, erlaubteTrackListe, type Track } from "@/lib/trackClient";
 import { TriggerButtons } from "./TriggerButtons";
 import { LiveActivity } from "./LiveActivity";
 import { VideoChat } from "./VideoChat";
@@ -175,12 +175,15 @@ const HINWEIS: Record<Track, string> = {
 };
 
 export default async function DashboardPage() {
+  // Nur die Sparten dieses Deployments (GENERATOR_TRACKS) - so ist dieselbe
+  // Code-Basis z.B. als eigene Doc-Meiro-App betreibbar.
+  const spartenListe = erlaubteTrackListe();
   const [sparten, soundTagKatalog] = await Promise.all([
-    Promise.all(TRACK_LISTE.map((s) => ladeSparte(s.key))),
+    Promise.all(spartenListe.map((s) => ladeSparte(s.key))),
     getSoundTagKatalog(),
   ]);
   const daten = Object.fromEntries(
-    TRACK_LISTE.map((s, i) => [s.key, sparten[i]]),
+    spartenListe.map((s, i) => [s.key, sparten[i]]),
   ) as Record<Track, TrackData>;
 
   // Tags, die es (noch) im Katalog gibt. Aus dem Katalog entfernte Tags sollen
@@ -191,7 +194,7 @@ export default async function DashboardPage() {
     (keys ?? []).filter((k) => erlaubteTags.has(k));
 
   const inhalte = Object.fromEntries(
-    TRACK_LISTE.map((sparte) => {
+    spartenListe.map((sparte) => {
       const track = sparte.key;
       const data = daten[track];
       const postZeitplan = {
@@ -243,7 +246,7 @@ export default async function DashboardPage() {
 
       <SoundTagKatalog katalog={soundTagKatalog} />
 
-      <Sparten inhalte={inhalte} />
+      <Sparten inhalte={inhalte} tracks={spartenListe} />
     </main>
   );
 }

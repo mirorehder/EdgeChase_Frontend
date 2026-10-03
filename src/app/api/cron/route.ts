@@ -4,6 +4,7 @@ import { planDailyJob, planViralRun } from "@/lib/pipeline";
 import { baseUrlFromRequest, starteWartende, weckeWartende } from "@/lib/dispatch";
 import { logActivity } from "@/lib/activity";
 import { ZEITPLAN_SPARTEN } from "@/lib/viralSchedule";
+import { erlaubteTrackKeys } from "@/lib/trackClient";
 
 // Abgleich, Analyse und Zusammenstellung brauchen mehr als den Vercel-
 // Standardwert von 10 Sekunden. Gerendert wird hier nicht mehr.
@@ -34,16 +35,24 @@ export async function GET(request: NextRequest) {
   // Ein liegengebliebener Auftrag vom Vortag geht als Erstes wieder los.
   await weckeWartende(baseUrl).catch(() => null);
 
+  // Nur die Sparten dieses Deployments (GENERATOR_TRACKS): so planen zwei
+  // getrennte Apps (z.B. EdgeChase und Doc Meiro) nicht beide dieselben
+  // Sparten und erzeugen nichts doppelt.
+  const erlaubt = new Set(erlaubteTrackKeys());
+
   let jobId: string | null = null;
   let promoFehler: string | null = null;
 
   // Die beiden Sparten dürfen sich nicht gegenseitig aufhalten: scheitert das
-  // Promo-Video, sollen die Edits trotzdem entstehen.
-  try {
-    jobId = await planDailyJob();
-  } catch (err) {
-    promoFehler = err instanceof Error ? err.message : String(err);
-    await logActivity(`Tageslauf fehlgeschlagen: ${promoFehler}`, { level: "error" });
+  // Promo-Video, sollen die Edits trotzdem entstehen. Nur wenn diese App die
+  // Promo-Sparte überhaupt bedient.
+  if (erlaubt.has("promo")) {
+    try {
+      jobId = await planDailyJob();
+    } catch (err) {
+      promoFehler = err instanceof Error ? err.message : String(err);
+      await logActivity(`Tageslauf fehlgeschlagen: ${promoFehler}`, { level: "error" });
+    }
   }
 
   // Sofort anstossen, nicht erst am Ende: die Planung der Reels-Sparten ruft
@@ -54,7 +63,7 @@ export async function GET(request: NextRequest) {
   // das nur und kostet nichts; scheitert eine, laufen die anderen weiter -
   // sonst risse ein Konzeptfehler in einer Sparte den ganzen Tag mit.
   const viral = { jobIds: [] as string[], hinweis: undefined as string | undefined };
-  for (const sparte of ZEITPLAN_SPARTEN) {
+  for (const sparte of ZEITPLAN_SPARTEN.filter((s) => erlaubt.has(s))) {
     const ergebnis = await planViralRun(sparte).catch((err) => ({
       jobIds: [] as string[],
       hinweis: err instanceof Error ? err.message : String(err),

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { TRACK_LISTE, type Track } from "@/lib/trackClient";
+import { TRACK_LISTE, type Track, type TrackBeschreibung } from "@/lib/trackClient";
 
 /**
  * Umschalter zwischen den Sparten.
@@ -25,8 +25,18 @@ import { TRACK_LISTE, type Track } from "@/lib/trackClient";
  * Es ist bewusst dieselbe Auswahl in einem gemeinsamen Zustand und nicht
  * zweimal dieselbe Sache: gezeigt wird je nach Breite immer nur eine davon.
  */
-export function Sparten({ inhalte }: { inhalte: Record<Track, ReactNode> }) {
-  const [aktiv, setAktiv] = useState<Track>("promo");
+export function Sparten({
+  inhalte,
+  // Die Sparten dieses Deployments. Ohne Angabe alle (unveränderte
+  // Voreinstellung) - so bleibt die Komponente abwärtskompatibel.
+  tracks = TRACK_LISTE,
+}: {
+  inhalte: Record<Track, ReactNode>;
+  tracks?: readonly TrackBeschreibung[];
+}) {
+  // Nur eine Sparte? Dann gibt es nichts umzuschalten; trotzdem sauber die
+  // erste (einzige) als aktiv. Fällt die Liste leer aus, auf "promo" zurück.
+  const [aktiv, setAktiv] = useState<Track>(tracks[0]?.key ?? "promo");
 
   // Beim Umschalten nach oben - sonst steht man in der neuen Sparte mitten im
   // Inhalt, auf der Scrollhöhe der alten.
@@ -46,7 +56,7 @@ export function Sparten({ inhalte }: { inhalte: Record<Track, ReactNode> }) {
   return (
     <>
       <nav className="sparten" role="tablist" aria-label="Sparte">
-        {TRACK_LISTE.map((sparte) => (
+        {tracks.map((sparte) => (
           <button
             key={sparte.key}
             role="tab"
@@ -74,7 +84,7 @@ export function Sparten({ inhalte }: { inhalte: Record<Track, ReactNode> }) {
       </div>
 
       <nav className="tableiste" role="tablist" aria-label="Sparte">
-        {TRACK_LISTE.map((sparte) => (
+        {tracks.map((sparte) => (
           <button
             key={sparte.key}
             role="tab"

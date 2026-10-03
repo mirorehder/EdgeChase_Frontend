@@ -13,7 +13,7 @@
  */
 import { prisma } from "./db";
 import type { Track } from "./trackClient";
-import { TRACKS, trackBeschreibung } from "./trackClient";
+import { TRACKS, trackBeschreibung, erlaubteTrackKeys } from "./trackClient";
 import { istVerwendbar } from "./sound";
 import { normalisiereTagKeys, passtZuSparte } from "./soundTags";
 import { posteReel } from "./instagram";
@@ -323,7 +323,10 @@ export function tagesBeginn(jetzt: Date): Date {
 export async function spartenMitAutomatik(): Promise<Track[]> {
   const zeilen = await prisma.postZeitplan.findMany({ where: { enabled: true } });
   const an = new Set(zeilen.map((z) => z.id));
-  return TRACKS.filter((t) => an.has(t));
+  // Nur die Sparten dieses Deployments (GENERATOR_TRACKS): sonst würden zwei
+  // getrennte Apps dieselbe Sparte posten.
+  const erlaubt = new Set(erlaubteTrackKeys());
+  return TRACKS.filter((t) => an.has(t) && erlaubt.has(t));
 }
 
 // ---------------------------------------------------------------------------
