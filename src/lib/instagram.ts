@@ -64,8 +64,18 @@ export async function pruefeZugang(
  */
 export function igZugang(track: Track): IgZugang | null {
   const suffix = track.toUpperCase();
-  const token = process.env[`IG_TOKEN_${suffix}`] || process.env.IG_TOKEN || "";
-  const igUserId = process.env[`IG_USER_ID_${suffix}`] || process.env.IG_USER_ID || "";
+  // "coaching" postet vom Doc-Meiro-Konto, solange keine eigenen Werte da sind.
+  const rueckfall = track === "coaching" ? "VIRAL" : null;
+  const token =
+    process.env[`IG_TOKEN_${suffix}`] ||
+    (rueckfall && process.env[`IG_TOKEN_${rueckfall}`]) ||
+    process.env.IG_TOKEN ||
+    "";
+  const igUserId =
+    process.env[`IG_USER_ID_${suffix}`] ||
+    (rueckfall && process.env[`IG_USER_ID_${rueckfall}`]) ||
+    process.env.IG_USER_ID ||
+    "";
   if (!token || !igUserId) return null;
   return { token, igUserId };
 }

@@ -427,6 +427,23 @@ export function waehleSound(eingabe: SoundEingabe): SoundWahl {
 }
 
 /**
+ * Die Facebook-Places-ID, die als Ortstag am Reel hängt.
+ *
+ * Promo: Ziel-Markt DACH. Coaching: immer Basel - die Anfragen kommen von dort.
+ * Fehlt die Variable, wird der Ortstag übersprungen; der Post läuft weiter.
+ * Die ID lässt sich über /api/post/place-search?q=Basel ermitteln. Für Coaching
+ * gilt IG_LOCATION_ID_COACHING, ersatzweise die feste Basel-ID.
+ */
+const BASEL_LOCATION_ID = "108671032497097";
+
+export function ortstagFuer(track: Track): string | null {
+  const promo = process.env.IG_LOCATION_ID_PROMO?.trim() || null;
+  if (track === "promo") return promo;
+  if (track === "coaching") return process.env.IG_LOCATION_ID_COACHING?.trim() || BASEL_LOCATION_ID;
+  return null;
+}
+
+/**
  * Haengt Hashtags an eine Caption. Der Nutzer darf Rauten setzen oder nicht,
  * mit Kommas oder Zeilenumbruechen trennen - hier wird sauber formatiert: jedes
  * Wort bekommt genau eine Raute, doppelte werden gestrichen.
@@ -566,8 +583,7 @@ export async function posteFaelliges(track: Track, jetzt = new Date()): Promise<
   // Ortstag nur fuer die Promo-Sparte (Ziel-Markt DACH); andere Sparten posten
   // wie bisher ohne Tag. Fehlt die Umgebungsvariable, wird stillschweigend
   // uebersprungen - der Post selbst laeuft unveraendert weiter.
-  const locationId =
-    track === "promo" ? process.env.IG_LOCATION_ID_PROMO?.trim() || null : null;
+  const locationId = ortstagFuer(track);
 
   const ergebnis = await posteReel(track, {
     videoUrl: kandidat.publicUrl,
@@ -738,8 +754,7 @@ export async function posteVideoJetzt(videoId: string, jetzt = new Date()): Prom
 
   const captionRoh = video.postCaption || video.fileTitle || video.hookText.replace(/\n/g, " ");
   const caption = mitHashtags(captionRoh, zeitplan.hashtags);
-  const locationId =
-    track === "promo" ? process.env.IG_LOCATION_ID_PROMO?.trim() || null : null;
+  const locationId = ortstagFuer(track);
 
   const ergebnis = await posteReel(track, {
     videoUrl: video.publicUrl,

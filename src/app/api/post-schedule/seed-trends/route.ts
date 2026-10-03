@@ -34,17 +34,22 @@ const HASHTAGS: Record<Track, string> = {
   viral: "Parkour Freerunning ActionSport Madness Adrenaline",
   sports: "ActionSport ExtremeSports Adrenaline Athletes ForYouPage",
   clothing: "Streetwear OOTD Fashion Outfit Style",
+  coaching: "Parkour Freerunning ParkourCoaching Coaching Basel",
 };
 
-const POOLS: Record<Track, SeedSound[]> = {
-  viral: [
+// Coaching postet vom selben Konto wie Doc Meiro und startet mit denselben
+// Sounds; im Dashboard lässt sich der Pool danach getrennt anpassen.
+const VIRAL_SOUNDS: SeedSound[] = [
     { audioId: "1557001441730708", titel: "M83 Outro (24s)" },
     { audioId: "1685692728641662", titel: "Tokyo Drift Funk - Eternxlkz (14s)" },
     { audioId: "8026510554048989", titel: "billie eilish - chihiro (gravagerz remix) (20s)" },
     { audioId: "25740738398935095", titel: "DRACULA x LAY ALL YOUR LOVE - ALTEGO MIX (39s)" },
     { audioId: "25352736997756477", titel: "TEMPERATURE x SWEET DREAMS - ALTEGO MIX (27s)" },
-  ],
-  promo: [
+ ];
+
+const POOLS: Record<Track, SeedSound[]> = {
+  viral: VIRAL_SOUNDS,
+ promo: [
     { audioId: "1133883188649895", titel: "Sounder - She Doesn't Mind x Danza Kuduro (27s)" },
     { audioId: "420743174048876", titel: "TOO SWEET x RIVERS - ALTEGO MIX (37s)" },
     { audioId: "3927839087485325", titel: "We Are The People (me n u remix) (31s)" },
@@ -58,6 +63,7 @@ const POOLS: Record<Track, SeedSound[]> = {
     { audioId: "467342335731489", titel: "Someday Soon (60s)" },
     { audioId: "3018052581797732", titel: "agri__91 - Original-Audio (17s)" },
   ],
+  coaching: VIRAL_SOUNDS,
   clothing: [
     { audioId: "3132622323696161", titel: "I Know What You Want x Madison Calley (58s)" },
     { audioId: "1048526387234935", titel: "justtrip.it - Original-Audio (36s)" },
@@ -77,7 +83,7 @@ async function lauf(request: NextRequest) {
 
   const ergebnisse: { track: Track; anzahl: number }[] = [];
 
-  for (const track of ["promo", "viral", "sports", "clothing"] as Track[]) {
+  for (const track of ["promo", "viral", "sports", "clothing", "coaching"] as Track[]) {
     // Bestehenden Zeitplan holen (Standard, wenn noch nicht vorhanden), damit
     // enabled/Zeitfenster/Abstand nicht ueberschrieben werden.
     const bestand = await getPostZeitplan(track);

@@ -50,6 +50,8 @@ const MAX_PARTS = 80;
 export function ConceptLibrary({ track }: { track: Track }) {
   const router = useRouter();
   const nachKrassheit = bewertungsart(track) === "krassheit";
+  // Coaching-Konzepte schreibt man selbst: kein Referenzvideo-Upload.
+  const mitReferenz = trackBeschreibung(track).referenzUpload;
   const [concepts, setConcepts] = useState<Concept[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -360,7 +362,7 @@ export function ConceptLibrary({ track }: { track: Track }) {
           >
             {neuOffen ? "Abbrechen" : "Neues Konzept"}
           </button>
-          <button
+          {mitReferenz && <button
             className="secondary"
             onClick={() => {
               setUploadOffen(!uploadOffen);
@@ -374,11 +376,11 @@ export function ConceptLibrary({ track }: { track: Track }) {
               : uploadOffen
                 ? "Abbrechen"
                 : "Referenzvideo hochladen"}
-          </button>
+          </button>}
         </div>
       </div>
 
-      {uploadOffen && (
+      {mitReferenz && uploadOffen && (
         <div className="clip-editor">
           <label>
             Instagram-Sound (Link, optional)
@@ -464,7 +466,14 @@ export function ConceptLibrary({ track }: { track: Track }) {
         </div>
       )}
 
-      {auf && (
+      {auf && !mitReferenz && (
+        <p className="chat-hint">
+          Konzepte schreibst du selbst: der Text, der im Video steht, und eine kurze Regie, welche
+          Art Clips gewählt werden soll.
+        </p>
+      )}
+
+      {auf && mitReferenz && (
         <p className="chat-hint">
           {trackBeschreibung(track).nachKonzept
             ? "Ein Referenz-Reel hochladen — daraus werden Text, Textgestaltung, Anzahl Einstellungen und Länge übernommen. Der Text des Konzepts ist der Text des Edits. Das hochgeladene Video selbst wird nach der Auswertung wieder gelöscht."
@@ -492,7 +501,9 @@ export function ConceptLibrary({ track }: { track: Track }) {
 
       {!auf ? null : concepts.length === 0 ? (
         <p className="empty-state">
-          {trackBeschreibung(track).nachKonzept
+          {!mitReferenz
+            ? "Noch kein Konzept. Ohne Konzept gibt es keinen Text für das Video - lege mit „Neues Konzept“ eines an."
+            : trackBeschreibung(track).nachKonzept
             ? "Noch kein Konzept. Ohne Konzept gibt es keinen Text für den Edit - lade ein Referenz-Reel hoch."
             : "Noch keine Konzepte. Lade ein Video hoch oder schick eins per Kurzbefehl vom Handy."}
         </p>

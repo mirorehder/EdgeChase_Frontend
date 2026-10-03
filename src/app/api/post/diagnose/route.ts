@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { env } from "@/lib/env";
 import { prisma } from "@/lib/db";
-import { TRACK_LISTE, bewertungsart, type Track } from "@/lib/trackClient";
+import { TRACK_LISTE, bewertungsart, materialTrack, type Track } from "@/lib/trackClient";
 import { igZugang, pruefeZugang, pruefeTrialFaehig } from "@/lib/instagram";
-import { getPostZeitplan, naechstesVideo, letzteLaeufe, bestandDerSparte } from "@/lib/postAuto";
+import { getPostZeitplan, naechstesVideo, letzteLaeufe, bestandDerSparte, ortstagFuer } from "@/lib/postAuto";
 import { getViralSchedule } from "@/lib/viralSchedule";
 import { MIN_USABLE_ANALYSIS_VERSION } from "@/lib/pipeline";
 import { formatUhrzeit, chFormatZeitstempel } from "@/lib/zeit";
@@ -24,12 +24,13 @@ export const dynamic = "force-dynamic";
 async function generierungsDiagnose(track: Track) {
   const plan = await getViralSchedule(track);
   const nachKrassheit = bewertungsart(track) === "krassheit";
+  const material = materialTrack(track);
   const clipWhere = nachKrassheit
-    ? { track, analysisVersion: { gte: MIN_USABLE_ANALYSIS_VERSION }, stuntScore: { gte: 0.25 } }
-    : { track, analysisVersion: { gte: MIN_USABLE_ANALYSIS_VERSION }, apparelScore: { gte: 0.5 } };
+    ? { track: material, analysisVersion: { gte: MIN_USABLE_ANALYSIS_VERSION }, stuntScore: { gte: 0.25 } }
+    : { track: material, analysisVersion: { gte: MIN_USABLE_ANALYSIS_VERSION }, apparelScore: { gte: 0.5 } };
   const [konzepte, quellordnerAktiv, tauglicheClips] = await Promise.all([
     prisma.concept.count({ where: { track } }),
-    prisma.sourceFolder.count({ where: { track, useInVideos: true } }),
+    prisma.sourceFolder.count({ where: { track: material, useInVideos: true } }),
     prisma.clip.count({ where: clipWhere }),
   ]);
   return {
@@ -88,8 +89,10 @@ export async function GET(request: NextRequest) {
         sparte: b.key,
         label: b.label,
         // Nur die Anwesenheit, nicht der Wert.
-        hatToken: !!process.env[varToken] || !!process.env.IG_TOKEN,
-        hatUserId: !!process.env[varUserId] || !!process.env.IG_USER_ID,
+        hatToken: !!zugang?.token,
+        hatUserId: !!zugang?.igUserId,
+        // Ortstag (Promo: DACH, Coaching: Basel) - nur ob eine ID ankommt.
+        hatOrtstag: !!ortstagFuer(b.key),
         // Wenn keine sparten-eigene Variable da ist, faellt es auf den
         // allgemeinen Rueckfall zurueck - fuer den Nutzer sichtbar.
         rueckfallBenutzt:
