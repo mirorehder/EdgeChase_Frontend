@@ -2,9 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { posteVideoJetzt } from "@/lib/postAuto";
 import { istBerechtigt } from "@/lib/ingestAuth";
 
-// Postet genau dieses Video sofort - der Post-Knopf am fertigen Video. Kann
-// bis zu einer halben Minute dauern (Instagram lädt das Video und verarbeitet
-// den Container), deshalb etwas mehr Zeit.
+// Postet genau dieses Video sofort - der Post-Knopf am fertigen Video.
+// Instagram braucht 60-120 s für die Videoverarbeitung. Mit 5-s-Polling
+// passen ~22 Statusabfragen in 120 s - genug Puffer für normale Clips.
 export const maxDuration = 120;
 export const dynamic = "force-dynamic";
 
