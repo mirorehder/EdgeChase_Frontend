@@ -432,12 +432,14 @@ export function waehleSound(eingabe: SoundEingabe): SoundWahl {
  * Promo: Ziel-Markt DACH. Coaching: immer Basel - die Anfragen kommen von dort.
  * Fehlt die Variable, wird der Ortstag übersprungen; der Post läuft weiter.
  * Die ID lässt sich über /api/post/place-search?q=Basel ermitteln. Für Coaching
- * gilt IG_LOCATION_ID_COACHING, ersatzweise die Promo-ID (ebenfalls Basel).
+ * gilt IG_LOCATION_ID_COACHING, ersatzweise die feste Basel-ID.
  */
+const BASEL_LOCATION_ID = "108671032497097";
+
 export function ortstagFuer(track: Track): string | null {
   const promo = process.env.IG_LOCATION_ID_PROMO?.trim() || null;
   if (track === "promo") return promo;
-  if (track === "coaching") return process.env.IG_LOCATION_ID_COACHING?.trim() || promo;
+  if (track === "coaching") return process.env.IG_LOCATION_ID_COACHING?.trim() || BASEL_LOCATION_ID;
   return null;
 }
 
