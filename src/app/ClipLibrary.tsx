@@ -104,6 +104,7 @@ export function ClipLibrary({ track }: { track: Track }) {
   // Aufgeklappte Ordner. Zu ist die Voreinstellung: wie bei Konzepten und den
   // erzeugten Videos startet auch die Clip-Bibliothek kompakt - man klappt den
   // Ordner auf, dessen Clips man sehen will.
+  const [bibliothekOffen, setBibliothekOffen] = useState(false);
   const [offeneOrdner, setOffeneOrdner] = useState<Set<string>>(new Set());
   const [beschreibungen, setBeschreibungen] = useState<Record<string, string>>({});
   const [neuerOrdner, setNeuerOrdner] = useState("");
@@ -429,15 +430,24 @@ export function ClipLibrary({ track }: { track: Track }) {
 
   return (
     <section className="library">
-      <div className="live-head">
-        <h2>{bewertungsart(track) === "krassheit" ? "Clips für Reels" : "Clip-Bibliothek"}</h2>
-        <input
-          className="search"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Suchen in Name, Ordner, Beschreibung …"
-        />
-      </div>
+      <button
+        className="abschnitt-titel"
+        onClick={() => setBibliothekOffen(!bibliothekOffen)}
+        aria-expanded={bibliothekOffen}
+      >
+        <span className="video-pfeil">{bibliothekOffen ? "▾" : "▸"}</span>
+        {bewertungsart(track) === "krassheit" ? "Clips für Reels" : "Clip-Bibliothek"}
+        {clips.length > 0 && <span className="ordner-zahl">{clips.length} Clips</span>}
+      </button>
+
+      {bibliothekOffen && <>
+      <input
+        className="search"
+        style={{ marginTop: 8 }}
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Suchen in Name, Ordner, Beschreibung …"
+      />
 
       {loading ? (
         <p className="empty-state">Wird geladen …</p>
@@ -771,6 +781,7 @@ export function ClipLibrary({ track }: { track: Track }) {
           ein herausragender Trick weiter unten setzt sich weiterhin durch.
         </p>
       )}
+      </>}
     </section>
   );
 }

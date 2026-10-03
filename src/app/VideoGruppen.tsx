@@ -481,60 +481,72 @@ export function VideoGruppen({
   ausgabeOrdner: { scheduled: AusgabeOrdnerStand | null; manual: AusgabeOrdnerStand | null };
 }) {
   const router = useRouter();
+  const [hauptOffen, setHauptOffen] = useState(false);
   const [laeuft, setLaeuft] = useState(false);
   const nachZeitplan = zeilen.filter((z) => z.origin === "scheduled");
   const vonHand = zeilen.filter((z) => z.origin !== "scheduled");
   const fehlgeschlagen = zeilen.filter((z) => z.status === "failed");
 
-  // Kein früher Ausstieg bei leerer Liste mehr: die Ausgabeordner sollen sich
-  // festlegen lassen, bevor das erste Video existiert - genau dann braucht man
-  // sie, um die Posting-Routine aufzustellen.
   return (
-    <div className="video-gruppen">
-      {/* Scheitern selten einzelne Renders, sondern alle - etwa wenn das
-          AWS-Kontingent voll ist oder ein Zugangstoken abgelaufen -, waere es
-          muehsam, jeden Auftrag einzeln aufzuklappen. */}
-      {fehlgeschlagen.length > 1 && (
-        <div className="actions">
-          <button
-            className="secondary"
-            disabled={laeuft}
-            onClick={async () => {
-              setLaeuft(true);
-              await fetch(`/api/jobs/retry?track=${track}&alle=1`, { method: "POST" }).catch(
-                () => {},
-              );
-              router.refresh();
-              setLaeuft(false);
-            }}
-          >
-            {laeuft
-              ? "Werden eingereiht …"
-              : `${fehlgeschlagen.length} fehlgeschlagene erneut versuchen`}
-          </button>
+    <section className="video-gruppen-wrapper">
+      <button
+        className="abschnitt-titel"
+        onClick={() => setHauptOffen(!hauptOffen)}
+        aria-expanded={hauptOffen}
+      >
+        <span className="video-pfeil">{hauptOffen ? "▾" : "▸"}</span>
+        Erzeugte Videos
+        <span className="ordner-zahl">{zeilen.length} Video{zeilen.length === 1 ? "" : "s"}</span>
+      </button>
+
+      {hauptOffen && (
+        <div className="video-gruppen">
+          {/* Scheitern selten einzelne Renders, sondern alle - etwa wenn das
+              AWS-Kontingent voll ist oder ein Zugangstoken abgelaufen -, waere es
+              muehsam, jeden Auftrag einzeln aufzuklappen. */}
+          {fehlgeschlagen.length > 1 && (
+            <div className="actions">
+              <button
+                className="secondary"
+                disabled={laeuft}
+                onClick={async () => {
+                  setLaeuft(true);
+                  await fetch(`/api/jobs/retry?track=${track}&alle=1`, { method: "POST" }).catch(
+                    () => {},
+                  );
+                  router.refresh();
+                  setLaeuft(false);
+                }}
+              >
+                {laeuft
+                  ? "Werden eingereiht …"
+                  : `${fehlgeschlagen.length} fehlgeschlagene erneut versuchen`}
+              </button>
+            </div>
+          )}
+
+          <Gruppe
+            art="scheduled"
+            titel="Nach Zeitplan"
+            zeichen="⏱"
+            hinweis="automatisch zur festgelegten Zeit entstanden"
+            zeilen={nachZeitplan}
+            offenVoreingestellt={false}
+            track={track}
+            ordner={ausgabeOrdner.scheduled}
+          />
+          <Gruppe
+            art="manual"
+            titel="Von Hand"
+            zeichen="✋"
+            hinweis="im Dashboard oder per Dialog ausgelöst"
+            zeilen={vonHand}
+            offenVoreingestellt={false}
+            track={track}
+            ordner={ausgabeOrdner.manual}
+          />
         </div>
       )}
-
-      <Gruppe
-        art="scheduled"
-        titel="Nach Zeitplan"
-        zeichen="⏱"
-        hinweis="automatisch zur festgelegten Zeit entstanden"
-        zeilen={nachZeitplan}
-        offenVoreingestellt
-        track={track}
-        ordner={ausgabeOrdner.scheduled}
-      />
-      <Gruppe
-        art="manual"
-        titel="Von Hand"
-        zeichen="✋"
-        hinweis="im Dashboard oder per Dialog ausgelöst"
-        zeilen={vonHand}
-        offenVoreingestellt={nachZeitplan.length === 0}
-        track={track}
-        ordner={ausgabeOrdner.manual}
-      />
-    </div>
+    </section>
   );
 }
