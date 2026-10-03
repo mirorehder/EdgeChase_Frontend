@@ -2,10 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { posteVideoJetzt } from "@/lib/postAuto";
 import { istBerechtigt } from "@/lib/ingestAuth";
 
-// Postet genau dieses Video sofort - der Post-Knopf am fertigen Video. Kann
-// bis zu einer halben Minute dauern (Instagram lädt das Video und verarbeitet
-// den Container), deshalb etwas mehr Zeit.
-export const maxDuration = 120;
+// Postet genau dieses Video sofort - der Post-Knopf am fertigen Video.
+// Instagram braucht 60-120 s für die Videoverarbeitung; 300 s gibt genug
+// Puffer auch bei längeren Clips (Vercel Pro erlaubt bis zu 300 s).
+export const maxDuration = 300;
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
