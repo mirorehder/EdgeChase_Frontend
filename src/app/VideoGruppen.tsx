@@ -409,13 +409,7 @@ function AusgabeOrdnerFeld({
   );
 }
 
-/**
- * Eine Gruppe von Videos, die sich als Ganzes zuklappen lässt.
- *
- * Voreingestellt offen ist nur der Zeitplan: das ist die tägliche Ausbeute.
- * Die Handversuche sammeln sich schnell an und interessieren meist nur, wenn
- * man gezielt nachsieht.
- */
+/** Eine Gruppe von Videos, die sich als Ganzes zuklappen lässt. */
 function Gruppe({
   art,
   titel,
