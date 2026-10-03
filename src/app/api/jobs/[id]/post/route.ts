@@ -3,9 +3,9 @@ import { posteVideoJetzt } from "@/lib/postAuto";
 import { istBerechtigt } from "@/lib/ingestAuth";
 
 // Postet genau dieses Video sofort - der Post-Knopf am fertigen Video.
-// Instagram braucht 60-120 s für die Videoverarbeitung; 300 s gibt genug
-// Puffer auch bei längeren Clips (Vercel Pro erlaubt bis zu 300 s).
-export const maxDuration = 300;
+// Instagram braucht 60-120 s für die Videoverarbeitung. Mit 5-s-Polling
+// passen ~22 Statusabfragen in 120 s - genug Puffer für normale Clips.
+export const maxDuration = 120;
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest, { params }: { params: { id: string } }) {

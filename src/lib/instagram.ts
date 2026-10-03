@@ -239,9 +239,9 @@ export async function posteReelMit(
   // Aufrufquote. 30 Versuche = bis zu 30 Minuten Wartezeit - reicht auch für
   // längere Videos, ohne dass die Route in Vercels Zeitgrenze läuft.
   const versuche = opt.versuche ?? 30;
-  // 15 s statt 60 s: schnelleres Feedback, und innerhalb von maxDuration=300 s
-  // passen damit bis zu 18 Checks (Instagram ist meist nach 60-90 s fertig).
-  const abstandMs = opt.abstandMs ?? 15_000;
+  // 5 s statt 60 s: innerhalb von maxDuration=120 s passen ~22 Checks.
+  // Instagram ist meist nach 60-90 s fertig, das wird sicher abgefangen.
+  const abstandMs = opt.abstandMs ?? 5_000;
   const schlaf = opt.schlaf ?? schlafStandard;
 
   // 0. SICHERHEIT: Trial nur auf einem trial-berechtigten Konto.
