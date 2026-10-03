@@ -105,25 +105,30 @@ export function ViralSchedule({ track }: { track: Track }) {
       ? konzepte.filter((k) => gewaehlt.has(k.id)).length
       : konzepte.length;
 
+  const zusammenfassung = settings.enabled
+    ? `${settings.zeitpunkt} · ${settings.videosPerDay}/Tag · ${aktiveKonzepte} Konzept(e)`
+    : "aus";
+
   return (
     <section className="daily">
-      <div className="live-head">
-        <h2>Zeitplan</h2>
-        <button className="secondary" onClick={() => setOpen(!open)}>
-          {open ? "Zuklappen" : "Zeitplan ändern"}
-        </button>
-      </div>
-
-      <p className="chat-hint">
-        {settings.enabled
-          ? `Täglich um ${settings.zeitpunkt}: ${settings.videosPerDay} Edit(s), ` +
-            (settings.conceptMode === "fixed"
-              ? `feste Auswahl aus ${aktiveKonzepte} Konzept(en), der Reihe nach.`
-              : `reihum aus allen ${aktiveKonzepte} Konzepten.`)
-          : "Abgeschaltet - es entstehen keine Edits von selbst."}
-      </p>
+      <button className="abschnitt-titel" onClick={() => setOpen(!open)} aria-expanded={open}>
+        <span className="video-pfeil">{open ? "▾" : "▸"}</span>
+        Zeitplan
+        <span className="ordner-zahl" style={{ color: settings.enabled ? "var(--ok)" : undefined }}>
+          {zusammenfassung}
+        </span>
+      </button>
 
       {open && (
+        <>
+          <p className="chat-hint">
+            {settings.enabled
+              ? `Täglich um ${settings.zeitpunkt}: ${settings.videosPerDay} Edit(s), ` +
+                (settings.conceptMode === "fixed"
+                  ? `feste Auswahl aus ${aktiveKonzepte} Konzept(en), der Reihe nach.`
+                  : `reihum aus allen ${aktiveKonzepte} Konzepten.`)
+              : "Abgeschaltet - es entstehen keine Edits von selbst."}
+          </p>
         <div className="clip-editor daily-editor">
           <label className="checkbox">
             <input
@@ -243,10 +248,10 @@ export function ViralSchedule({ track }: { track: Track }) {
             </button>
           </div>
         </div>
-      )}
-
-      {note && (
-        <p className={note.error ? "action-message error" : "action-message"}>{note.text}</p>
+          {note && (
+            <p className={note.error ? "action-message error" : "action-message"}>{note.text}</p>
+          )}
+        </>
       )}
     </section>
   );

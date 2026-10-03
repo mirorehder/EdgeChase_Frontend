@@ -229,7 +229,6 @@ export default async function DashboardPage() {
           <ConceptLibrary track={track} />
           <ClipLibrary track={track} />
 
-          <h2>Erzeugte Videos</h2>
           <VideoGruppen zeilen={data.zeilen} track={track} ausgabeOrdner={data.ausgabeOrdner} />
         </>,
       ];

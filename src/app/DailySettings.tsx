@@ -105,24 +105,29 @@ export function DailySettings() {
   const hookAnzahl = settings.hookTexts.filter((t) => t.trim()).length;
   const captionAnzahl = settings.captions.filter((t) => t.trim()).length;
 
+  const zusammenfassung = settings.enabled
+    ? `${settings.clipCount} Clips/Tag · ${settings.maxSecondsPerScene}s/Szene`
+    : "aus";
+
   return (
     <section className="daily">
-      <div className="live-head">
-        <h2>Täglicher Lauf</h2>
-        <button className="secondary" onClick={() => setOpen(!open)}>
-          {open ? "Zuklappen" : "Vorgaben ändern"}
-        </button>
-      </div>
-
-      <p className="chat-hint">
-        {settings.enabled
-          ? `Jeden Morgen um 08:00 UTC: ${settings.clipCount} Clips à ${settings.maxSecondsPerScene}s, Stil „${settings.textStyle}". ` +
-            `Video-Text: ${settings.hookMode === "eigene" ? `${hookAnzahl} eigene (rotierend)` : "per KI"}. ` +
-            `Caption: ${settings.captionMode === "eigene" ? `${captionAnzahl} eigene (rotierend)` : "per KI"}.`
-          : "Abgeschaltet - der Zeitplan legt derzeit kein Video an."}
-      </p>
+      <button className="abschnitt-titel" onClick={() => setOpen(!open)} aria-expanded={open}>
+        <span className="video-pfeil">{open ? "▾" : "▸"}</span>
+        Täglicher Lauf
+        <span className="ordner-zahl" style={{ color: settings.enabled ? "var(--ok)" : undefined }}>
+          {zusammenfassung}
+        </span>
+      </button>
 
       {open && (
+        <>
+          <p className="chat-hint">
+            {settings.enabled
+              ? `Jeden Morgen um 08:00 UTC: ${settings.clipCount} Clips à ${settings.maxSecondsPerScene}s, Stil „${settings.textStyle}". ` +
+                `Video-Text: ${settings.hookMode === "eigene" ? `${hookAnzahl} eigene (rotierend)` : "per KI"}. ` +
+                `Caption: ${settings.captionMode === "eigene" ? `${captionAnzahl} eigene (rotierend)` : "per KI"}.`
+              : "Abgeschaltet - der Zeitplan legt derzeit kein Video an."}
+          </p>
         <div className="clip-editor daily-editor">
           {/* Video-Text (Overlay) */}
           <div className="caption-block">
@@ -262,6 +267,7 @@ export function DailySettings() {
             {note && <span className="action-message">{note}</span>}
           </div>
         </div>
+        </>
       )}
     </section>
   );
