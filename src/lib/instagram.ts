@@ -317,11 +317,28 @@ export async function posteReelMit(
     anlegen.set("location_id", auftrag.locationId);
   }
 
-  const containerRes = await netz(`${GRAPH}/${igUserId}/media`, {
+  let containerRes = await netz(`${GRAPH}/${igUserId}/media`, {
     method: "POST",
     body: anlegen,
   });
-  const containerDaten = (await containerRes.json()) as { id?: string; error?: { message?: string } };
+  let containerDaten = (await containerRes.json()) as { id?: string; error?: { message?: string; code?: number } };
+  // Wenn die location_id ungültig ist, Retry ohne sie - lieber kein Ortstag
+  // als ein ausgefallener Post. Meta gibt code 100 + "location_id" im Text.
+  if (
+    !containerRes.ok &&
+    auftrag.locationId &&
+    (containerDaten.error?.message ?? "").toLowerCase().includes("location_id")
+  ) {
+    console.warn(
+      `[instagram] location_id "${auftrag.locationId}" abgelehnt (${containerDaten.error?.message}). Retry ohne Ortstag.`,
+    );
+    anlegen.delete("location_id");
+    containerRes = await netz(`${GRAPH}/${igUserId}/media`, {
+      method: "POST",
+      body: anlegen,
+    });
+    containerDaten = (await containerRes.json()) as { id?: string; error?: { message?: string; code?: number } };
+  }
   if (!containerRes.ok || !containerDaten.id) {
     return { ok: false, fehler: containerDaten.error?.message || "Container nicht angelegt." };
   }
