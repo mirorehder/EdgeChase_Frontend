@@ -434,6 +434,20 @@ export function waehleSound(eingabe: SoundEingabe): SoundWahl {
  * Die ID lässt sich über /api/post/place-search?q=Basel ermitteln. Für Coaching
  * gilt IG_LOCATION_ID_COACHING, ersatzweise die feste Basel-ID.
  */
+/**
+ * Die Caption vor den Hashtags. Eine eigene Caption (postCaption) geht immer
+ * vor. Sonst: Sparten mit eigener Caption (Coaching) nehmen den Hook-Text und
+ * nie den KI-Titel; alle anderen wie bisher Titel, dann Hook-Text.
+ */
+function captionRohFuer(
+  track: Track,
+  video: { postCaption: string | null; fileTitle: string | null; hookText: string },
+): string {
+  const hook = video.hookText.replace(/\n/g, " ");
+  if (trackBeschreibung(track).eigeneCaption) return video.postCaption?.trim() || hook;
+  return video.postCaption || video.fileTitle || hook;
+}
+
 const BASEL_LOCATION_ID = "108671032497097";
 
 export function ortstagFuer(track: Track): string | null {
@@ -577,7 +591,7 @@ export async function posteFaelliges(track: Track, jetzt = new Date()): Promise<
 
   // Eigene, feste Bildunterschrift (Promo mit rotierenden Captions) geht vor;
   // sonst wie bisher der KI-Titel bzw. der Hook-Text.
-  const captionRoh = kandidat.postCaption || kandidat.fileTitle || kandidat.hookText.replace(/\n/g, " ");
+  const captionRoh = captionRohFuer(track, kandidat);
   const caption = mitHashtags(captionRoh, zeitplan.hashtags);
 
   // Ortstag nur fuer die Promo-Sparte (Ziel-Markt DACH); andere Sparten posten
@@ -752,7 +766,7 @@ export async function posteVideoJetzt(videoId: string, jetzt = new Date()): Prom
           : "kein Sound";
   }
 
-  const captionRoh = video.postCaption || video.fileTitle || video.hookText.replace(/\n/g, " ");
+  const captionRoh = captionRohFuer(track, video);
   const caption = mitHashtags(captionRoh, zeitplan.hashtags);
   const locationId = ortstagFuer(track);
 

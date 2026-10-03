@@ -223,7 +223,6 @@ export async function listSourceClips(
   // Der Ordner aus der Umgebung zählt weiterhin mit: die Promo-Sparte hat
   // keine Einträge in der Ordnertabelle und stünde sonst ungeschützt da.
   for (const t of ["promo", "viral", "sports", "clothing"] as Track[]) {
-    // "coaching" teilt das Material mit "viral" und hat keinen eigenen Ordner.
     if (t !== track) andereWurzeln.add(sourceFolderId(t));
   }
 

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { trackFromRequest } from "@/lib/trackParam";
-import { bewertungsart, materialTrack, trackBeschreibung, type Track } from "@/lib/trackClient";
+import { bewertungsart, trackBeschreibung, type Track } from "@/lib/trackClient";
 import { prisma } from "@/lib/db";
 import {
   interpretChatRequest,
@@ -106,18 +106,17 @@ export async function POST(request: NextRequest) {
  */
 async function reelsDialog(track: Track, turns: ChatTurn[], letzterWunsch: string) {
   const verwendbar = await usableFolderIds(track);
-  const material = materialTrack(track);
 
   const [ordnerZeilen, brauchbar, recentVideos] = await Promise.all([
     prisma.sourceFolder.findMany({
-      where: { track: material, useInVideos: true },
+      where: { track, useInVideos: true },
       orderBy: [{ sortIndex: "asc" }, { createdAt: "asc" }],
       select: { driveFolderId: true, name: true, description: true },
     }),
     prisma.clip.groupBy({
       by: ["rootFolderId"],
       where: {
-        track: material,
+        track,
         analysisVersion: { gte: MIN_USABLE_ANALYSIS_VERSION },
         disabled: false,
         stuntScore: { gte: STUNT_SCORE_THRESHOLD },

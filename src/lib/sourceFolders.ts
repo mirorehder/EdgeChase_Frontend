@@ -1,6 +1,6 @@
 import { prisma } from "./db";
 import { folderName, type SourceRoot } from "./drive";
-import { materialTrack, type Track } from "./trackClient";
+import { type Track } from "./trackClient";
 
 /**
  * Die Quellordner einer Sparte, wie sie das Dashboard verwaltet.
@@ -28,7 +28,6 @@ export interface SourceFolderView {
 }
 
 export async function listFolders(track: Track): Promise<SourceFolderView[]> {
-  track = materialTrack(track); // gemeinsames Material, siehe materialTrack
   const folders = await prisma.sourceFolder.findMany({
     where: { track },
     orderBy: [{ sortIndex: "asc" }, { createdAt: "asc" }],
@@ -63,7 +62,6 @@ export async function listFolders(track: Track): Promise<SourceFolderView[]> {
  * Drive um, zieht der Abgleich nach - siehe syncClipLibrary.
  */
 export async function fillMissingFolderNames(track: Track): Promise<void> {
-  track = materialTrack(track); // gemeinsames Material, siehe materialTrack
   const ohneNamen = await prisma.sourceFolder.findMany({ where: { track, name: "" } });
 
   for (const f of ohneNamen) {
@@ -76,7 +74,6 @@ export async function fillMissingFolderNames(track: Track): Promise<void> {
 
 /** Die Ordner, die abgeglichen und ausgewertet werden sollen. */
 export async function foldersToScan(track: Track): Promise<SourceRoot[]> {
-  track = materialTrack(track); // gemeinsames Material, siehe materialTrack
   const folders = await prisma.sourceFolder.findMany({
     where: { track, autoAnalyze: true },
     orderBy: [{ sortIndex: "asc" }, { createdAt: "asc" }],
@@ -91,7 +88,6 @@ export async function foldersToScan(track: Track): Promise<SourceRoot[]> {
  * dann gilt keine Einschränkung, und die Promo-Sparte verhält sich wie bisher.
  */
 export async function usableFolderIds(track: Track): Promise<string[] | null> {
-  track = materialTrack(track); // gemeinsames Material, siehe materialTrack
   const alle = await prisma.sourceFolder.count({ where: { track } });
   if (alle === 0) return null;
 
@@ -104,7 +100,6 @@ export async function usableFolderIds(track: Track): Promise<string[] | null> {
 
 /** Beschreibungen je Ordner - Kontext für Analyse und Auswahl. */
 export async function folderDescriptions(track: Track): Promise<Map<string, string>> {
-  track = materialTrack(track); // gemeinsames Material, siehe materialTrack
   const folders = await prisma.sourceFolder.findMany({
     where: { track },
     select: { driveFolderId: true, description: true },
@@ -143,19 +138,17 @@ export async function addFolder(
   track: Track,
   eingabe: string,
 ): Promise<{ id: string; name: string }> {
-  track = materialTrack(track); // gemeinsames Material, siehe materialTrack
   const driveFolderId = ordnerIdAus(eingabe);
   if (!driveFolderId) {
     throw new Error("Das sieht nicht nach einem Drive-Ordner aus. Adresse oder Ordner-ID einfügen.");
   }
 
-  const schonDa = await prisma.sourceFolder.findUnique({ where: { driveFolderId } });
+  // Derselbe Ordner darf in mehreren Sparten stehen - geprüft wird nur diese.
+  const schonDa = await prisma.sourceFolder.findUnique({
+    where: { driveFolderId_track: { driveFolderId, track } },
+  });
   if (schonDa) {
-    throw new Error(
-      schonDa.track === track
-        ? "Dieser Ordner ist in dieser Sparte schon eingetragen."
-        : `Dieser Ordner gehört bereits zur Sparte "${schonDa.track}".`,
-    );
+    throw new Error("Dieser Ordner ist in dieser Sparte schon eingetragen.");
   }
 
   const letzter = await prisma.sourceFolder.findFirst({

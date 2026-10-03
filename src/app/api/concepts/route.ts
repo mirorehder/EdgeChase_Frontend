@@ -57,6 +57,7 @@ export async function POST(request: NextRequest) {
       title?: string;
       hookText?: string;
       description?: string;
+      caption?: string;
     };
     const track = trackFromValue(body.track);
     // Nur in den Reels-Sparten sinnvoll; im Promo-Generator bleibt Fremdmaterial
@@ -72,7 +73,7 @@ export async function POST(request: NextRequest) {
       if (!hookText) {
         return NextResponse.json({ error: "Kein Hook-Text angegeben." }, { status: 400 });
       }
-      return await manuellesKonzept(track, body.title, hookText, body.description);
+      return await manuellesKonzept(track, body.title, hookText, body.description, body.caption);
     }
 
     // Zwei Herkuenfte: aus dem Dashboard kommt die Datei in Stuecken durch die
@@ -204,6 +205,7 @@ async function manuellesKonzept(
   titel: string | undefined,
   hookText: string,
   beschreibung: string | undefined,
+  caption?: string,
 ) {
   const clipCount = 4;
   const totalSeconds = 12;
@@ -222,6 +224,7 @@ async function manuellesKonzept(
       totalSeconds,
       secondsPerScene: totalSeconds / clipCount,
       theme: (beschreibung ?? "").trim() || null,
+      postCaption: (caption ?? "").trim() || null,
       notes: null,
     },
   });

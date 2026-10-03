@@ -47,6 +47,11 @@ export interface TrackBeschreibung {
    * werden ausschliesslich von Hand geschrieben (Text und Regie selbst).
    */
   referenzUpload: boolean;
+  /**
+   * Schreibt der Nutzer die Instagram-Caption je Konzept selbst? Dann kommt sie
+   * nie von der KI: fehlt sie, gilt der Hook-Text.
+   */
+  eigeneCaption: boolean;
 }
 
 export const TRACK_LISTE: readonly TrackBeschreibung[] = [
@@ -58,6 +63,7 @@ export const TRACK_LISTE: readonly TrackBeschreibung[] = [
     bewertung: "kleidung",
     nachKonzept: false,
     referenzUpload: true,
+    eigeneCaption: false,
   },
   {
     key: "viral",
@@ -67,6 +73,7 @@ export const TRACK_LISTE: readonly TrackBeschreibung[] = [
     bewertung: "krassheit",
     nachKonzept: true,
     referenzUpload: true,
+    eigeneCaption: false,
   },
   {
     key: "sports",
@@ -76,6 +83,7 @@ export const TRACK_LISTE: readonly TrackBeschreibung[] = [
     bewertung: "krassheit",
     nachKonzept: true,
     referenzUpload: true,
+    eigeneCaption: false,
   },
   {
     key: "clothing",
@@ -85,6 +93,7 @@ export const TRACK_LISTE: readonly TrackBeschreibung[] = [
     bewertung: "kleidung",
     nachKonzept: true,
     referenzUpload: true,
+    eigeneCaption: false,
   },
   {
     key: "coaching",
@@ -94,6 +103,7 @@ export const TRACK_LISTE: readonly TrackBeschreibung[] = [
     bewertung: "krassheit",
     nachKonzept: true,
     referenzUpload: false,
+    eigeneCaption: true,
   },
 ] as const;
 
@@ -103,20 +113,6 @@ export function trackBeschreibung(track: Track): TrackBeschreibung {
   const gefunden = TRACK_LISTE.find((t) => t.key === track);
   if (!gefunden) throw new Error(`Unbekannte Sparte: ${track}`);
   return gefunden;
-}
-
-/**
- * Aus welcher Sparte eine Sparte ihr Clip-Material bezieht.
- *
- * "coaching" hat keine eigene Bibliothek: Clips, Quellordner und deren
- * Analyse gehören der Sparte "viral" und werden mitgenutzt. Eine Kopie ginge
- * nicht (Clip.driveFileId ist eindeutig) und würde jeden Clip ein zweites Mal
- * bei Gemini auswerten lassen. Überall, wo Clips oder Quellordner gelesen
- * werden, gilt deshalb diese Sparte - Konzepte, Zeitplan, Posting und Videos
- * bleiben je Sparte getrennt.
- */
-export function materialTrack(track: Track): Track {
-  return track === "coaching" ? "viral" : track;
 }
 
 /** Wie die Sparten in der Oberfläche heissen. */

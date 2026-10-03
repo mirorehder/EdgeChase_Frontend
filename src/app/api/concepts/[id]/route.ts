@@ -38,6 +38,8 @@ interface Patch {
    * Anweisung nie wieder entfernen.
    */
   theme?: string;
+  /** Eigene Instagram-Caption; wie theme: undefined = unverändert, "" = entfernt. */
+  postCaption?: string;
   /** Übersteuerung des Fremdmaterials: "auto", "an" oder "aus". */
   foreignMode?: string;
 }
@@ -123,6 +125,10 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
         // undefined = nicht angefasst; leerer String = ausdrücklich entfernt.
         theme:
           patch.theme === undefined ? concept.theme : patch.theme.trim() || null,
+        postCaption:
+          patch.postCaption === undefined
+            ? concept.postCaption
+            : patch.postCaption.trim() || null,
         // Falls der Schalter im selben Patch mitkommt.
         ...(foreignMode !== undefined ? { foreignMode } : {}),
       },
