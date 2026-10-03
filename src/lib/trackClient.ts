@@ -12,7 +12,7 @@
  * Das Verhältnis aus Nutzen und Risiko stimmt nicht. Was der Nutzer liest,
  * steht in TRACKS[].label.
  */
-export type Track = "promo" | "viral" | "sports" | "clothing";
+export type Track = "promo" | "viral" | "sports" | "clothing" | "coaching";
 
 /**
  * Wonach die Clips einer Sparte bewertet und ausgewählt werden.
@@ -42,6 +42,11 @@ export interface TrackBeschreibung {
    * Text daraus) oder nach den festen Vorgaben des Tageslaufs?
    */
   nachKonzept: boolean;
+  /**
+   * Lassen sich Konzepte aus einem Referenzvideo ableiten? Aus: die Konzepte
+   * werden ausschliesslich von Hand geschrieben (Text und Regie selbst).
+   */
+  referenzUpload: boolean;
 }
 
 export const TRACK_LISTE: readonly TrackBeschreibung[] = [
@@ -52,6 +57,7 @@ export const TRACK_LISTE: readonly TrackBeschreibung[] = [
     untertitel: "Werbevideos aus dem Shooting-Material",
     bewertung: "kleidung",
     nachKonzept: false,
+    referenzUpload: true,
   },
   {
     key: "viral",
@@ -60,6 +66,7 @@ export const TRACK_LISTE: readonly TrackBeschreibung[] = [
     untertitel: "Parkour-Höhepunkte nach Konzept",
     bewertung: "krassheit",
     nachKonzept: true,
+    referenzUpload: true,
   },
   {
     key: "sports",
@@ -68,6 +75,7 @@ export const TRACK_LISTE: readonly TrackBeschreibung[] = [
     untertitel: "Sport-Höhepunkte nach Konzept",
     bewertung: "krassheit",
     nachKonzept: true,
+    referenzUpload: true,
   },
   {
     key: "clothing",
@@ -76,6 +84,16 @@ export const TRACK_LISTE: readonly TrackBeschreibung[] = [
     untertitel: "Die Kleidung in Bewegung, nach Konzept",
     bewertung: "kleidung",
     nachKonzept: true,
+    referenzUpload: true,
+  },
+  {
+    key: "coaching",
+    kurz: "Coaching",
+    label: "Coaching Videos",
+    untertitel: "Videos, die Coaching-Anfragen bringen",
+    bewertung: "krassheit",
+    nachKonzept: true,
+    referenzUpload: false,
   },
 ] as const;
 
@@ -85,6 +103,20 @@ export function trackBeschreibung(track: Track): TrackBeschreibung {
   const gefunden = TRACK_LISTE.find((t) => t.key === track);
   if (!gefunden) throw new Error(`Unbekannte Sparte: ${track}`);
   return gefunden;
+}
+
+/**
+ * Aus welcher Sparte eine Sparte ihr Clip-Material bezieht.
+ *
+ * "coaching" hat keine eigene Bibliothek: Clips, Quellordner und deren
+ * Analyse gehören der Sparte "viral" und werden mitgenutzt. Eine Kopie ginge
+ * nicht (Clip.driveFileId ist eindeutig) und würde jeden Clip ein zweites Mal
+ * bei Gemini auswerten lassen. Überall, wo Clips oder Quellordner gelesen
+ * werden, gilt deshalb diese Sparte - Konzepte, Zeitplan, Posting und Videos
+ * bleiben je Sparte getrennt.
+ */
+export function materialTrack(track: Track): Track {
+  return track === "coaching" ? "viral" : track;
 }
 
 /** Wie die Sparten in der Oberfläche heissen. */

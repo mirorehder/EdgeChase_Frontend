@@ -510,7 +510,7 @@ model SourceFolder {
 }
 
 /// Der Zeitplan einer Sparte. Eine Zeile je Sparte, der Schlüssel ist die
-/// Sparte selbst ("viral", "sports", "clothing").
+/// Sparte selbst ("viral", "sports", "clothing", "coaching").
 ///
 /// Die Promo-Sparte hat ihren eigenen Satz Einstellungen (DailySettings) und
 /// steht deshalb nicht hier.
@@ -546,7 +546,7 @@ model TrackSchedule {
 /// Zeile, gilt weiterhin der bisherige Standard - die Einstellung ist ein
 /// Zusatz, kein Zwang.
 model AusgabeOrdner {
-  /// Die Sparte: "promo", "viral", "sports" oder "clothing".
+  /// Die Sparte: "promo", "viral", "sports", "clothing" oder "coaching".
   track String
 
   /// Woher das Video stammt, dessen Ablage hier geregelt wird:
@@ -582,7 +582,7 @@ model AusgabeOrdner {
 /// Fehlt die Zeile, ist die Automatik für die Sparte aus - dann passiert nichts
 /// von selbst, genau wie bisher.
 model PostZeitplan {
-  /// Die Sparte: "promo", "viral", "sports" oder "clothing".
+  /// Die Sparte: "promo", "viral", "sports", "clothing" oder "coaching".
   id String @id
 
   /// Steht das auf false, postet die Sparte nichts automatisch.
@@ -698,7 +698,7 @@ model PostLauf {
   /// Wann diese Prüfung stattfand (bei zusammengefassten Zeilen: die letzte).
   at DateTime @default(now())
 
-  /// Die Sparte: "promo", "viral", "sports" oder "clothing".
+  /// Die Sparte: "promo", "viral", "sports", "clothing" oder "coaching".
   track String
 
   /// Wurde tatsächlich gepostet?

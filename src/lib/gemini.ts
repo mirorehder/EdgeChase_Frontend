@@ -950,7 +950,7 @@ export async function erfindeVideoTitel(input: TitleInput): Promise<string> {
   const texte = input.texts.filter(Boolean).map((t) => `- "${t.replace(/\n/g, " ")}"`).join("\n");
 
   const worum =
-    input.track === "viral"
+    input.track === "viral" || input.track === "coaching"
       ? "ein schnell geschnittener Parkour-Edit fuer Instagram"
       : "ein kurzes Werbevideo einer Streetwear-Marke";
 

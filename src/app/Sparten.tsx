@@ -143,6 +143,13 @@ function SpartenZeichen({ track }: { track: Track }) {
           <path d="M12 13.5V9.8M9.6 2.5h4.8M12 2.5v3.5" />
         </svg>
       );
+    // Coaching: Sprechblase - der Aufruf, eine DM zu schicken.
+    case "coaching":
+      return (
+        <svg {...gemeinsam} className="tab-zeichen">
+          <path d="M4 5.5h16v10.5H10.5L6 20v-4H4z" />
+        </svg>
+      );
     // Kleidung: T-Shirt.
     case "clothing":
       return (
