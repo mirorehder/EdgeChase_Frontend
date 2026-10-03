@@ -29,6 +29,7 @@ interface Concept {
   totalSeconds: number;
   secondsPerScene: number;
   theme: string | null;
+  postCaption: string | null;
   notes: string | null;
   // Behaltenes Referenzvideo (nur bei Fremdmaterial) und die Übersteuerung.
   referenceVideoUrl: string | null;
@@ -52,6 +53,8 @@ export function ConceptLibrary({ track }: { track: Track }) {
   const nachKrassheit = bewertungsart(track) === "krassheit";
   // Coaching-Konzepte schreibt man selbst: kein Referenzvideo-Upload.
   const mitReferenz = trackBeschreibung(track).referenzUpload;
+  // Coaching: die Instagram-Caption schreibt man pro Konzept selbst, nie die KI.
+  const eigeneCaption = trackBeschreibung(track).eigeneCaption;
   const [concepts, setConcepts] = useState<Concept[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -62,6 +65,7 @@ export function ConceptLibrary({ track }: { track: Track }) {
     title: string;
     phases: TextPhase[];
     theme: string;
+    postCaption: string;
   } | null>(null);
   const [soundId, setSoundId] = useState<string | null>(null);
   const [soundEntwurf, setSoundEntwurf] = useState("");
@@ -77,6 +81,7 @@ export function ConceptLibrary({ track }: { track: Track }) {
   const [neuTitel, setNeuTitel] = useState("");
   const [neuHook, setNeuHook] = useState("");
   const [neuBeschreibung, setNeuBeschreibung] = useState("");
+  const [neuCaption, setNeuCaption] = useState("");
 
   async function load() {
     const res = await fetch(`/api/concepts?track=${track}`, { cache: "no-store" });
@@ -143,6 +148,7 @@ export function ConceptLibrary({ track }: { track: Track }) {
           title: neuTitel,
           hookText,
           description: neuBeschreibung,
+          ...(eigeneCaption ? { caption: neuCaption } : {}),
         }),
       });
       const data = await res.json();
@@ -151,6 +157,7 @@ export function ConceptLibrary({ track }: { track: Track }) {
       setNeuTitel("");
       setNeuHook("");
       setNeuBeschreibung("");
+      setNeuCaption("");
       setNeuOffen(false);
       await load();
     } catch (err) {
@@ -299,6 +306,7 @@ export function ConceptLibrary({ track }: { track: Track }) {
         ? concept.textPhases.map((p) => ({ ...p }))
         : [{ text: concept.hookText, seconds: concept.totalSeconds, role: "plain", sceneHint: "" }],
       theme: concept.theme ?? "",
+      postCaption: concept.postCaption ?? "",
     });
   }
 
@@ -322,6 +330,7 @@ export function ConceptLibrary({ track }: { track: Track }) {
           title: entwurf.title,
           textPhases: entwurf.phases,
           theme: entwurf.theme,
+          ...(eigeneCaption ? { postCaption: entwurf.postCaption } : {}),
         }),
       });
       const data = await res.json();
@@ -458,6 +467,21 @@ export function ConceptLibrary({ track }: { track: Track }) {
               danach am Konzept ändern kannst.
             </span>
           </label>
+          {eigeneCaption && (
+            <label>
+              Caption (Instagram-Bildunterschrift)
+              <textarea
+                rows={3}
+                value={neuCaption}
+                placeholder="z.B. Willst du das lernen? Schick mir eine DM!"
+                onChange={(e) => setNeuCaption(e.target.value)}
+              />
+              <span className="clip-meta">
+                Wird genau so gepostet (plus Hashtags der Sparte), nichts davon schreibt die KI.
+                Leer = der Hook-Text wird als Caption genommen.
+              </span>
+            </label>
+          )}
           <div className="actions" style={{ marginBottom: 0 }}>
             <button onClick={neuesKonzept} disabled={busy !== null || !neuHook.trim()}>
               {busy === "neu" ? "Legt an …" : "Konzept erstellen"}
@@ -522,6 +546,11 @@ export function ConceptLibrary({ track }: { track: Track }) {
                 </span>
                 {concept.theme && (
                   <span className="clip-meta">Regie: {concept.theme}</span>
+                )}
+                {eigeneCaption && (
+                  <span className="clip-meta">
+                    Caption: {concept.postCaption || "(leer - der Hook-Text wird verwendet)"}
+                  </span>
                 )}
                 {/* Mehrere Textphasen nacheinander: erst der Aufbau, dann die
                     Pointe. Erst die Abfolge ergibt bei solchen Videos den
@@ -731,6 +760,22 @@ export function ConceptLibrary({ track }: { track: Track }) {
                         wenn egal. Leeren und speichern entfernt die Anweisung.
                       </span>
                     </label>
+
+                    {eigeneCaption && (
+                      <label>
+                        Caption (Instagram-Bildunterschrift)
+                        <textarea
+                          rows={3}
+                          value={entwurf.postCaption}
+                          placeholder="z.B. Willst du das lernen? Schick mir eine DM!"
+                          onChange={(e) => setEntwurf({ ...entwurf, postCaption: e.target.value })}
+                        />
+                        <span className="clip-meta">
+                          Wird genau so gepostet (plus Hashtags der Sparte), nichts davon schreibt
+                          die KI. Leer = der Hook-Text wird als Caption genommen.
+                        </span>
+                      </label>
+                    )}
 
                     {entwurf.phases.map((phase, i) => (
                       <div key={i} className="phase-editor">

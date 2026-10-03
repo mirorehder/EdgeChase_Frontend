@@ -2299,6 +2299,8 @@ export async function createViralJobFromConcept(
       status: "queued",
       textPhases: (composed.textPhases as unknown as object) ?? undefined,
       fileTitle: composed.fileTitle || null,
+      // Die selbst geschriebene Caption des Konzepts (leer = Rückfall in postAuto).
+      postCaption: concept.postCaption?.trim() || null,
       origin: options.origin ?? "manual",
       // Nicht concept.textStyle: die Gestaltung ist unsere Entscheidung und
       // für alle Reels dieselbe.

@@ -47,6 +47,11 @@ export interface TrackBeschreibung {
    * werden ausschliesslich von Hand geschrieben (Text und Regie selbst).
    */
   referenzUpload: boolean;
+  /**
+   * Schreibt der Nutzer die Instagram-Caption je Konzept selbst? Dann kommt sie
+   * nie von der KI: fehlt sie, gilt der Hook-Text.
+   */
+  eigeneCaption: boolean;
 }
 
 export const TRACK_LISTE: readonly TrackBeschreibung[] = [
@@ -58,6 +63,7 @@ export const TRACK_LISTE: readonly TrackBeschreibung[] = [
     bewertung: "kleidung",
     nachKonzept: false,
     referenzUpload: true,
+    eigeneCaption: false,
   },
   {
     key: "viral",
@@ -67,6 +73,7 @@ export const TRACK_LISTE: readonly TrackBeschreibung[] = [
     bewertung: "krassheit",
     nachKonzept: true,
     referenzUpload: true,
+    eigeneCaption: false,
   },
   {
     key: "sports",
@@ -76,6 +83,7 @@ export const TRACK_LISTE: readonly TrackBeschreibung[] = [
     bewertung: "krassheit",
     nachKonzept: true,
     referenzUpload: true,
+    eigeneCaption: false,
   },
   {
     key: "clothing",
@@ -85,6 +93,7 @@ export const TRACK_LISTE: readonly TrackBeschreibung[] = [
     bewertung: "kleidung",
     nachKonzept: true,
     referenzUpload: true,
+    eigeneCaption: false,
   },
   {
     key: "coaching",
@@ -94,6 +103,7 @@ export const TRACK_LISTE: readonly TrackBeschreibung[] = [
     bewertung: "krassheit",
     nachKonzept: true,
     referenzUpload: false,
+    eigeneCaption: true,
   },
 ] as const;
 

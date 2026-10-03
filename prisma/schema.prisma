@@ -391,6 +391,13 @@ model Concept {
   /// und dem eingeblendeten Text.
   theme String?
 
+  /// Die Instagram-Bildunterschrift, die der Nutzer selbst für dieses Konzept
+  /// schreibt (Sparte "coaching": nie von der KI). Leer = bei Coaching wird der
+  /// Hook-Text als Caption genommen, bei den anderen Sparten gilt wie bisher
+  /// der KI-Titel. Wird beim Erzeugen des Videos in PromoVideo.postCaption
+  /// kopiert.
+  postCaption String?
+
   /// Beobachtungen zur Schrift, zu Farben und zur Platzierung - als
   /// Gedaechtnisstuetze, nicht maschinell ausgewertet.
   notes String?
