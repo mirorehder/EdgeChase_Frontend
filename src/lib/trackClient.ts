@@ -115,20 +115,6 @@ export function trackBeschreibung(track: Track): TrackBeschreibung {
   return gefunden;
 }
 
-/**
- * Aus welcher Sparte eine Sparte ihr Clip-Material bezieht.
- *
- * "coaching" hat keine eigene Bibliothek: Clips, Quellordner und deren
- * Analyse gehören der Sparte "viral" und werden mitgenutzt. Eine Kopie ginge
- * nicht (Clip.driveFileId ist eindeutig) und würde jeden Clip ein zweites Mal
- * bei Gemini auswerten lassen. Überall, wo Clips oder Quellordner gelesen
- * werden, gilt deshalb diese Sparte - Konzepte, Zeitplan, Posting und Videos
- * bleiben je Sparte getrennt.
- */
-export function materialTrack(track: Track): Track {
-  return track === "coaching" ? "viral" : track;
-}
-
 /** Wie die Sparten in der Oberfläche heissen. */
 export const TRACK_TITLE: Record<Track, string> = Object.fromEntries(
   TRACK_LISTE.map((t) => [t.key, t.label]),

@@ -3,27 +3,25 @@ import { prisma } from "@/lib/db";
 import { CURRENT_ANALYSIS_VERSION } from "@/lib/pipeline";
 import { trackFromRequest } from "@/lib/trackParam";
 import { listFolders } from "@/lib/sourceFolders";
-import { bewertungsart, materialTrack } from "@/lib/trackClient";
+import { bewertungsart } from "@/lib/trackClient";
 
 // Greift bei jedem Aufruf live auf die Datenbank zu - nicht statisch cachen.
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
   const track = trackFromRequest(request);
-  // Clips gehören bei "coaching" der Sparte "viral" (siehe materialTrack).
-  const material = materialTrack(track);
 
   // "Tauglich" heisst je Sparte etwas anderes: beim Promo-Video, dass die
   // Kleidung zu sehen ist, beim viralen Edit, dass ueberhaupt ein Trick
   // vorkommt.
   const nachKrassheit = bewertungsart(track) === "krassheit";
   const usableWhere = nachKrassheit
-    ? { track: material, analysisVersion: CURRENT_ANALYSIS_VERSION, stuntScore: { gte: 0.25 } }
-    : { track: material, analysisVersion: CURRENT_ANALYSIS_VERSION, apparelScore: { gte: 0.5 } };
+    ? { track, analysisVersion: CURRENT_ANALYSIS_VERSION, stuntScore: { gte: 0.25 } }
+    : { track, analysisVersion: CURRENT_ANALYSIS_VERSION, apparelScore: { gte: 0.5 } };
 
   const [total, analyzed, usable] = await Promise.all([
-    prisma.clip.count({ where: { track: material } }),
-    prisma.clip.count({ where: { track: material, analysisVersion: CURRENT_ANALYSIS_VERSION } }),
+    prisma.clip.count({ where: { track } }),
+    prisma.clip.count({ where: { track, analysisVersion: CURRENT_ANALYSIS_VERSION } }),
     prisma.clip.count({ where: usableWhere }),
   ]);
 
@@ -39,7 +37,7 @@ export async function GET(request: NextRequest) {
   // Wer sortiert, korrigiert damit eine Rangfolge, statt eine alphabetische
   // Liste erst einmal in eine sinnvolle bringen zu müssen.
   const clips = await prisma.clip.findMany({
-    where: { track: material },
+    where: { track },
     orderBy: nachKrassheit
       ? [
           { manualRank: { sort: "asc", nulls: "last" } },

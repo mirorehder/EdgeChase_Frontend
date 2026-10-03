@@ -4,7 +4,7 @@ import {
   MIN_USABLE_ANALYSIS_VERSION,
   type ComposedScene,
 } from "@/lib/pipeline";
-import { bewertungsart, erlaubteTrackListe, materialTrack, type Track } from "@/lib/trackClient";
+import { bewertungsart, erlaubteTrackListe, type Track } from "@/lib/trackClient";
 import { TriggerButtons } from "./TriggerButtons";
 import { LiveActivity } from "./LiveActivity";
 import { VideoChat } from "./VideoChat";
@@ -47,23 +47,21 @@ interface TrackData {
 
 /** Alles, was eine Sparte für ihre Ansicht braucht - streng auf sie begrenzt. */
 async function ladeSparte(track: Track): Promise<TrackData> {
-  // Clips gehören bei "coaching" der Sparte "viral" (siehe materialTrack).
-  const material = materialTrack(track);
   const usableWhere =
     bewertungsart(track) === "krassheit"
       // Verwendbar heisst nicht "auf aktuellem Stand": nach einem Hochzaehlen
       // der Analyse-Version sind alle Clips veraltet, aber weiterhin
       // brauchbar. Die Zahl darunter zeigt den Stand der Neuanalyse.
-      ? { track: material, analysisVersion: { gte: MIN_USABLE_ANALYSIS_VERSION }, stuntScore: { gte: 0.25 } }
-      : { track: material, analysisVersion: { gte: MIN_USABLE_ANALYSIS_VERSION }, apparelScore: { gte: 0.5 } };
+      ? { track, analysisVersion: { gte: MIN_USABLE_ANALYSIS_VERSION }, stuntScore: { gte: 0.25 } }
+      : { track, analysisVersion: { gte: MIN_USABLE_ANALYSIS_VERSION }, apparelScore: { gte: 0.5 } };
 
   const [jobs, total, analyzed, usable, clips, ausgabeOrdner, postZeitplan, historie, laeufe] =
     await Promise.all([
       prisma.promoVideo.findMany({ where: { track }, orderBy: { createdAt: "desc" }, take: 50 }),
-      prisma.clip.count({ where: { track: material } }),
-      prisma.clip.count({ where: { track: material, analysisVersion: CURRENT_ANALYSIS_VERSION } }),
+      prisma.clip.count({ where: { track } }),
+      prisma.clip.count({ where: { track, analysisVersion: CURRENT_ANALYSIS_VERSION } }),
       prisma.clip.count({ where: usableWhere }),
-      prisma.clip.findMany({ where: { track: material }, select: { id: true, name: true } }),
+      prisma.clip.findMany({ where: { track }, select: { id: true, name: true } }),
       ausgabeOrdnerDerSparte(track),
       getPostZeitplan(track),
       postHistorie(track),

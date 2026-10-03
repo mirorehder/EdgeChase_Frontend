@@ -24,7 +24,10 @@ datasource db {
 ///            und es zaehlt der Moment des Sprungs selbst.
 model Clip {
   id          String @id @default(cuid())
-  driveFileId String @unique
+  /// Eindeutig je Sparte, nicht global: dieselbe Datei kann in zwei Sparten
+  /// als eigener, unabhängig bearbeitbarer Clip stehen (z. B. Doc Meiro und
+  /// Coaching).
+  driveFileId String
   name        String
 
   /// "promo" oder "viral" - siehe oben.
@@ -136,6 +139,7 @@ model Clip {
 
   @@index([apparelScore])
   @@index([lastUsedAt])
+  @@unique([driveFileId, track])
   @@index([track])
   @@index([rootFolderId])
 }
@@ -485,7 +489,7 @@ model SourceFolder {
   id String @id @default(cuid())
 
   /// Die Ordner-ID aus der Drive-Adresse. Ordner-IDs sind keine Geheimnisse.
-  driveFolderId String @unique
+  driveFolderId String
 
   /// Wie der Ordner in Drive heisst. Wird beim Abgleich nachgeführt, damit ein
   /// Umbenennen in Drive im Dashboard ankommt.
@@ -513,6 +517,9 @@ model SourceFolder {
 
   createdAt DateTime @default(now())
 
+  /// Je Sparte eindeutig: derselbe Drive-Ordner darf in mehreren Sparten stehen,
+  /// jede mit eigenen Einstellungen.
+  @@unique([driveFolderId, track])
   @@index([track])
 }
 

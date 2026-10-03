@@ -34,7 +34,7 @@ import { logActivity } from "./activity";
 import { beilageBauen, beilagenName } from "./sound";
 import { getDailySettings, merkeRotation, waehleRotierend } from "./dailyConfig";
 import { getViralSchedule, viralOutputFolderId, viralTextStyle } from "./viralSchedule";
-import { bewertungsart, materialTrack, trackBeschreibung } from "./trackClient";
+import { bewertungsart, trackBeschreibung } from "./trackClient";
 import { trackFromValue } from "./trackParam";
 import { artAusHerkunft, ausgabeOrdnerId } from "./ausgabeOrdner";
 import {
@@ -139,7 +139,6 @@ function trackLabel(track: Track): string {
 
 /** Gleicht die Drive-Quellordner der Sparte mit ihrer Clip-Bibliothek ab; neue Clips werden angelegt, bestehende bleiben unangetastet. */
 export async function syncClipLibrary(track: Track = "promo"): Promise<SyncResult> {
-  track = materialTrack(track); // Clips und Quellordner: siehe materialTrack
   // Nur die Ordner, die eingelesen werden sollen. Ist für die Sparte keiner
   // eingetragen, gilt der Ordner aus der Umgebung - so bleibt die Promo-Sparte
   // unverändert.
@@ -155,7 +154,7 @@ export async function syncClipLibrary(track: Track = "promo"): Promise<SyncResul
     if (gefunden && gefunden.rootFolderName !== wurzel.name) {
       await prisma.sourceFolder
         .update({
-          where: { driveFolderId: wurzel.driveFolderId },
+          where: { driveFolderId_track: { driveFolderId: wurzel.driveFolderId, track } },
           data: { name: gefunden.rootFolderName },
         })
         .catch(() => {
@@ -164,7 +163,9 @@ export async function syncClipLibrary(track: Track = "promo"): Promise<SyncResul
     }
   }
 
-  const existing = await prisma.clip.findMany({ select: { driveFileId: true } });
+  // Nur die Clips dieser Sparte: dieselbe Datei kann in einer anderen Sparte
+  // als eigener Clip stehen.
+  const existing = await prisma.clip.findMany({ where: { track }, select: { driveFileId: true } });
   const existingIds = new Set(existing.map((c) => c.driveFileId));
 
   const newFiles = driveFiles.filter((f) => !existingIds.has(f.id));
@@ -226,7 +227,6 @@ export async function syncClipLibrary(track: Track = "promo"): Promise<SyncResul
 /** Wie viele Clips der Sparte noch auf ihre Analyse warten - damit die
  *  Oberfläche zeigen kann, ob ein weiterer Durchlauf nötig ist. */
 export async function countUnanalyzedClips(track: Track = "promo"): Promise<number> {
-  track = materialTrack(track); // Clips und Quellordner: siehe materialTrack
   return prisma.clip.count({
     where: {
       track,
@@ -242,7 +242,6 @@ export async function countUnanalyzedClips(track: Track = "promo"): Promise<numb
 /** Clips, an denen die Analyse endgültig gescheitert ist. Sie zählen nicht mehr
  *  als "offen", dürfen aber auch nicht unbemerkt verschwinden. */
 export async function countBlockedClips(track: Track = "promo"): Promise<number> {
-  track = materialTrack(track); // Clips und Quellordner: siehe materialTrack
   return prisma.clip.count({
     where: { track, analysisFailures: { gte: MAX_ANALYSIS_FAILURES } },
   });
@@ -335,7 +334,6 @@ function analysisSummary(analysis: ClipAnalysis, track: Track): string {
  * Ordner aus der Umgebung, und die Promo-Sparte verhält sich wie bisher.
  */
 async function analysierbareOrdnerFilter(track: Track) {
-  track = materialTrack(track); // Clips und Quellordner: siehe materialTrack
   const wurzeln = await foldersToScan(track);
   if (!wurzeln.length) return {};
   return { rootFolderId: { in: wurzeln.map((w) => w.driveFolderId) } };
@@ -351,7 +349,6 @@ async function analysierbareOrdnerFilter(track: Track) {
  * pruefen, indem man wirklich analysiert - also mit Gemini und Minuten.
  */
 export async function naechsteZuAnalysieren(track: Track, limit: number) {
-  track = materialTrack(track); // Clips und Quellordner: siehe materialTrack
   return prisma.clip.findMany({
     where: {
       track,
@@ -503,7 +500,7 @@ async function analysiereEinenClip(
     }
 
     // Die Ordner-Beschreibung aus dem Dashboard als Einordnung mitgeben.
-    const beschreibungen = await folderDescriptions(materialTrack(track));
+    const beschreibungen = await folderDescriptions(track);
     const kontext = clip.rootFolderId ? (beschreibungen.get(clip.rootFolderId) ?? "") : "";
 
     return await analyzeClip(pfad, guessMimeType(clip.name), clip.durationMs, track, kontext);
@@ -756,7 +753,6 @@ const ROTATIONS_BONUS = 0.35;
  * ist.
  */
 async function rangGunst(track: Track): Promise<Map<string, number>> {
-  track = materialTrack(track); // Clips und Quellordner: siehe materialTrack
   const clips = await prisma.clip.findMany({
     where: { track, manualRank: { not: null } },
     select: { id: true, rootFolderId: true, manualRank: true },
@@ -792,7 +788,6 @@ async function rangGunst(track: Track): Promise<Map<string, number>> {
  * Rotation waere wieder wirkungslos.
  */
 async function rotationsGunst(track: Track): Promise<Map<string, number>> {
-  track = materialTrack(track); // Clips und Quellordner: siehe materialTrack
   const clips = await prisma.clip.findMany({
     where: { track },
     select: { id: true, lastUsedAt: true },
@@ -884,7 +879,6 @@ export async function viraleKandidaten(
   wantedCount: number,
   ausgeschlossen: string[],
 ) {
-  track = materialTrack(track); // Clips und Quellordner: siehe materialTrack
   const verwendbar = await usableFolderIds(track);
   const gunst = await rangGunst(track);
   const frische = await rotationsGunst(track);
@@ -1198,7 +1192,6 @@ async function waehleAufbauSzene(
   phase: ConceptTextPhase,
   ausgeschlossen: string[],
 ): Promise<ComposedScene | null> {
-  track = materialTrack(track); // Clips und Quellordner: siehe materialTrack
   // Bewusst ohne Mindestbewertung: der Aufbau darf ausdrücklich ein ruhiger
   // Clip sein, und genau die sind sonst aussortiert.
   const verwendbar = await usableFolderIds(track);
@@ -1216,7 +1209,7 @@ async function waehleAufbauSzene(
   });
   if (!kandidaten.length) return null;
 
-  const beschreibungen = await folderDescriptions(materialTrack(track));
+  const beschreibungen = await folderDescriptions(track);
   const gewaehlt = await selectSetupClip(
     kandidaten.map((c) => ({
       id: c.id,
@@ -1326,7 +1319,7 @@ async function composeViralVideoMitFremdmaterial(
       );
     }
 
-    const beschreibungen = await folderDescriptions(materialTrack(track));
+    const beschreibungen = await folderDescriptions(track);
     const payload: ViralCandidate[] = candidates.map((c) => ({
       id: c.id,
       description: c.description ?? "",
@@ -1492,7 +1485,7 @@ export async function composeViralVideo(
     );
   }
 
-  const beschreibungen = await folderDescriptions(materialTrack(track));
+  const beschreibungen = await folderDescriptions(track);
   const payload: ViralCandidate[] = candidates.map((c) => ({
     id: c.id,
     description: c.description ?? "",
