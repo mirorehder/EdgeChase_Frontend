@@ -17,6 +17,7 @@ import {
   selectViralScenes,
   type ClipAnalysis,
   type ClipCandidate,
+  sichereEigenenTeil,
   type ConceptTextPhase,
   type VideoSpec,
   type ViralCandidate,
@@ -1422,7 +1423,7 @@ export async function composeViralVideo(
   options: ViralComposeOptions,
 ): Promise<ComposedVideo> {
   const gesamtSoll = options.totalSeconds ?? VIRAL_DEFAULT_TOTAL_SECONDS;
-  const phasen: ConceptTextPhase[] = options.textPhases?.length
+  let phasen: ConceptTextPhase[] = options.textPhases?.length
     ? options.textPhases
     : [{ text: options.hookText, seconds: gesamtSoll, role: "plain", sceneHint: "" }];
 
@@ -1431,7 +1432,20 @@ export async function composeViralVideo(
   // Der bewährte Montage-Weg unten bleibt für alle anderen Konzepte
   // unangetastet.
   if (fremdmaterialAktiv(options.foreignMode, options.referenceVideoUrl, phasen)) {
-    return composeViralVideoMitFremdmaterial(track, options, options.referenceVideoUrl!, phasen);
+    // Schutz für Konzepte, bei denen ALLE Phasen als Vorlage markiert sind:
+    // ohne eigenen Teil entstünde eine reine Kopie des Referenzvideos.
+    const gesichert = sichereEigenenTeil(phasen);
+    if (gesichert.korrigiert) {
+      await logActivity(
+        `${trackLabel(track)}: Alle Textphasen des Konzepts waren als Vorlage markiert - ` +
+          "übernommen wird nur die erste, der Rest sind eigene Clips. Konzept bitte prüfen.",
+        { track, level: "error" },
+      );
+    }
+    phasen = gesichert.phasen;
+    if (fremdmaterialAktiv(options.foreignMode, options.referenceVideoUrl, phasen)) {
+      return composeViralVideoMitFremdmaterial(track, options, options.referenceVideoUrl!, phasen);
+    }
   }
 
   // Bei mehreren Textphasen bekommt der Aufbau eine eigene, längere
