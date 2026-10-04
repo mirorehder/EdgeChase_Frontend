@@ -1414,6 +1414,172 @@ function korrigierePhasen(
   return phasen;
 }
 
+/** Rollen aus der Reihenfolge: erste Phase Aufbau, letzte Pointe. */
+function rollenSetzen(phasen: ConceptTextPhase[]): void {
+  if (phasen.length === 1) phasen[0].role = "plain";
+  else if (phasen.length > 1) {
+    phasen[0].role = "setup";
+    phasen[phasen.length - 1].role = "payoff";
+    for (let i = 1; i < phasen.length - 1; i++) phasen[i].role = "plain";
+  }
+}
+
+function alsEigene(p: ConceptTextPhase): ConceptTextPhase {
+  const { refStartMs: _a, refEndMs: _b, ...rest } = p;
+  return { ...rest, useReference: false };
+}
+
+/**
+ * Stellt sicher, dass nach dem übernommenen Teil noch eigenes Material folgt.
+ *
+ * Ein Konzept mit Fremdmaterial bedeutet "Anfang aus der Vorlage, danach
+ * eigene Clips". Sind ALLE Phasen als Vorlage markiert, würde der Edit eine
+ * 1:1-Kopie des Referenzvideos - genau das ist einmal passiert. Dann bleibt nur
+ * die erste Phase Fremdmaterial, die übrigen werden eigene. Mit nur einer
+ * Phase gibt es nichts zu retten: sie wird eigene Aufnahme.
+ */
+export function sichereEigenenTeil(phasen: ConceptTextPhase[]): {
+  phasen: ConceptTextPhase[];
+  korrigiert: boolean;
+} {
+  const fremd = (p: ConceptTextPhase) =>
+    p.useReference === true &&
+    typeof p.refStartMs === "number" &&
+    typeof p.refEndMs === "number" &&
+    p.refEndMs > p.refStartMs;
+  if (!phasen.length || !phasen.every(fremd)) return { phasen, korrigiert: false };
+
+  const neu =
+    phasen.length === 1
+      ? [alsEigene(phasen[0])]
+      : phasen.map((p, i) => (i === 0 ? p : alsEigene(p)));
+  rollenSetzen(neu);
+  return { phasen: neu, korrigiert: true };
+}
+
+const MIN_EIGENER_TEIL_MS = 1500;
+
+/**
+ * Begrenzt den übernommenen Teil auf einen Umschlagpunkt und garantiert einen
+ * eigenen Teil danach.
+ *
+ * Deterministisch statt auf das Modell zu vertrauen: bei bestätigter Übernahme
+ * stand früher als Rückfall "erste Phase = Fremdmaterial" - bei einem Video
+ * mit EINEM durchgehenden Text ist die erste Phase aber das ganze Video, und
+ * der Edit bestand nur noch aus der Vorlage. Jetzt gilt der vom Modell
+ * genannte Umschlagpunkt; fehlt er, das Ende der ersten Phase, und bei nur
+ * einer Phase die Hälfte des Videos (als Schätzung vermerkt).
+ */
+export function uebernahmeBegrenzen(
+  phasen: ConceptTextPhase[],
+  totalSeconds: number,
+  umschlagMs: number | undefined,
+  bestaetigt: boolean,
+): { phasen: ConceptTextPhase[]; hinweis: string | null } {
+  const gesamtMs = Math.round(totalSeconds * 1000);
+  const hatFremd = phasen.some((p) => p.useReference);
+  if (!phasen.length || (!bestaetigt && !hatFremd)) return { phasen, hinweis: null };
+
+  // Ohne Bestätigung gilt die Einschätzung des Modells; nur der Fall "alles
+  // Vorlage" wird abgefangen.
+  if (!bestaetigt) {
+    const r = sichereEigenenTeil(phasen);
+    return {
+      phasen: r.phasen,
+      hinweis: r.korrigiert
+        ? "Die Analyse hielt das ganze Video für Fremdmaterial - übernommen wird nur der erste Teil, der Rest sind eigene Clips."
+        : null,
+    };
+  }
+
+  const erste = Math.round(phasen[0].seconds * 1000);
+  const dauer = phasen.map((p) => Math.round(p.seconds * 1000));
+  const summeMs = dauer.reduce((a, b) => a + b, 0);
+
+  let grenze: number | null = null;
+  let geschaetzt = false;
+  if (
+    typeof umschlagMs === "number" &&
+    umschlagMs >= 1000 &&
+    umschlagMs <= gesamtMs - MIN_EIGENER_TEIL_MS
+  ) {
+    grenze = Math.round(umschlagMs);
+  } else if (phasen.length > 1) {
+    // Ohne genannten Umschlagpunkt: Ende der letzten markierten Phase, sofern
+    // danach noch eine eigene folgt; sonst Ende der ersten Phase.
+    let letzteMarkiert = -1;
+    phasen.forEach((p, i) => {
+      if (p.useReference) letzteMarkiert = i;
+    });
+    const bis =
+      letzteMarkiert >= 0 && letzteMarkiert < phasen.length - 1 ? letzteMarkiert : 0;
+    grenze = dauer.slice(0, bis + 1).reduce((a, b) => a + b, 0) || erste;
+  } else {
+    grenze = Math.round(gesamtMs / 2);
+    geschaetzt = true;
+  }
+  // Unbrauchbar nah am Ende oder am Anfang: auf die Hälfte zurück.
+  if (grenze < 1000 || grenze > gesamtMs - MIN_EIGENER_TEIL_MS) {
+    grenze = Math.round(gesamtMs / 2);
+    geschaetzt = true;
+  }
+
+  const ergebnis: ConceptTextPhase[] = [];
+  let t = 0;
+  for (let i = 0; i < phasen.length; i++) {
+    const p = phasen[i];
+    const start = t;
+    const ende = t + dauer[i];
+    t = ende;
+    if (ende <= grenze + 300) {
+      ergebnis.push({
+        ...p,
+        useReference: true,
+        refStartMs: start,
+        refEndMs: Math.min(ende, grenze),
+      });
+    } else if (start >= grenze - 300) {
+      ergebnis.push(alsEigene(p));
+    } else {
+      // Die Phase überspannt den Umschlagpunkt: vorn Vorlage, hinten eigen.
+      ergebnis.push({
+        ...p,
+        seconds: Math.max(MIN_PHASE_SECONDS, (grenze - start) / 1000),
+        useReference: true,
+        refStartMs: start,
+        refEndMs: grenze,
+      });
+      ergebnis.push(
+        alsEigene({
+          ...p,
+          seconds: Math.max(MIN_PHASE_SECONDS, (ende - grenze) / 1000),
+        }),
+      );
+    }
+  }
+
+  if (!ergebnis.some((p) => !p.useReference)) {
+    const letzte = ergebnis[ergebnis.length - 1];
+    ergebnis.push(
+      alsEigene({
+        ...letzte,
+        seconds: Math.max(MIN_PHASE_SECONDS, (Math.max(gesamtMs, summeMs) - grenze) / 1000),
+      }),
+    );
+  }
+
+  rollenSetzen(ergebnis);
+  const sek = (grenze / 1000).toFixed(1);
+  return {
+    phasen: ergebnis,
+    hinweis:
+      `Übernommen wird der Anfang bis ${sek}s, danach folgen eigene Clips` +
+      (geschaetzt
+        ? " - der Umschlagpunkt ist GESCHÄTZT, bitte im Bearbeiten-Formular prüfen."
+        : "."),
+  };
+}
+
 export interface ConceptAnalysis {
   title: string;
   hookText: string;
@@ -1459,7 +1625,7 @@ export async function analyzeConcept(
   // erste Teil. Das steht bewusst ganz oben und sehr bestimmt, damit das Modell
   // die Phase(n) dieses ersten Teils zuverlässig mit useReference markiert.
   const uebernahmeRegel = takeoverFirst
-    ? `\n\nWICHTIG - FREMDMATERIAL: Der Nutzer hat bestätigt, dass der ERSTE Teil dieses Videos ein Ausschnitt ist, der 1:1 aus der Vorlage übernommen wird (z.B. ein Meme oder eine bestimmte Aufnahme, die der Text beschreibt). Deine Aufgabe ist NICHT zu entscheiden, ob übernommen wird - das steht fest -, sondern nur, WO dieser erste Teil endet: der Umschlagpunkt, ab dem eigenes Bildmaterial sinnvoll wird (meist der erste Text-/Szenenwechsel). Markiere ALLE Phasen von Videobeginn bis zu diesem Umschlagpunkt mit useReference=true und setze refStartMs (meist 0) und refEndMs auf Anfang und Ende dieses ersten Ausschnitts in Millisekunden. Die Phasen NACH dem Umschlagpunkt bleiben useReference=false (dort kommen eigene Clips).`
+    ? `\n\nWICHTIG - FREMDMATERIAL: Der Nutzer hat bestätigt, dass der ERSTE Teil dieses Videos ein Ausschnitt ist, der 1:1 aus der Vorlage übernommen wird (z.B. ein Meme oder eine bestimmte Aufnahme, die der Text beschreibt). Deine Aufgabe ist NICHT zu entscheiden, ob übernommen wird - das steht fest -, sondern nur, WO dieser erste Teil endet: der Umschlagpunkt, ab dem eigenes Bildmaterial sinnvoll wird (meist der erste Text-/Szenenwechsel). Markiere ALLE Phasen von Videobeginn bis zu diesem Umschlagpunkt mit useReference=true und setze refStartMs (meist 0) und refEndMs auf Anfang und Ende dieses ersten Ausschnitts in Millisekunden. Die Phasen NACH dem Umschlagpunkt bleiben useReference=false (dort kommen eigene Clips). Nenne den Umschlagpunkt zusätzlich im Feld uebernahmeEndeMs (Millisekunden ab Videobeginn). ACHTUNG: Das Video besteht NIE komplett aus Fremdmaterial - nach dem Umschlagpunkt folgt immer ein Teil mit eigenem Material, uebernahmeEndeMs liegt also klar VOR dem Videoende. Bei Vergleichen (z.B. zwei Lebenswege nebeneinander) ist der übernommene Teil nur der einleitende Vergleich, nicht das gesamte Video. Hat das Video nur EINEN durchgehenden Text, teile ihn trotzdem in zwei Phasen: die erste bis zum Umschlagpunkt, die zweite danach.`
     : "";
 
   try {
@@ -1528,6 +1694,7 @@ notes: kurze Beobachtungen zur Gestaltung - Schriftart-Eindruck, Farben, Kontur,
               },
             },
             textStyle: { type: Type.STRING },
+            uebernahmeEndeMs: { type: Type.NUMBER },
             clipCount: { type: Type.INTEGER },
             totalSeconds: { type: Type.NUMBER },
             secondsPerScene: { type: Type.NUMBER },
@@ -1543,18 +1710,18 @@ notes: kurze Beobachtungen zur Gestaltung - Schriftart-Eindruck, Farben, Kontur,
     const clipCount = Math.min(12, Math.max(1, Math.round(raw.clipCount ?? 4)));
     const totalSeconds = Math.max(1, raw.totalSeconds ?? 10);
 
-    const textPhases = korrigierePhasen(raw.textPhases, raw.hookText, totalSeconds);
+    const roh2 = raw as Partial<ConceptAnalysis> & { uebernahmeEndeMs?: number };
+    const korrigiert = korrigierePhasen(raw.textPhases, raw.hookText, totalSeconds);
 
-    // Der Nutzer hat die Übernahme bestätigt - hat das Modell trotzdem keine
-    // Phase markiert, erzwingen wir wenigstens die erste als Fremdmaterial. So
-    // greift die Bestätigung verlässlich, auch wenn die Analyse den Ausschnitt
-    // nicht von selbst erkannt hätte. Das Fenster ist die Dauer der ersten
-    // Phase ab Videobeginn - genau der "erste Teil".
-    if (takeoverFirst && textPhases.length && !textPhases.some((p) => p.useReference)) {
-      textPhases[0].useReference = true;
-      textPhases[0].refStartMs = 0;
-      textPhases[0].refEndMs = Math.max(1, Math.round(textPhases[0].seconds * 1000));
-    }
+    // Übernommener Teil: auf den Umschlagpunkt begrenzen und einen eigenen Teil
+    // danach garantieren (siehe uebernahmeBegrenzen).
+    const begrenzt = uebernahmeBegrenzen(
+      korrigiert,
+      Math.max(1, raw.totalSeconds ?? 10),
+      typeof roh2.uebernahmeEndeMs === "number" ? roh2.uebernahmeEndeMs : undefined,
+      takeoverFirst,
+    );
+    const textPhases = begrenzt.phasen;
 
     return {
       title: raw.title?.trim() || "Unbenanntes Konzept",
@@ -1567,7 +1734,7 @@ notes: kurze Beobachtungen zur Gestaltung - Schriftart-Eindruck, Farben, Kontur,
       // Werte widersprachen sich in Versuchen gelegentlich.
       secondsPerScene: Math.round((totalSeconds / clipCount) * 10) / 10,
       theme: raw.theme?.trim() || "",
-      notes: raw.notes?.trim() || "",
+      notes: [raw.notes?.trim(), begrenzt.hinweis].filter(Boolean).join(" "),
     };
   } finally {
     await ai.files.delete({ name: uploaded.name! }).catch(() => {});
