@@ -15,6 +15,12 @@ export const sceneSchema = z.object({
   src: z.string(),
   startMs: z.number(),
   durationMs: z.number(),
+  /**
+   * Szene ohne Ton. Gesetzt bei übernommenem Referenzmaterial: der Sound des
+   * Reels wird beim Posten über Instagram hinterlegt und enthält den Ton der
+   * Vorlage bereits - ein zweites Mal würde er doppelt laufen.
+   */
+  muted: z.boolean().optional(),
 });
 
 /**
@@ -380,8 +386,8 @@ export const PromoVideo: React.FC<PromoVideoProps> = ({
               startFrom={startFromFrame}
               // Originalton der Aufnahme. Der Auftrag schliesst nur das
               // Hinzufuegen von Musik aus - vorhandener Ton der Clips bleibt.
-              volume={volume}
-              muted={volume === 0}
+              volume={scene.muted ? 0 : volume}
+              muted={scene.muted === true || volume === 0}
               // Ohne das ignoriert Remotion Werte ueber 1. Das Rohmaterial ist
               // teils sehr leise (an echten Clips gemessen: Spitzen um 3 % der
               // Vollaussteuerung), da hilft nur Verstaerken.
