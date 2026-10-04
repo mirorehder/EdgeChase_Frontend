@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { nextQueuedJobId, processJob } from "@/lib/pipeline";
-import { RENDER_LEBT_MS, baseUrlFromRequest, dispatchJob } from "@/lib/dispatch";
+import { RENDER_LEBT_MS, baseUrlFromRequest, dispatchJob, dispatchPost } from "@/lib/dispatch";
+import { isTrack, trackBeschreibung } from "@/lib/trackClient";
 import { istBerechtigt } from "@/lib/ingestAuth";
 
 // Rendern und Hochladen - der lange Teil.
@@ -32,6 +33,17 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     await processJob(params.id);
 
     const updated = await prisma.promoVideo.findUnique({ where: { id: params.id } });
+
+    // Serien: ein Ablauf von der Erzeugung bis zur Veröffentlichung. Sobald das
+    // Video fertig ist, geht das Posten in einer eigenen Ausführung los.
+    if (
+      updated?.status === "done" &&
+      !updated.postedAt &&
+      isTrack(updated.track) &&
+      trackBeschreibung(updated.track).sofortPosten
+    ) {
+      await dispatchPost(params.id, baseUrlFromRequest(request));
+    }
 
     // Kette: der nächste wartende Auftrag wird in einer eigenen Ausführung
     // angestossen. Nacheinander statt gleichzeitig, weil ein einzelner Render

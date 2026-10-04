@@ -2168,6 +2168,10 @@ export interface ViralRunResult {
  * Auftraege an, rendert aber noch nichts.
  */
 export async function planViralRun(track: Track, force = false): Promise<ViralRunResult> {
+  // Serien mit Tageszähler haben eine eigene Planung: ein Video je laufender
+  // Serie und Tag, mit hochgezählter Zahl.
+  if (trackBeschreibung(track).zaehler) return planSerieRun(track, force);
+
   const plan = await getViralSchedule(track);
 
   if (!plan.enabled && !force) {
@@ -2224,6 +2228,129 @@ export async function planViralRun(track: Track, force = false): Promise<ViralRu
   return { jobIds, hinweis: jobIds.length === 0 && letzterFehler ? letzterFehler : undefined };
 }
 
+// ---------------------------------------------------------------------------
+// Serien mit Tageszähler ("Day {n} of posting until ...")
+// ---------------------------------------------------------------------------
+
+/** Ersetzt den Platzhalter {n} durch die Zahl. Ohne Zahl bleibt der Text, wie er ist. */
+export function setzeZaehlerEin(text: string, zahl: number | undefined): string {
+  return zahl === undefined ? text : text.replace(/\{n\}/gi, String(zahl));
+}
+
+/** Der heutige Tag in der Schweiz als "YYYY-MM-DD" - der Tag, an dem der Zähler hochgeht. */
+export function serienTag(jetzt = new Date()): string {
+  return new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Zurich" }).format(jetzt);
+}
+
+export class SerieHeuteSchonErzeugt extends Error {
+  constructor(titel: string) {
+    super(`Die Serie "${titel}" hat heute schon ihr Video.`);
+  }
+}
+
+/**
+ * Erzeugt das heutige Video einer Serie: vergibt die nächste Zahl, legt den
+ * Auftrag an und zählt hoch.
+ *
+ * Höchstens ein Video je Serie und Tag. Der Tag wird atomar belegt (eine
+ * Update-Anweisung mit Bedingung), damit Zeitplan und Handauslösung nicht
+ * gleichzeitig beide zählen. Scheitert das Anlegen, wird der Zähler
+ * zurückgesetzt - eine übersprungene Zahl wäre im Video sichtbar.
+ */
+export async function erzeugeSerienVideo(
+  conceptId: string,
+  options: { excludeClipIds?: string[]; origin?: "manual" | "scheduled" } = {},
+): Promise<{ jobId: string; zahl: number }> {
+  const concept = await prisma.concept.findUnique({ where: { id: conceptId } });
+  if (!concept || concept.counterNext === null) {
+    throw new Error("Das ist kein Serien-Konzept.");
+  }
+  if (!concept.serieAktiv && options.origin === "scheduled") {
+    throw new Error(`Die Serie "${concept.title}" ist pausiert.`);
+  }
+
+  const heute = serienTag();
+  const track = (concept.track as Track) ?? "serie";
+  const zahl = concept.counterNext;
+
+  const belegt = await prisma.concept.updateMany({
+    where: {
+      id: conceptId,
+      counterNext: zahl,
+      OR: [{ serieLastDay: null }, { serieLastDay: { not: heute } }],
+    },
+    data: { serieLastDay: heute, counterNext: zahl + 1 },
+  });
+  if (belegt.count === 0) throw new SerieHeuteSchonErzeugt(concept.title);
+
+  try {
+    const jobId = await createViralJobFromConcept(conceptId, {
+      excludeClipIds: options.excludeClipIds,
+      driveFolderId: (await ausgabeOrdnerId(track, "scheduled")) ?? viralOutputFolderId(track),
+      origin: options.origin ?? "manual",
+      zaehler: zahl,
+    });
+    await logActivity(`Serie "${concept.title}": Tag ${zahl} angelegt.`, { track, videoId: jobId });
+    return { jobId, zahl };
+  } catch (err) {
+    await prisma.concept.updateMany({
+      where: { id: conceptId, counterNext: zahl + 1 },
+      data: { counterNext: zahl, serieLastDay: concept.serieLastDay },
+    });
+    throw err;
+  }
+}
+
+/** Der Tageslauf einer Serien-Sparte: ein Video je laufender Serie. */
+export async function planSerieRun(track: Track, force = false): Promise<ViralRunResult> {
+  const plan = await getViralSchedule(track);
+  if (!plan.enabled && !force) {
+    return { jobIds: [], hinweis: "Zeitplan ist abgeschaltet." };
+  }
+
+  const serien = await prisma.concept.findMany({
+    where: { track, counterNext: { not: null }, serieAktiv: true },
+    orderBy: { createdAt: "asc" },
+    select: { id: true, title: true },
+  });
+  if (!serien.length) {
+    const hinweis = `Noch keine laufende Serie in "${trackLabel(track)}" - lege ein Konzept an.`;
+    await logActivity(`Zeitplan übersprungen: ${hinweis}`, { level: "error", track });
+    return { jobIds: [], hinweis };
+  }
+
+  await logActivity(
+    `Tageslauf gestartet: ${serien.length} Serie(n) - ` + serien.map((k) => `"${k.title}"`).join(", ") + ".",
+    { track },
+  );
+
+  const jobIds: string[] = [];
+  const verbrauchteClips: string[] = [];
+  const hinweise: string[] = [];
+
+  for (const serie of serien) {
+    try {
+      const { jobId } = await erzeugeSerienVideo(serie.id, {
+        excludeClipIds: verbrauchteClips,
+        origin: "scheduled",
+      });
+      jobIds.push(jobId);
+      const job = await prisma.promoVideo.findUnique({ where: { id: jobId } });
+      for (const scene of (job?.scenes as unknown as ComposedScene[]) ?? []) {
+        verbrauchteClips.push(scene.clipId);
+      }
+    } catch (err) {
+      const text = err instanceof Error ? err.message : String(err);
+      hinweise.push(text);
+      if (!(err instanceof SerieHeuteSchonErzeugt)) {
+        await logActivity(`Serie "${serie.title}": ${text}`, { level: "error", track });
+      }
+    }
+  }
+
+  return { jobIds, hinweis: jobIds.length === 0 ? hinweise.join(" ") : undefined };
+}
+
 /**
  * Der nächste Auftrag, der noch auf seinen Render wartet - der älteste zuerst.
  *
@@ -2255,6 +2382,8 @@ export async function createViralJobFromConcept(
     excludeClipIds?: string[];
     driveFolderId?: string | null;
     origin?: "manual" | "scheduled";
+    /** Nur Serien: die Zahl, die für {n} eingesetzt wird. */
+    zaehler?: number;
   } = {},
 ): Promise<string> {
   const concept = await prisma.concept.findUnique({ where: { id: conceptId } });
@@ -2262,12 +2391,23 @@ export async function createViralJobFromConcept(
 
   const track = (concept.track as Track) ?? "viral";
 
+  // Serien-Konzepte tragen den Platzhalter {n}. Ohne Zahl würde er unersetzt
+  // im Video stehen - deshalb nur über erzeugeSerienVideo, das die Zahl vergibt.
+  if (concept.counterNext !== null && options.zaehler === undefined) {
+    throw new Error("Serien-Konzept: das Video muss über den Tageszähler erzeugt werden.");
+  }
+  const einsetzen = (text: string) => setzeZaehlerEin(text, options.zaehler);
+  const textPhasen = ((concept.textPhases as unknown as ConceptTextPhase[]) ?? []).map((p) => ({
+    ...p,
+    text: einsetzen(p.text),
+  }));
+
   const composed = await composeViralVideo(track, {
-    hookText: concept.hookText,
+    hookText: einsetzen(concept.hookText),
     clipCount: concept.clipCount || undefined,
     totalSeconds: concept.totalSeconds || undefined,
     excludeClipIds: options.excludeClipIds,
-    textPhases: (concept.textPhases as unknown as ConceptTextPhase[]) ?? [],
+    textPhases: textPhasen,
     // Die Regieanweisung des Konzepts steuert die Clipauswahl - genau wie im
     // Dialog. Ohne sie waehlte jeder Lauf beliebige Hoehepunkte, und die
     // Vorgabe "moeglichst Fails" oder "hohe Spruenge" bliebe wirkungslos.
@@ -2307,12 +2447,14 @@ export async function createViralJobFromConcept(
       textPhases: (composed.textPhases as unknown as object) ?? undefined,
       fileTitle: composed.fileTitle || null,
       // Die selbst geschriebene Caption des Konzepts (leer = Rückfall in postAuto).
-      postCaption: concept.postCaption?.trim() || null,
+      postCaption: concept.postCaption?.trim() ? einsetzen(concept.postCaption.trim()) : null,
       origin: options.origin ?? "manual",
       // Nicht concept.textStyle: die Gestaltung ist unsere Entscheidung und
       // für alle Reels dieselbe.
       textStyle: viralTextStyle(),
-      requestedVia: `Konzept: ${concept.title}`,
+      requestedVia:
+        `Konzept: ${concept.title}` +
+        (options.zaehler !== undefined ? ` (Tag ${options.zaehler})` : ""),
       conceptId: concept.id,
       // Der Sound wird weitergereicht, nicht bewertet. Ob er brauchbar ist,
       // kann diese Anwendung nicht entscheiden - sie hat keinen

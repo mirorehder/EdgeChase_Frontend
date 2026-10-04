@@ -4,7 +4,8 @@ import { planDailyJob, planViralRun } from "@/lib/pipeline";
 import { baseUrlFromRequest, starteWartende, weckeWartende } from "@/lib/dispatch";
 import { logActivity } from "@/lib/activity";
 import { ZEITPLAN_SPARTEN } from "@/lib/viralSchedule";
-import { erlaubteTrackKeys } from "@/lib/trackClient";
+import { erlaubteTrackKeys, trackBeschreibung } from "@/lib/trackClient";
+import { posteSerienVideo, ungepostetSerienVideos } from "@/lib/postAuto";
 
 // Abgleich, Analyse und Zusammenstellung brauchen mehr als den Vercel-
 // Standardwert von 10 Sekunden. Gerendert wird hier nicht mehr.
@@ -39,6 +40,15 @@ export async function GET(request: NextRequest) {
   // getrennte Apps (z.B. EdgeChase und Doc Meiro) nicht beide dieselben
   // Sparten und erzeugen nichts doppelt.
   const erlaubt = new Set(erlaubteTrackKeys());
+
+  // Serien: Videos, die gestern fertig wurden, aber nicht rausgingen (Fehler
+  // beim Posten), werden zuerst nachgeholt. Der Normalfall postet sofort nach
+  // dem Rendern; das hier ist nur das Netz darunter.
+  for (const sparte of [...erlaubt].filter((t) => trackBeschreibung(t).sofortPosten)) {
+    for (const id of (await ungepostetSerienVideos(sparte)).slice(0, 3)) {
+      await posteSerienVideo(id).catch(() => null);
+    }
+  }
 
   let jobId: string | null = null;
   let promoFehler: string | null = null;

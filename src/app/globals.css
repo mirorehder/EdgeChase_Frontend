@@ -15,6 +15,7 @@
   --sports: #3ecf8e;
   --clothing: #c084fc;
   --coaching: #f59e0b;
+  --serie: #38bdf8;
 }
 
 * {
@@ -777,6 +778,16 @@ button.klein {
   --accent: var(--coaching);
 }
 
+.sparte-serie.aktiv {
+  color: var(--text);
+  border-color: var(--serie);
+  background: color-mix(in srgb, var(--serie) 12%, var(--surface));
+}
+
+.sparte-inhalt-serie {
+  --accent: var(--serie);
+}
+
 .sparte-inhalt-sports {
   --accent: var(--sports);
 }
@@ -889,6 +900,9 @@ button.klein {
   }
   .tab-sports.aktiv {
     color: var(--sports);
+  }
+  .tab-serie.aktiv {
+    color: var(--serie);
   }
   .tab-coaching.aktiv {
     color: var(--coaching);

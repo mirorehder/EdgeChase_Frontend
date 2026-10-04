@@ -11,7 +11,7 @@ import {
 } from "@/lib/renderStage";
 import { istBerechtigt } from "@/lib/ingestAuth";
 import { trackFromRequest, trackFromValue } from "@/lib/trackParam";
-import type { Track } from "@/lib/trackClient";
+import { trackBeschreibung, type Track } from "@/lib/trackClient";
 import { logActivity } from "@/lib/activity";
 import { env } from "@/lib/env";
 import { audioIdAus, soundEingabePruefen } from "@/lib/sound";
@@ -58,6 +58,8 @@ export async function POST(request: NextRequest) {
       hookText?: string;
       description?: string;
       caption?: string;
+      /** Nur Serien: mit welcher Zahl die Serie startet (Standard 1). */
+      counterStart?: number;
     };
     const track = trackFromValue(body.track);
     // Nur in den Reels-Sparten sinnvoll; im Promo-Generator bleibt Fremdmaterial
@@ -73,7 +75,14 @@ export async function POST(request: NextRequest) {
       if (!hookText) {
         return NextResponse.json({ error: "Kein Hook-Text angegeben." }, { status: 400 });
       }
-      return await manuellesKonzept(track, body.title, hookText, body.description, body.caption);
+      return await manuellesKonzept(
+        track,
+        body.title,
+        hookText,
+        body.description,
+        body.caption,
+        body.counterStart,
+      );
     }
 
     // Zwei Herkuenfte: aus dem Dashboard kommt die Datei in Stuecken durch die
@@ -206,7 +215,15 @@ async function manuellesKonzept(
   hookText: string,
   beschreibung: string | undefined,
   caption?: string,
+  counterStart?: number,
 ) {
+  const serie = trackBeschreibung(track).zaehler;
+  if (serie && !/\{n\}/i.test(hookText)) {
+    return NextResponse.json(
+      { error: "Der Text braucht den Platzhalter {n} - dort setzt der Zähler die Zahl ein, z. B. „Day {n} of posting until Red Bull contacts me“." },
+      { status: 400 },
+    );
+  }
   const clipCount = 4;
   const totalSeconds = 12;
   const title = (titel ?? "").trim() || hookText.split("\n")[0].slice(0, 60) || "Neues Konzept";
@@ -225,6 +242,9 @@ async function manuellesKonzept(
       secondsPerScene: totalSeconds / clipCount,
       theme: (beschreibung ?? "").trim() || null,
       postCaption: (caption ?? "").trim() || null,
+      ...(serie
+        ? { counterNext: Math.max(1, Math.round(Number(counterStart) || 1)), serieAktiv: true }
+        : {}),
       notes: null,
     },
   });

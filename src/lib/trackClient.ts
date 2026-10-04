@@ -12,7 +12,7 @@
  * Das Verhältnis aus Nutzen und Risiko stimmt nicht. Was der Nutzer liest,
  * steht in TRACKS[].label.
  */
-export type Track = "promo" | "viral" | "sports" | "clothing" | "coaching";
+export type Track = "promo" | "viral" | "sports" | "clothing" | "coaching" | "serie";
 
 /**
  * Wonach die Clips einer Sparte bewertet und ausgewählt werden.
@@ -52,6 +52,16 @@ export interface TrackBeschreibung {
    * nie von der KI: fehlt sie, gilt der Hook-Text.
    */
   eigeneCaption: boolean;
+  /**
+   * Serien mit Tageszähler: das Konzept trägt einen Platzhalter {n} in Text und
+   * Caption, der bei jedem Video um 1 hochgezählt wird.
+   */
+  zaehler: boolean;
+  /**
+   * Wird das Video gleich nach dem Rendern gepostet (ein einziger Ablauf),
+   * statt später von der Posting-Automatik nach Zeitplan?
+   */
+  sofortPosten: boolean;
 }
 
 export const TRACK_LISTE: readonly TrackBeschreibung[] = [
@@ -64,6 +74,8 @@ export const TRACK_LISTE: readonly TrackBeschreibung[] = [
     nachKonzept: false,
     referenzUpload: true,
     eigeneCaption: false,
+    zaehler: false,
+    sofortPosten: false,
   },
   {
     key: "viral",
@@ -74,6 +86,8 @@ export const TRACK_LISTE: readonly TrackBeschreibung[] = [
     nachKonzept: true,
     referenzUpload: true,
     eigeneCaption: false,
+    zaehler: false,
+    sofortPosten: false,
   },
   {
     key: "sports",
@@ -84,6 +98,8 @@ export const TRACK_LISTE: readonly TrackBeschreibung[] = [
     nachKonzept: true,
     referenzUpload: true,
     eigeneCaption: false,
+    zaehler: false,
+    sofortPosten: false,
   },
   {
     key: "clothing",
@@ -94,6 +110,8 @@ export const TRACK_LISTE: readonly TrackBeschreibung[] = [
     nachKonzept: true,
     referenzUpload: true,
     eigeneCaption: false,
+    zaehler: false,
+    sofortPosten: false,
   },
   {
     key: "coaching",
@@ -104,6 +122,20 @@ export const TRACK_LISTE: readonly TrackBeschreibung[] = [
     nachKonzept: true,
     referenzUpload: false,
     eigeneCaption: true,
+    zaehler: false,
+    sofortPosten: false,
+  },
+  {
+    key: "serie",
+    kurz: "Serien",
+    label: "Daily Serien",
+    untertitel: "Täglicher Zähler-Trend, sofort gepostet",
+    bewertung: "krassheit",
+    nachKonzept: true,
+    referenzUpload: false,
+    eigeneCaption: true,
+    zaehler: true,
+    sofortPosten: true,
   },
 ] as const;
 

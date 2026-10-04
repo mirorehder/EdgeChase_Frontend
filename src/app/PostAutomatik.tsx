@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { bewertungsart, type Track } from "@/lib/trackClient";
+import { bewertungsart, trackBeschreibung, type Track } from "@/lib/trackClient";
 import { audioIdAus } from "@/lib/sound";
 import type { SoundTagDef } from "@/lib/soundTags";
 
@@ -90,8 +90,13 @@ export function PostAutomatik({
     }
   }
 
+  // Serien posten gleich nach dem Rendern - Zeitfenster, Anzahl und Abstand
+  // der Automatik gibt es dort nicht.
+  const sofort = trackBeschreibung(track).sofortPosten;
   const nachUhrzeiten = z.postingTimes.length > 0;
-  const zusammenfassung = z.enabled
+  const zusammenfassung = sofort
+    ? `sofort nach dem Rendern · ${z.alsTrialReel ? "als Trial-Reel" : "öffentlich"}`
+    : z.enabled
     ? nachUhrzeiten
       ? `Uhrzeiten: ${z.postingTimes.map(zuZeit).join(", ")} CH`
       : `${z.postsPerDay}×/Tag · ${zuZeit(z.fensterVonMin)}–${zuZeit(z.fensterBisMin)} CH · Abstand ${z.minAbstandMin} min`
@@ -109,6 +114,15 @@ export function PostAutomatik({
 
       {offen && (
         <div className="clip-editor">
+          {sofort && (
+            <p className="chat-hint">
+              Diese Sparte postet jedes Video sofort, wenn es fertig gerendert ist - ein einziger
+              Ablauf, ohne Uhrzeiten und ohne zweiten Schalter. Hier stellst du nur ein, wie
+              gepostet wird: Trial-Reel oder öffentlich, Hashtags und Sounds.
+            </p>
+          )}
+          {!sofort && (
+            <>
           <label className="schalter">
             <input
               type="checkbox"
@@ -178,6 +192,9 @@ export function PostAutomatik({
             </select>
           </label>
 
+            </>
+          )}
+
           <label className="schalter">
             <input
               type="checkbox"
@@ -216,6 +233,7 @@ export function PostAutomatik({
             setzen={(neu) => setZ({ ...z, trendSounds: neu })}
           />
 
+          {!sofort && (
           <span className="clip-meta">
             Alle Uhrzeiten in Schweizer Zeit. Gepostet wird{" "}
             {nachKrassheit ? "das älteste fertige Reel" : "das älteste fertige Video"}, das noch
@@ -227,6 +245,7 @@ export function PostAutomatik({
             Ist keine Stimmung gewählt, zählt der ganze Pool; passt kein Sound zur Stimmung, ebenso
             (lieber irgendein Sound als keiner).
           </span>
+          )}
 
           {meldung && (
             <p className={`action-message ${meldung.fehler ? "error" : ""}`}>{meldung.text}</p>

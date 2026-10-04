@@ -402,6 +402,22 @@ model Concept {
   /// kopiert.
   postCaption String?
 
+  // --- Serien mit Tageszähler (Sparte "serie") ----------------------------
+  //
+  // Text und Caption enthalten den Platzhalter {n}; bei jedem Video wird er
+  // durch die laufende Zahl ersetzt ("Day {n} of posting until Red Bull
+  // contacts me"). Jedes Konzept ist eine eigene Serie.
+
+  /// Die Zahl für das nächste Video. null = kein Serien-Konzept.
+  counterNext Int?
+
+  /// Läuft die Serie? Aus = es entsteht kein Tagesvideo, der Zähler steht.
+  serieAktiv Boolean @default(true)
+
+  /// Der Tag (Europe/Zurich, "YYYY-MM-DD"), an dem zuletzt ein Video erzeugt
+  /// wurde. Verhindert, dass dieselbe Serie am selben Tag zweimal zählt.
+  serieLastDay String?
+
   /// Beobachtungen zur Schrift, zu Farben und zur Platzierung - als
   /// Gedaechtnisstuetze, nicht maschinell ausgewertet.
   notes String?

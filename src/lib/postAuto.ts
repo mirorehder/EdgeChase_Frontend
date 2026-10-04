@@ -326,7 +326,10 @@ export async function spartenMitAutomatik(): Promise<Track[]> {
   // Nur die Sparten dieses Deployments (GENERATOR_TRACKS): sonst würden zwei
   // getrennte Apps dieselbe Sparte posten.
   const erlaubt = new Set(erlaubteTrackKeys());
-  return TRACKS.filter((t) => an.has(t) && erlaubt.has(t));
+  // Serien posten sofort nach dem Rendern, nicht nach Zeitplan.
+  return TRACKS.filter(
+    (t) => an.has(t) && erlaubt.has(t) && !trackBeschreibung(t).sofortPosten,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -553,6 +556,22 @@ export async function posteFaelliges(track: Track, jetzt = new Date()): Promise<
     return abschluss(track, jetzt, { gepostet: false, grund: urteil.grund });
   }
 
+  return posteKandidat(track, zeitplan, kandidat, jetzt);
+}
+
+type PostKandidat = NonNullable<Awaited<ReturnType<typeof naechstesVideo>>>;
+
+/**
+ * Postet genau dieses fertige Video: Sound, Caption und Ortstag wählen, an
+ * Instagram schicken, Ergebnis festhalten. Gemeinsam für den Zeitplan
+ * (posteFaelliges) und den Sofort-Post der Serien (posteSerienVideo).
+ */
+async function posteKandidat(
+  track: Track,
+  zeitplan: PostZeitplanStand,
+  kandidat: PostKandidat,
+  jetzt: Date,
+): Promise<PostLaufErgebnis> {
   const kandidatTitel = kandidat.fileTitle || kandidat.hookText.split("\n")[0];
 
   if (!kandidat.publicUrl) {
@@ -670,6 +689,54 @@ export async function posteFaelliges(track: Track, jetzt = new Date()): Promise<
     { gepostet: true, mediaId: ergebnis.mediaId },
     kandidatTitel,
   );
+}
+
+/**
+ * Postet das frisch gerenderte Video einer Serie sofort - ein einziger Ablauf
+ * von der Erzeugung bis zur Veröffentlichung, ohne Zeitfenster, Tageslimit
+ * oder Mindestabstand. Sound-Pool, Hashtags und Trial-Schalter kommen aus den
+ * Einstellungen der Sparte ("Automatisch posten").
+ *
+ * Schon gepostete Videos werden nicht ein zweites Mal veröffentlicht.
+ */
+export async function posteSerienVideo(videoId: string, jetzt = new Date()): Promise<PostLaufErgebnis> {
+  const video = await prisma.promoVideo.findUnique({ where: { id: videoId } });
+  const track = ((video?.track as Track) ?? "serie") as Track;
+  if (!video || !trackBeschreibung(track).sofortPosten) {
+    return { track, gepostet: false, grund: "Video nicht gefunden oder keine Serien-Sparte" };
+  }
+  if (video.status !== "done") return { track, gepostet: false, grund: "noch nicht fertig gerendert" };
+  if (video.postedAt) return { track, gepostet: false, grund: "schon gepostet" };
+
+  const titel = video.fileTitle || video.hookText.split("\n")[0];
+  if (!video.publicUrl) {
+    await logActivity(`Posten übersprungen: "${titel}" hat keine öffentliche Kopie.`, {
+      level: "error",
+      track,
+      videoId,
+    });
+    return abschluss(track, jetzt, { gepostet: false, grund: "keine öffentliche Kopie" }, titel);
+  }
+
+  const zeitplan = await getPostZeitplan(track);
+  return posteKandidat(track, zeitplan, video as PostKandidat, jetzt);
+}
+
+/** Fertige Serien-Videos, die noch nicht gepostet sind (Rückstand nach einem Fehler). */
+export async function ungepostetSerienVideos(track: Track, tage = 3): Promise<string[]> {
+  // Nicht die ganz frischen: deren Post läuft womöglich gerade.
+  const vor = new Date(Date.now() - 30 * 60 * 1000);
+  const zeilen = await prisma.promoVideo.findMany({
+    where: {
+      track,
+      status: "done",
+      postedAt: null,
+      createdAt: { gt: new Date(Date.now() - tage * 24 * 3600 * 1000), lt: vor },
+    },
+    orderBy: { createdAt: "asc" },
+    select: { id: true },
+  });
+  return zeilen.map((z) => z.id);
 }
 
 export interface SofortPostErgebnis {

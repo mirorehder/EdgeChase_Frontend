@@ -40,6 +40,10 @@ interface Patch {
   theme?: string;
   /** Eigene Instagram-Caption; wie theme: undefined = unverändert, "" = entfernt. */
   postCaption?: string;
+  /** Nur Serien: die Zahl für das nächste Video. */
+  counterNext?: number;
+  /** Nur Serien: läuft die Serie? */
+  serieAktiv?: boolean;
   /** Übersteuerung des Fremdmaterials: "auto", "an" oder "aus". */
   foreignMode?: string;
 }
@@ -76,6 +80,34 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
       return NextResponse.json(updated);
     }
 
+    // Serien: Pause/Zähler allein (Schalter im Dashboard), ohne Textphasen.
+    const istSerie = concept.counterNext !== null;
+    if (istSerie && patch.textPhases === undefined) {
+      const zahl =
+        patch.counterNext === undefined
+          ? undefined
+          : Math.max(1, Math.round(Number(patch.counterNext) || 1));
+      const updated = await prisma.concept.update({
+        where: { id: params.id },
+        data: {
+          ...(zahl !== undefined ? { counterNext: zahl } : {}),
+          ...(patch.serieAktiv !== undefined ? { serieAktiv: !!patch.serieAktiv } : {}),
+        },
+      });
+      await logActivity(
+        `Serie "${updated.title}": ` +
+          [
+            zahl !== undefined ? `nächste Zahl ${zahl}` : "",
+            patch.serieAktiv !== undefined ? (updated.serieAktiv ? "läuft" : "pausiert") : "",
+          ]
+            .filter(Boolean)
+            .join(", ") +
+          ".",
+        { track: trackFromValue(concept.track) },
+      );
+      return NextResponse.json(updated);
+    }
+
     const phasen = (patch.textPhases ?? [])
       .map((p) => {
         const start = Math.max(0, Math.round(Number(p.refStartMs) || 0));
@@ -99,6 +131,13 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     if (!phasen.length) {
       return NextResponse.json(
         { error: "Mindestens eine Textphase mit Wortlaut wird gebraucht." },
+        { status: 400 },
+      );
+    }
+
+    if (istSerie && !phasen.some((p) => /\{n\}/i.test(p.text))) {
+      return NextResponse.json(
+        { error: "Der Text braucht den Platzhalter {n} - dort setzt der Zähler die Zahl ein." },
         { status: 400 },
       );
     }
@@ -129,6 +168,10 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
           patch.postCaption === undefined
             ? concept.postCaption
             : patch.postCaption.trim() || null,
+        ...(istSerie && patch.counterNext !== undefined
+          ? { counterNext: Math.max(1, Math.round(Number(patch.counterNext) || 1)) }
+          : {}),
+        ...(istSerie && patch.serieAktiv !== undefined ? { serieAktiv: !!patch.serieAktiv } : {}),
         // Falls der Schalter im selben Patch mitkommt.
         ...(foreignMode !== undefined ? { foreignMode } : {}),
       },

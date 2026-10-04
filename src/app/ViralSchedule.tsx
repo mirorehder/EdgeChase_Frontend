@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { Track } from "@/lib/trackClient";
+import { trackBeschreibung, type Track } from "@/lib/trackClient";
 
 interface Settings {
   enabled: boolean;
@@ -91,6 +91,8 @@ export function ViralSchedule({ track }: { track: Track }) {
   if (!settings) return null;
 
   const gewaehlt = new Set(settings.conceptIds);
+  // Serien: ein Video je laufender Serie und Tag - Anzahl und Auswahl entfallen.
+  const serie = trackBeschreibung(track).zaehler;
 
   function umschalten(id: string) {
     if (!settings) return;
@@ -106,7 +108,9 @@ export function ViralSchedule({ track }: { track: Track }) {
       : konzepte.length;
 
   const zusammenfassung = settings.enabled
-    ? `${settings.zeitpunkt} · ${settings.videosPerDay}/Tag · ${aktiveKonzepte} Konzept(e)`
+    ? serie
+      ? `täglich ${settings.zeitpunkt} · eine Zahl je Serie`
+      : `${settings.zeitpunkt} · ${settings.videosPerDay}/Tag · ${aktiveKonzepte} Konzept(e)`
     : "aus";
 
   return (
@@ -122,7 +126,11 @@ export function ViralSchedule({ track }: { track: Track }) {
       {open && (
         <>
           <p className="chat-hint">
-            {settings.enabled
+            {serie
+              ? settings.enabled
+                ? `Täglich um ${settings.zeitpunkt}: für jede laufende Serie ein neues Video mit der nächsten Zahl - es wird gerendert und sofort gepostet.`
+                : "Abgeschaltet - es entstehen keine Tagesvideos von selbst. Jede Serie lässt sich unten auch einzeln pausieren."
+              : settings.enabled
               ? `Täglich um ${settings.zeitpunkt}: ${settings.videosPerDay} Edit(s), ` +
                 (settings.conceptMode === "fixed"
                   ? `feste Auswahl aus ${aktiveKonzepte} Konzept(en), der Reihe nach.`
@@ -136,9 +144,10 @@ export function ViralSchedule({ track }: { track: Track }) {
               checked={settings.enabled}
               onChange={(e) => setSettings({ ...settings, enabled: e.target.checked })}
             />
-            <span>Täglich automatisch Edits erzeugen</span>
+            <span>{serie ? "Täglich automatisch Serien-Videos erzeugen und posten" : "Täglich automatisch Edits erzeugen"}</span>
           </label>
 
+          {!serie && (
           <div className="field-row">
             <label>
               Videos pro Tag
@@ -168,8 +177,9 @@ export function ViralSchedule({ track }: { track: Track }) {
               </select>
             </label>
           </div>
+          )}
 
-          {settings.conceptMode === "fixed" && (
+          {!serie && settings.conceptMode === "fixed" && (
             <div>
               <p className="chat-hint" style={{ marginBottom: 6 }}>
                 Nur diese Konzepte kommen zum Zug - auch hier der Reihe nach, damit nicht

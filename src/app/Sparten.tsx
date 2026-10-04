@@ -150,6 +150,14 @@ function SpartenZeichen({ track }: { track: Track }) {
           <path d="M4 5.5h16v10.5H10.5L6 20v-4H4z" />
         </svg>
       );
+    // Serie: Kalenderblatt mit Zähler.
+    case "serie":
+      return (
+        <svg {...gemeinsam} className="tab-zeichen">
+          <rect x="3.5" y="5" width="17" height="15" rx="2.5" />
+          <path d="M3.5 10h17M8 3v4M16 3v4M10.5 13.5 12.5 12v5" />
+        </svg>
+      );
     // Kleidung: T-Shirt.
     case "clothing":
       return (
