@@ -29,7 +29,7 @@ export const MAX_VIDEOS_PER_DAY = 5;
 
 /** Die Sparten, die überhaupt einen Zeitplan haben. Die Promo-Sparte hat
  *  ihren eigenen Satz Einstellungen. */
-export const ZEITPLAN_SPARTEN: Track[] = ["viral", "sports", "clothing", "coaching"];
+export const ZEITPLAN_SPARTEN: Track[] = ["viral", "sports", "clothing", "coaching", "serie"];
 
 export async function getViralSchedule(track: Track): Promise<ViralScheduleSettings> {
   const row = await prisma.trackSchedule.findUnique({ where: { id: track } });

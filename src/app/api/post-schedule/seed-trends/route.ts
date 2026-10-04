@@ -35,6 +35,7 @@ const HASHTAGS: Record<Track, string> = {
   sports: "ActionSport ExtremeSports Adrenaline Athletes ForYouPage",
   clothing: "Streetwear OOTD Fashion Outfit Style",
   coaching: "Parkour Freerunning ParkourCoaching Coaching Basel",
+  serie: "Parkour Freerunning Challenge DayByDay ForYouPage",
 };
 
 // Coaching postet vom selben Konto wie Doc Meiro und startet mit denselben
@@ -64,6 +65,7 @@ const POOLS: Record<Track, SeedSound[]> = {
     { audioId: "3018052581797732", titel: "agri__91 - Original-Audio (17s)" },
   ],
   coaching: VIRAL_SOUNDS,
+  serie: VIRAL_SOUNDS,
   clothing: [
     { audioId: "3132622323696161", titel: "I Know What You Want x Madison Calley (58s)" },
     { audioId: "1048526387234935", titel: "justtrip.it - Original-Audio (36s)" },
@@ -83,7 +85,7 @@ async function lauf(request: NextRequest) {
 
   const ergebnisse: { track: Track; anzahl: number }[] = [];
 
-  for (const track of ["promo", "viral", "sports", "clothing", "coaching"] as Track[]) {
+  for (const track of ["promo", "viral", "sports", "clothing", "coaching", "serie"] as Track[]) {
     // Bestehenden Zeitplan holen (Standard, wenn noch nicht vorhanden), damit
     // enabled/Zeitfenster/Abstand nicht ueberschrieben werden.
     const bestand = await getPostZeitplan(track);

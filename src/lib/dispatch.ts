@@ -34,6 +34,20 @@ export async function dispatchJob(jobId: string, baseUrl: string): Promise<void>
 }
 
 /**
+ * Stösst das Posten eines fertigen Serien-Videos in einer eigenen Ausführung
+ * an - mit eigenen 300 Sekunden, unabhängig vom Render des nächsten Auftrags.
+ */
+export async function dispatchPost(jobId: string, baseUrl: string): Promise<void> {
+  const anfrage = fetch(`${baseUrl}/api/jobs/${jobId}/serie-post`, {
+    method: "POST",
+    headers: { "x-api-key": env.cronSecret },
+  }).catch(() => {
+    // Bleibt das Video ungepostet, holt es der nächste Tageslauf nach.
+  });
+  await Promise.race([anfrage, new Promise((r) => setTimeout(r, ANSTOSS_MS))]);
+}
+
+/**
  * So lange gilt ein bereits laufender Render als lebendig.
  *
  * Danach ist die Ausführung, die ihn angestossen hat, längst an Vercels

@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { createJobFromSpec, createViralJobFromConcept } from "@/lib/pipeline";
+import {
+  SerieHeuteSchonErzeugt,
+  createJobFromSpec,
+  createViralJobFromConcept,
+  erzeugeSerienVideo,
+} from "@/lib/pipeline";
 import type { Track } from "@/lib/trackClient";
 
 export const maxDuration = 120;
@@ -11,6 +16,23 @@ export async function POST(_request: NextRequest, { params }: { params: { id: st
     const concept = await prisma.concept.findUnique({ where: { id: params.id } });
     if (!concept) {
       return NextResponse.json({ error: "Konzept nicht gefunden." }, { status: 404 });
+    }
+
+    // Serie mit Tageszähler: das heutige Video (Zahl wird vergeben und
+    // hochgezählt, höchstens eines je Tag). Rendern und Posten laufen danach
+    // von selbst.
+    if (concept.counterNext !== null) {
+      try {
+        const { jobId, zahl } = await erzeugeSerienVideo(concept.id, { origin: "manual" });
+        // Gerendert wird vom Aufrufer (Dashboard-Knopf) über /process; danach
+        // geht das Posten von selbst raus.
+        return NextResponse.json({ jobId, zahl });
+      } catch (err) {
+        if (err instanceof SerieHeuteSchonErzeugt) {
+          return NextResponse.json({ error: err.message }, { status: 409 });
+        }
+        throw err;
+      }
     }
 
     // Virale Edits gehen einen anderen Weg: dort liefert das Konzept nur den

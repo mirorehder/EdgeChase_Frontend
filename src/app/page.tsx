@@ -173,6 +173,10 @@ const HINWEIS: Record<Track, string> = {
     "Videos, die Coaching-Anfragen bringen (z. B. „Willst du das lernen? Schick mir eine DM“). " +
     "Clips und Quellordner kommen von Doc Meiro Reels - schon analysiert, nichts wird doppelt " +
     "ausgewertet. Texte und Regie schreibst du selbst als Konzept. Beim Posten ist der Ort immer Basel.",
+  serie:
+    "Tägliche Serien mit Zähler, z. B. „Day {n} of posting until Red Bull contacts me“. Jedes " +
+    "Konzept ist eine Serie: der Text trägt {n}, und die Zahl steigt mit jedem Video um 1. Erzeugen " +
+    "und Posten ist hier ein einziger Ablauf - sobald das Video fertig gerendert ist, geht es raus.",
   clothing:
     "Hier zählt, wie gut die Kleidung zu sehen ist - nicht der Trick. Geschnitten wird auf den " +
     "besten Ausschnitt jedes Clips, der Text stammt aus einem Konzept oder aus dem Dialog.",

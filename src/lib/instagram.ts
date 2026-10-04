@@ -64,8 +64,8 @@ export async function pruefeZugang(
  */
 export function igZugang(track: Track): IgZugang | null {
   const suffix = track.toUpperCase();
-  // "coaching" postet vom Doc-Meiro-Konto, solange keine eigenen Werte da sind.
-  const rueckfall = track === "coaching" ? "VIRAL" : null;
+  // "coaching" und "serie" posten vom Doc-Meiro-Konto, solange keine eigenen Werte da sind.
+  const rueckfall = track === "coaching" || track === "serie" ? "VIRAL" : null;
   const token =
     process.env[`IG_TOKEN_${suffix}`] ||
     (rueckfall && process.env[`IG_TOKEN_${rueckfall}`]) ||

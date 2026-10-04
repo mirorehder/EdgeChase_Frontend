@@ -30,6 +30,10 @@ interface Concept {
   secondsPerScene: number;
   theme: string | null;
   postCaption: string | null;
+  // Nur Serien: nächste Zahl, läuft die Serie, Tag der letzten Erzeugung.
+  counterNext: number | null;
+  serieAktiv: boolean;
+  serieLastDay: string | null;
   notes: string | null;
   // Behaltenes Referenzvideo (nur bei Fremdmaterial) und die Übersteuerung.
   referenceVideoUrl: string | null;
@@ -55,6 +59,8 @@ export function ConceptLibrary({ track }: { track: Track }) {
   const mitReferenz = trackBeschreibung(track).referenzUpload;
   // Coaching: die Instagram-Caption schreibt man pro Konzept selbst, nie die KI.
   const eigeneCaption = trackBeschreibung(track).eigeneCaption;
+  // Serien mit Tageszähler: {n} im Text, Zahl steigt mit jedem Video.
+  const serie = trackBeschreibung(track).zaehler;
   const [concepts, setConcepts] = useState<Concept[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -66,6 +72,7 @@ export function ConceptLibrary({ track }: { track: Track }) {
     phases: TextPhase[];
     theme: string;
     postCaption: string;
+    counterNext: string;
   } | null>(null);
   const [soundId, setSoundId] = useState<string | null>(null);
   const [soundEntwurf, setSoundEntwurf] = useState("");
@@ -82,6 +89,7 @@ export function ConceptLibrary({ track }: { track: Track }) {
   const [neuHook, setNeuHook] = useState("");
   const [neuBeschreibung, setNeuBeschreibung] = useState("");
   const [neuCaption, setNeuCaption] = useState("");
+  const [neuStart, setNeuStart] = useState("1");
 
   async function load() {
     const res = await fetch(`/api/concepts?track=${track}`, { cache: "no-store" });
@@ -149,6 +157,7 @@ export function ConceptLibrary({ track }: { track: Track }) {
           hookText,
           description: neuBeschreibung,
           ...(eigeneCaption ? { caption: neuCaption } : {}),
+          ...(serie ? { counterStart: Number(neuStart) || 1 } : {}),
         }),
       });
       const data = await res.json();
@@ -158,6 +167,7 @@ export function ConceptLibrary({ track }: { track: Track }) {
       setNeuHook("");
       setNeuBeschreibung("");
       setNeuCaption("");
+      setNeuStart("1");
       setNeuOffen(false);
       await load();
     } catch (err) {
@@ -238,7 +248,7 @@ export function ConceptLibrary({ track }: { track: Track }) {
   async function verwenden(concept: Concept) {
     setBusy(concept.id);
     setFehler(false);
-    setNote(`Erzeuge Video nach „${concept.title}" …`);
+    setNote(serie ? `Tagesvideo „${concept.title}" wird angelegt …` : `Erzeuge Video nach „${concept.title}" …`);
     try {
       const res = await fetch(`/api/concepts/${concept.id}/use`, { method: "POST" });
       const data = await res.json();
@@ -251,13 +261,30 @@ export function ConceptLibrary({ track }: { track: Track }) {
       const renderData = await render.json();
       setNote(
         renderData.status === "done"
-          ? "Fertig - das Video steht unten in der Liste."
+          ? serie
+            ? `Tag ${data.zahl} fertig - das Video wird jetzt gepostet. Das Ergebnis steht unter „Post-Historie".`
+            : "Fertig - das Video steht unten in der Liste."
           : `Render fehlgeschlagen: ${renderData.lastError ?? renderData.error}`,
       );
       router.refresh();
     } catch (err) {
       setFehler(true);
       setNote(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  /** Serie pausieren/fortsetzen - der Zähler bleibt stehen. */
+  async function serieUmschalten(concept: Concept) {
+    setBusy(concept.id);
+    try {
+      await fetch(`/api/concepts/${concept.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ serieAktiv: !concept.serieAktiv }),
+      });
+      await load();
     } finally {
       setBusy(null);
     }
@@ -307,6 +334,7 @@ export function ConceptLibrary({ track }: { track: Track }) {
         : [{ text: concept.hookText, seconds: concept.totalSeconds, role: "plain", sceneHint: "" }],
       theme: concept.theme ?? "",
       postCaption: concept.postCaption ?? "",
+      counterNext: String(concept.counterNext ?? 1),
     });
   }
 
@@ -331,6 +359,7 @@ export function ConceptLibrary({ track }: { track: Track }) {
           textPhases: entwurf.phases,
           theme: entwurf.theme,
           ...(eigeneCaption ? { postCaption: entwurf.postCaption } : {}),
+          ...(serie ? { counterNext: Number(entwurf.counterNext) || 1 } : {}),
         }),
       });
       const data = await res.json();
@@ -442,11 +471,11 @@ export function ConceptLibrary({ track }: { track: Track }) {
             />
           </label>
           <label>
-            Hook-Text - der Text, der im Video steht
+            {serie ? "Hook-Text mit Platzhalter {n} - dort steht jeden Tag die nächste Zahl" : "Hook-Text - der Text, der im Video steht"}
             <textarea
               rows={4}
               value={neuHook}
-              placeholder={"Zeilenumbrüche werden ins Video übernommen"}
+              placeholder={serie ? "Day {n} of posting until Red Bull contacts me" : "Zeilenumbrüche werden ins Video übernommen"}
               onChange={(e) => setNeuHook(e.target.value)}
             />
           </label>
@@ -467,13 +496,29 @@ export function ConceptLibrary({ track }: { track: Track }) {
               danach am Konzept ändern kannst.
             </span>
           </label>
+          {serie && (
+            <label>
+              Startzahl
+              <input
+                type="number"
+                min={1}
+                value={neuStart}
+                onChange={(e) => setNeuStart(e.target.value)}
+              />
+              <span className="clip-meta">
+                Das erste Video bekommt diese Zahl, jedes weitere am Folgetag eine mehr. Jedes
+                Konzept ist eine eigene Serie mit eigenem Zähler.
+              </span>
+            </label>
+          )}
+
           {eigeneCaption && (
             <label>
               Caption (Instagram-Bildunterschrift)
               <textarea
                 rows={3}
                 value={neuCaption}
-                placeholder="z.B. Willst du das lernen? Schick mir eine DM!"
+                placeholder={serie ? "z.B. Day {n} - bleibt dran! (auch {n} möglich)" : "z.B. Willst du das lernen? Schick mir eine DM!"}
                 onChange={(e) => setNeuCaption(e.target.value)}
               />
               <span className="clip-meta">
@@ -550,6 +595,16 @@ export function ConceptLibrary({ track }: { track: Track }) {
                 {eigeneCaption && (
                   <span className="clip-meta">
                     Caption: {concept.postCaption || "(leer - der Hook-Text wird verwendet)"}
+                  </span>
+                )}
+                {serie && concept.counterNext !== null && (
+                  <span
+                    className="clip-meta"
+                    style={{ color: concept.serieAktiv ? "var(--ok)" : undefined }}
+                  >
+                    {concept.serieAktiv ? "Läuft" : "Pausiert"} · nächste Zahl:{" "}
+                    <strong>{concept.counterNext}</strong>
+                    {concept.serieLastDay ? ` · letztes Video am ${concept.serieLastDay}` : ""}
                   </span>
                 )}
                 {/* Mehrere Textphasen nacheinander: erst der Aufbau, dann die
@@ -641,8 +696,21 @@ export function ConceptLibrary({ track }: { track: Track }) {
 
                 <div className="actions" style={{ marginTop: 8, marginBottom: 0 }}>
                   <button onClick={() => verwenden(concept)} disabled={busy !== null}>
-                    {trackBeschreibung(track).nachKonzept ? "Edit nach diesem Konzept" : "Video nach diesem Konzept"}
+                    {serie
+                      ? "Heutiges Video jetzt erzeugen & posten"
+                      : trackBeschreibung(track).nachKonzept
+                        ? "Edit nach diesem Konzept"
+                        : "Video nach diesem Konzept"}
                   </button>
+                  {serie && (
+                    <button
+                      className="secondary"
+                      onClick={() => serieUmschalten(concept)}
+                      disabled={busy !== null}
+                    >
+                      {concept.serieAktiv ? "Serie pausieren" : "Serie fortsetzen"}
+                    </button>
+                  )}
                   <button
                     className="secondary"
                     onClick={() => oeffnen(concept)}
@@ -760,6 +828,22 @@ export function ConceptLibrary({ track }: { track: Track }) {
                         wenn egal. Leeren und speichern entfernt die Anweisung.
                       </span>
                     </label>
+
+                    {serie && (
+                      <label>
+                        Nächste Zahl
+                        <input
+                          type="number"
+                          min={1}
+                          value={entwurf.counterNext}
+                          onChange={(e) => setEntwurf({ ...entwurf, counterNext: e.target.value })}
+                        />
+                        <span className="clip-meta">
+                          Die Zahl, die das nächste Video bekommt. Hier korrigierst du den Zähler,
+                          falls etwas dazwischenkam. Der Text braucht den Platzhalter {"{n}"}.
+                        </span>
+                      </label>
+                    )}
 
                     {eigeneCaption && (
                       <label>
