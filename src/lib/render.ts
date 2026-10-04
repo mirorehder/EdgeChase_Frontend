@@ -141,6 +141,9 @@ export async function renderPromoVideo(
         src: scene.sourceUrl,
         startMs: scene.startMs,
         durationMs: scene.endMs - scene.startMs,
+        // Der Ton der Vorlage kommt über den Instagram-Sound; im Schnitt bleibt
+        // das Referenzmaterial stumm, die eigenen Clips behalten ihren Ton.
+        muted: true,
       });
       continue;
     }
