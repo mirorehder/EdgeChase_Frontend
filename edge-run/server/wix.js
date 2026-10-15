@@ -8,7 +8,9 @@
 //   Zeiten sind Epoch-MILLISEKUNDEN als String ("1719390501000"), kein ISO-Datum.
 //   Benötigte Berechtigungen des API-Keys: Manage Coupons (SCOPE.DC-COUPONS.MANAGE-COUPONS)
 //   und fürs Mailen (server/mail.js) Manage Email Marketing (SCOPE.DC-PROMOTE.EMAIL-MARKETING).
-//   Pro Kunde lässt sich nichts begrenzen – nur die Gesamtnutzung (usageLimit).
+//   Code: höchstens 20 Zeichen, eindeutig pro Site. Einlösungen begrenzt usageLimit (gesamt);
+//   limitPerCustomer existiert laut Schema auch, ist bei usageLimit 1 aber überflüssig.
+//   limitedToOneItem=true: bei mehreren Artikeln gilt der Rabatt NUR für den günstigsten.
 //
 // Benötigte ENV:
 //   WIX_API_KEY   – API-Key (Wix API Keys Manager), mit Berechtigung "Manage Coupons"
@@ -25,6 +27,12 @@ const ENDPOINT = process.env.WIX_COUPONS_ENDPOINT || "https://www.wixapis.com/st
 
 export const WIX_ENABLED = Boolean(API_KEY && SITE_ID);
 
+// Wirkt der Rabatt nur auf den günstigsten Artikel im Warenkorb (true) oder auf alle (false)?
+// Standard true – wie bei euren bestehenden Instagram-Coupons und schützt die Marge.
+export const ONE_ITEM = (process.env.COUPON_LIMITED_TO_ONE_ITEM ?? "true").toLowerCase() !== "false";
+// Tag, damit sich die Spiel-Coupons im Wix-Dashboard von anderen trennen lassen.
+const TAG = process.env.COUPON_TAG || "EDGE RUN";
+
 /**
  * Erstellt einen Rabattcode in Wix.
  * @param {{code:string, kind:"percent"|"free", value:number, name:string, expiresAt:Date}} r
@@ -37,6 +45,11 @@ export async function createCoupon(r) {
 
   if (!WIX_ENABLED) return { created: false, demo: true };
 
+  if (!r.code || r.code.length > 20) {
+    console.error("Wix-Coupon: Code zu lang/leer", r.code);
+    return { created: false, demo: false, error: "code_too_long" };
+  }
+
   const specification = {
     name: `EDGE RUN – ${r.name}`.slice(0, 100),
     code: r.code,
@@ -46,6 +59,8 @@ export async function createCoupon(r) {
     usageLimit: 1,                       // Code nur 1x einlösbar
     scope: { namespace: "stores" },      // gilt für alle Produkte im Shop
     percentOffRate: r.value,             // Prozent-Rabatt
+    limitedToOneItem: ONE_ITEM,
+    tags: [TAG],
   };
 
   try {

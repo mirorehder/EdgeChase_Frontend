@@ -84,7 +84,7 @@ async function send({ to, subject, html, idempotencyKey }) {
 }
 
 /** Rabattcode an den Spieler. */
-export function sendCodeMail({ to, name, code, percent, expiresAt, sid }) {
+export function sendCodeMail({ to, name, code, percent, expiresAt, sid, oneItem }) {
   const until = fmtDate(expiresAt);
   const shopLink = SHOP_URL
     ? `<p style="margin:24px 0 0"><a href="${esc(SHOP_URL)}" style="background:#ff2b2b;color:#fff;text-decoration:none;font-weight:800;letter-spacing:.06em;padding:14px 22px;border-radius:4px;display:inline-block">ZUM SHOP</a></p>`
@@ -97,7 +97,7 @@ export function sendCodeMail({ to, name, code, percent, expiresAt, sid }) {
   <div style="border:1px dashed #3a3a44;border-radius:8px;padding:18px;text-align:center;margin:0 0 16px">
     <div style="font-family:Menlo,Consolas,monospace;font-size:26px;font-weight:800;letter-spacing:.06em">${esc(code)}</div>
   </div>
-  <p style="font-size:14px;line-height:1.5;color:#b5b5bb;margin:0">Gültig bis <b>${esc(until)}</b>, einmal einlösbar. Gib den Code im Warenkorb bei der Bestellung ein – am besten per Copy &amp; Paste.</p>
+  <p style="font-size:14px;line-height:1.5;color:#b5b5bb;margin:0">Gültig bis <b>${esc(until)}</b>, einmal einlösbar. Gib den Code im Warenkorb bei der Bestellung ein – am besten per Copy &amp; Paste.${oneItem ? " Der Rabatt gilt für einen Artikel pro Bestellung (den günstigsten im Warenkorb)." : ""}</p>
   ${shopLink}
   <p style="font-size:12px;color:#6a6a72;margin:32px 0 0">Du bekommst diese Mail, weil du bei EDGE RUN mitgespielt hast. Es folgen keine weiteren Mails daraus.</p>
 </div></body></html>`;

@@ -7,7 +7,7 @@
 import { verifySession } from "../server/token.js";
 import { drawReward, buildCode, expiryDate } from "../server/reward.js";
 import { claimDailyPlay, releaseDailyPlay, useToken, allowJackpot } from "../server/store.js";
-import { createCoupon } from "../server/wix.js";
+import { createCoupon, ONE_ITEM } from "../server/wix.js";
 import { sendCodeMail, sendTeamJackpotAlert } from "../server/mail.js";
 import { sendJson, readJson, clampNum } from "../server/http.js";
 
@@ -75,7 +75,7 @@ export default async function handler(req, res) {
     // Hauptpreis: kein automatischer Coupon -> das Team muss den Gewinner kontaktieren.
     await sendTeamJackpotAlert({ name: data.name, email: data.em, score, code, sid: data.sid });
   } else if (data.em) {
-    const mail = await sendCodeMail({ to: data.em, name: data.name, code, percent: reward.value, expiresAt: expires, sid: data.sid });
+    const mail = await sendCodeMail({ to: data.em, name: data.name, code, percent: reward.value, expiresAt: expires, sid: data.sid, oneItem: ONE_ITEM });
     mailSent = Boolean(mail.sent);
   }
 
