@@ -62,6 +62,17 @@ export async function claimDailyPlay(emailHash) {
   catch (e) { console.warn("claimDailyPlay:", e.message); return true; } // Fehler = nicht aussperren
 }
 
+// Gibt die Tages-Sperre wieder frei – nur nach einem technischen Fehler auf unserer
+// Seite (z. B. Wix-Coupon konnte nicht erstellt werden), damit der Spieler nicht
+// seinen Versuch verliert.
+export async function releaseDailyPlay(emailHash) {
+  const key = `played:${dayKey()}:${emailHash}`;
+  try {
+    if (!KV_ENABLED) { mem.delete(key); return; }
+    await kv(["del", key]);
+  } catch (e) { console.warn("releaseDailyPlay:", e.message); }
+}
+
 // true = Token wird zum ersten Mal eingelöst (kein Replay).
 export async function useToken(sid) {
   try { return await setNX(`used:${sid}`, 60 * 30); }

@@ -1,14 +1,15 @@
 // POST /api/reward { token, score, durationMs, jumps, hits }
-//   -> { ok, tier, reward, code, expiresAt, demo, manual, message }
+//   -> { ok, reward, code, score, expiresAt, demo, manual, mailSent, message }
 //
 // Autoritäre Auswertung: prüft Token, verhindert Replay, plausibilisiert den
-// Score gegen die Spieldauer, zieht die Belohnung serverseitig und legt (falls
-// Wix konfiguriert) den Coupon an.
-import { verifySession } from "./lib/token.js";
-import { drawReward, buildCode, expiryDate } from "./lib/reward.js";
-import { claimDailyPlay, useToken, allowJackpot } from "./lib/store.js";
-import { createCoupon } from "./lib/wix.js";
-import { sendJson, readJson, clampNum } from "./lib/http.js";
+// Score gegen die Spieldauer, zieht die Belohnung serverseitig, legt (falls Wix
+// konfiguriert) den Coupon an und verschickt den Code per E-Mail.
+import { verifySession } from "../server/token.js";
+import { drawReward, buildCode, expiryDate } from "../server/reward.js";
+import { claimDailyPlay, releaseDailyPlay, useToken, allowJackpot } from "../server/store.js";
+import { createCoupon } from "../server/wix.js";
+import { sendCodeMail, sendTeamJackpotAlert } from "../server/mail.js";
+import { sendJson, readJson, clampNum } from "../server/http.js";
 
 // Physikalische Obergrenze: max. ~85 m/s (maxSpeed*scale*metersPerPx) + Puffer
 // für Scherben-Boni. Mehr ist in der Zeit nicht erreichbar -> gekappt.
@@ -46,7 +47,7 @@ export default async function handler(req, res) {
     reward = { kind: "percent", value: 30 };
   }
 
-  // Kein Gewinn -> kein Code (E-Mail ist trotzdem als Lead erfasst).
+  // Kein Gewinn -> kein Code, keine Mail.
   if (reward.kind === "none") {
     return sendJson(res, 200, {
       ok: true, reward, code: null, score,
@@ -58,6 +59,26 @@ export default async function handler(req, res) {
   const expires = expiryDate();
   const wix = await createCoupon({ code, kind: reward.kind, value: reward.value, name: data.name, expiresAt: expires });
 
+  // Coupon-Erstellung ist technisch gescheitert: KEINEN Code zeigen, der nicht
+  // existiert, und den Versuch zurückgeben (Tageslimit freigeben).
+  if (wix.error) {
+    await releaseDailyPlay(data.eh);
+    return sendJson(res, 502, {
+      ok: false, error: "coupon_failed",
+      message: "Dein Rabattcode konnte gerade nicht erstellt werden. Bitte versuch es in ein paar Minuten noch einmal – dein Versuch ist nicht verbraucht.",
+    });
+  }
+
+  // Mailversand. Ein Fehler hier ist kein Abbruchgrund: der Code wird trotzdem angezeigt.
+  let mailSent = false;
+  if (reward.kind === "free") {
+    // Hauptpreis: kein automatischer Coupon -> das Team muss den Gewinner kontaktieren.
+    await sendTeamJackpotAlert({ name: data.name, email: data.em, score, code, sid: data.sid });
+  } else if (data.em) {
+    const mail = await sendCodeMail({ to: data.em, name: data.name, code, percent: reward.value, expiresAt: expires, sid: data.sid });
+    mailSent = Boolean(mail.sent);
+  }
+
   return sendJson(res, 200, {
     ok: true,
     reward,
@@ -66,19 +87,19 @@ export default async function handler(req, res) {
     expiresAt: reward.kind === "free" ? null : expires.toISOString(),
     demo: Boolean(wix.demo),
     manual: Boolean(wix.manual),
-    message: messageFor(reward, wix),
+    mailSent,
+    message: messageFor(reward, wix, mailSent),
   });
 }
 
-function messageFor(reward, wix) {
+function messageFor(reward, wix, mailSent) {
   if (reward.kind === "free") {
     return "Wahnsinn – du hast den Hauptpreis geknackt! Wir melden uns per E-Mail bei dir.";
-  }
-  if (wix.error) {
-    return "Dein Code ist reserviert – falls er an der Kasse (noch) nicht zieht, melde dich kurz bei uns.";
   }
   if (wix.demo) {
     return "Demo-Modus: Code wird angezeigt, aber noch nicht in Wix erstellt (Wix-Keys fehlen).";
   }
-  return "Code an der Kasse einlösen. Nur begrenzt gültig – zöger nicht!";
+  return mailSent
+    ? "Wir haben dir den Code auch per E-Mail geschickt (ggf. im Spam-Ordner nachsehen). Gib ihn im Warenkorb ein."
+    : "Gib den Code im Warenkorb ein. Mach am besten einen Screenshot davon – die E-Mail konnte nicht zugestellt werden.";
 }

@@ -96,7 +96,7 @@ Alles über ENV-Variablen, **ohne Code-Änderung** (siehe `.env.example`):
 | `COUPON_EXPIRY_DAYS` | Gültigkeit der Codes. |
 | `JACKPOT_MAX_PER_MONTH` | Deckel für Gratis-Teile. |
 
-Belohnungstabellen im Code: `api/lib/reward.js` (`DEFAULT_TABLES`).
+Belohnungstabellen im Code: `server/reward.js` (`DEFAULT_TABLES`).
 
 ---
 
@@ -125,15 +125,16 @@ edge-run/
 │   ├── styles.css        # Brand-Styling (schwarz/weiß + Signal-Rot)
 │   ├── game.js           # Endless-Runner-Engine (Canvas)
 │   └── app.js            # Screen-Flow, API-Calls, Gewinn-Enthüllung
-├── api/
-│   ├── start.js          # Session-Token ausgeben
-│   ├── reward.js         # Auswertung + Coupon (autoritativ)
-│   └── lib/
-│       ├── token.js      # HMAC-Signatur der Sessions
-│       ├── reward.js     # Gewichtete Lotterie + Code-Schema
-│       ├── store.js      # Rate-Limit / Replay (KV-ready)
-│       ├── wix.js        # Wix-Coupon-Erstellung
-│       └── http.js       # kleine HTTP-Helfer
+├── api/                  # nur die zwei Endpunkte (je Datei = eine Vercel-Function)
+│   ├── start.js          # Session-Token + Rabatt-Leiter ausgeben
+│   └── reward.js         # Auswertung, Wix-Coupon, Mailversand (autoritativ)
+├── server/               # Hilfsmodule (bewusst NICHT in api/)
+│   ├── token.js          # HMAC-Signatur der Sessions
+│   ├── reward.js         # Rabatt-Leiter + Code-Schema
+│   ├── store.js          # Rate-Limit / Replay (KV-ready)
+│   ├── wix.js            # Wix-Coupon-Erstellung
+│   ├── mail.js           # Mailversand (Resend) + Team-Meldung bei Jackpot
+│   └── http.js           # kleine HTTP-Helfer
 ├── assets/               # statische Assets (NICHT "public/" – siehe Hinweis oben)
 │   ├── logo.png          # offizielles Logo (512px, Runtime)
 │   ├── logo-original.png # Original 4800px

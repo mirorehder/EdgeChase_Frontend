@@ -2,9 +2,9 @@
 // Startet eine Spiel-Session und gibt ein signiertes Token zurück, das später
 // von /api/reward geprüft wird. Name (für den Code) und E-Mail-Hash (fürs
 // Tageslimit) stecken signiert im Token – der Client kann sie nicht fälschen.
-import { signSession, emailHash, randomSid } from "./lib/token.js";
-import { ladder } from "./lib/reward.js";
-import { sendJson, readJson } from "./lib/http.js";
+import { signSession, emailHash, randomSid } from "../server/token.js";
+import { ladder } from "../server/reward.js";
+import { sendJson, readJson } from "../server/http.js";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return sendJson(res, 405, { ok: false, error: "method_not_allowed" });
@@ -23,6 +23,7 @@ export default async function handler(req, res) {
   const token = signSession({
     sid: randomSid(),
     name: cleanName.slice(0, 20),
+    em: cleanEmail,                 // für den Mailversand (signiert, nicht fälschbar)
     eh: emailHash(cleanEmail),
   });
 
