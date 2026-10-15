@@ -4,6 +4,7 @@
 // Tageslimit) stecken signiert im Token – der Client kann sie nicht fälschen.
 import { signSession, emailHash, randomSid } from "../server/token.js";
 import { ladder } from "../server/reward.js";
+import { claimPlay, PLAY_LIMIT_MODE } from "../server/store.js";
 import { sendJson, readJson } from "../server/http.js";
 
 export default async function handler(req, res) {
@@ -20,11 +21,23 @@ export default async function handler(req, res) {
     return sendJson(res, 400, { ok: false, error: "invalid", message: "Bitte gültige E-Mail eingeben." });
   }
 
+  // Hat diese Adresse schon gespielt? Dann gar nicht erst starten (der Versuch wird
+  // hier belegt, nicht erst bei der Auswertung – siehe server/store.js).
+  const eh = emailHash(cleanEmail);
+  if (!(await claimPlay(eh))) {
+    return sendJson(res, 200, {
+      ok: false, error: "already_played", limit: PLAY_LIMIT_MODE,
+      message: PLAY_LIMIT_MODE === "once"
+        ? "Mit dieser E-Mail-Adresse wurde schon gespielt – jede Adresse hat einen Versuch."
+        : "Du hast heute schon gespielt – morgen wieder!",
+    });
+  }
+
   const token = signSession({
     sid: randomSid(),
     name: cleanName.slice(0, 20),
     em: cleanEmail,                 // für den Mailversand (signiert, nicht fälschbar)
-    eh: emailHash(cleanEmail),
+    eh,
   });
 
   // Rabatt-Leiter mitgeben, damit die Live-Anzeige im Spiel exakt zum Server passt.

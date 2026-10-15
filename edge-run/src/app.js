@@ -63,7 +63,7 @@ form.addEventListener("submit", async (e) => {
       if (res.error === "already_played") {
         // schon gespielt -> direkt Ergebnis/Blocker zeigen
         show("result");
-        renderBlocked(res.message || "Du hast heute bereits gespielt.");
+        renderBlocked(res.message || "Du hast heute bereits gespielt.", res.limit);
         return;
       }
       throw new Error(res.message || "Start fehlgeschlagen");
@@ -157,7 +157,7 @@ async function handleGameOver(result) {
       reason: result.reason,
     });
     if (!res.ok) {
-      if (res.error === "already_played") return renderBlocked(res.message);
+      if (res.error === "already_played") return renderBlocked(res.message, res.limit);
       throw new Error(res.message || "Auswertung fehlgeschlagen");
     }
     renderReward(res, result.score);
@@ -224,14 +224,14 @@ function headlineFor(pct) {
   return "STARKER LAUF";
 }
 
-function renderBlocked(msg) {
+function renderBlocked(msg, limit) {
   $("#result-loading").hidden = true;
   const content = $("#result-content");
   content.hidden = false;
   $("#result-headline").textContent = "SCHON GESPIELT";
   $("#result-prize").classList.add("prize--none");
   $("#prize-value").textContent = "1×";
-  $("#prize-label").textContent = "PRO TAG";
+  $("#prize-label").textContent = limit === "once" ? "PRO E-MAIL-ADRESSE" : "PRO TAG";
   $("#result-code-wrap").hidden = true;
   $("#result-note").textContent = msg || "Komm morgen wieder und versuch dein Glück erneut.";
   $("#btn-again").hidden = true;

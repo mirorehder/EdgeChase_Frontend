@@ -1,12 +1,12 @@
 // POST /api/reward { token, score, durationMs, jumps, hits }
 //   -> { ok, reward, code, score, expiresAt, demo, manual, mailSent, message }
 //
-// Autoritäre Auswertung: prüft Token, verhindert Replay, plausibilisiert den
+// Autoritäre Auswertung (der Versuch wurde schon in /api/start belegt): prüft Token, verhindert Replay, plausibilisiert den
 // Score gegen die Spieldauer, zieht die Belohnung serverseitig, legt (falls Wix
 // konfiguriert) den Coupon an und verschickt den Code per E-Mail (Wix).
 import { verifySession } from "../server/token.js";
 import { drawReward, buildCode, expiryDate } from "../server/reward.js";
-import { claimDailyPlay, releaseDailyPlay, useToken, allowJackpot } from "../server/store.js";
+import { releasePlay, useToken, allowJackpot, PLAY_LIMIT_MODE } from "../server/store.js";
 import { createCoupon, ONE_ITEM } from "../server/wix.js";
 import { sendCodeMail, sendTeamJackpotAlert } from "../server/mail.js";
 import { sendJson, readJson, clampNum } from "../server/http.js";
@@ -34,11 +34,6 @@ export default async function handler(req, res) {
   const maxPlausible = Math.floor((durationMs / 1000) * MAX_METERS_PER_SEC) + SCORE_BUFFER;
   const score = Math.floor(clampNum(body.score, 0, Math.min(maxPlausible, 100000)));
 
-  // Tageslimit: ein gewerteter Lauf pro Person und Tag.
-  if (!(await claimDailyPlay(data.eh))) {
-    return sendJson(res, 200, { ok: false, error: "already_played", message: "Du hast heute schon gespielt – morgen wieder!" });
-  }
-
   // Belohnung ziehen (Leiter-Modell: gesicherter Boden + seltenes Upgrade/Jackpot).
   let { reward } = drawReward(score);
 
@@ -62,7 +57,7 @@ export default async function handler(req, res) {
   // Coupon-Erstellung ist technisch gescheitert: KEINEN Code zeigen, der nicht
   // existiert, und den Versuch zurückgeben (Tageslimit freigeben).
   if (wix.error) {
-    await releaseDailyPlay(data.eh);
+    await releasePlay(data.eh);
     return sendJson(res, 502, {
       ok: false, error: "coupon_failed",
       message: "Dein Rabattcode konnte gerade nicht erstellt werden. Bitte versuch es in ein paar Minuten noch einmal – dein Versuch ist nicht verbraucht.",
@@ -88,7 +83,7 @@ export default async function handler(req, res) {
     demo: Boolean(wix.demo),
     manual: Boolean(wix.manual),
     mailSent,
-    message: messageFor(reward, wix, mailSent),
+    message: messageFor(reward, wix, mailSent) + (PLAY_LIMIT_MODE === "off" ? " [Testmodus: Spiel-Limit aus]" : ""),
   });
 }
 

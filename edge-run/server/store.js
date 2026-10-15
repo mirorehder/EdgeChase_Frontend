@@ -56,21 +56,33 @@ async function kv(cmd) {
 const dayKey = () => new Date().toISOString().slice(0, 10);
 const monthKey = () => new Date().toISOString().slice(0, 7);
 
-// true = darf heute (noch) spielen; false = Tageslimit erreicht.
-export async function claimDailyPlay(emailHash) {
-  try { return await setNX(`played:${dayKey()}:${emailHash}`, 60 * 60 * 36); }
-  catch (e) { console.warn("claimDailyPlay:", e.message); return true; } // Fehler = nicht aussperren
+// Spiel-Limit je E-Mail-Adresse (gehasht). Per ENV PLAY_LIMIT:
+//   off    – kein Limit (nur zum Testen!)
+//   daily  – ein Versuch pro Adresse und Tag (Standard)
+//   once   – ein Versuch pro Adresse, für immer
+const MODE_RAW = String(process.env.PLAY_LIMIT || "daily").toLowerCase();
+export const PLAY_LIMIT_MODE = ["off", "daily", "once"].includes(MODE_RAW) ? MODE_RAW : "daily";
+const playKey = (emailHash) => (PLAY_LIMIT_MODE === "once" ? `played:once:${emailHash}` : `played:${dayKey()}:${emailHash}`);
+const playTtl = () => (PLAY_LIMIT_MODE === "once" ? 60 * 60 * 24 * 365 * 5 : 60 * 60 * 36);
+
+// Belegt den Versuch dieser Adresse – beim SPIELSTART aufgerufen, nicht erst bei der
+// Auswertung: sonst könnte man nach einem schlechten Lauf den Tab schließen und den
+// Versuch nie verbrauchen. true = darf spielen; false = hat schon gespielt.
+export async function claimPlay(emailHash) {
+  if (PLAY_LIMIT_MODE === "off") return true;
+  try { return await setNX(playKey(emailHash), playTtl()); }
+  catch (e) { console.warn("claimPlay:", e.message); return true; } // Fehler = nicht aussperren
 }
 
-// Gibt die Tages-Sperre wieder frei – nur nach einem technischen Fehler auf unserer
-// Seite (z. B. Wix-Coupon konnte nicht erstellt werden), damit der Spieler nicht
-// seinen Versuch verliert.
-export async function releaseDailyPlay(emailHash) {
-  const key = `played:${dayKey()}:${emailHash}`;
+// Gibt den Versuch wieder frei – nur nach einem technischen Fehler auf unserer Seite
+// (z. B. Wix-Coupon konnte nicht erstellt werden), damit der Spieler nicht verliert.
+export async function releasePlay(emailHash) {
+  if (PLAY_LIMIT_MODE === "off") return;
+  const key = playKey(emailHash);
   try {
     if (!KV_ENABLED) { mem.delete(key); return; }
     await kv(["del", key]);
-  } catch (e) { console.warn("releaseDailyPlay:", e.message); }
+  } catch (e) { console.warn("releasePlay:", e.message); }
 }
 
 // true = Token wird zum ersten Mal eingelöst (kein Replay).

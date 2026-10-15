@@ -90,7 +90,8 @@ Alles über ENV-Variablen, **ohne Code-Änderung** (siehe `.env.example`):
 |---|---|
 | `SESSION_SECRET` | **Pflicht.** Signaturschlüssel der Token. |
 | `WIX_API_KEY`, `WIX_SITE_ID` | Aktiviert echte Wix-Coupons. Leer = Demo. |
-| `KV_REST_API_URL`, `KV_REST_API_TOKEN` | Vercel KV: macht Tageslimit/Replay-Schutz dauerhaft. |
+| `KV_REST_API_URL`, `KV_REST_API_TOKEN` | Vercel KV: macht Spiel-Limit/Replay-Schutz dauerhaft. |
+| `PLAY_LIMIT` | `off` (Test), `daily` (Standard) oder `once` (ein Versuch je E-Mail-Adresse). |
 | `REWARD_LOW_MAX`, `REWARD_MID_MAX` | Score-Grenzen der Stufen. |
 | `REWARD_TABLE_JSON` | Komplette Gewinntabellen überschreiben. |
 | `COUPON_EXPIRY_DAYS` | Gültigkeit der Codes. |
