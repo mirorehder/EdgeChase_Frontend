@@ -133,7 +133,7 @@ edge-run/
 │   ├── reward.js         # Rabatt-Leiter + Code-Schema
 │   ├── store.js          # Rate-Limit / Replay (KV-ready)
 │   ├── wix.js            # Wix-Coupon-Erstellung
-│   ├── mail.js           # Mailversand (Resend) + Team-Meldung bei Jackpot
+│   ├── mail.js           # Mailversand über Wix + Team-Meldung bei Jackpot
 │   └── http.js           # kleine HTTP-Helfer
 ├── assets/               # statische Assets (NICHT "public/" – siehe Hinweis oben)
 │   ├── logo.png          # offizielles Logo (512px, Runtime)

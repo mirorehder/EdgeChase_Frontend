@@ -6,7 +6,8 @@
 //                            scope, percentOffRate | moneyOffAmount | ... } }
 //   Antwort: { id }
 //   Zeiten sind Epoch-MILLISEKUNDEN als String ("1719390501000"), kein ISO-Datum.
-//   Benötigte Berechtigung des API-Keys: Manage Coupons (SCOPE.DC-COUPONS.MANAGE-COUPONS).
+//   Benötigte Berechtigungen des API-Keys: Manage Coupons (SCOPE.DC-COUPONS.MANAGE-COUPONS)
+//   und fürs Mailen (server/mail.js) Manage Email Marketing (SCOPE.DC-PROMOTE.EMAIL-MARKETING).
 //   Pro Kunde lässt sich nichts begrenzen – nur die Gesamtnutzung (usageLimit).
 //
 // Benötigte ENV:

@@ -6,7 +6,7 @@ import { createGame } from "./game.js";
 // Überschreibbar aus Wix per <script>window.EDGE_RUN={...}</script> vor dem Embed.
 const CONF = Object.assign({
   apiBase: "",                       // "" = gleiche Origin (Vercel)
-  shopUrl: "https://www.edgechase.de",
+  shopUrl: "https://www.edgechase.com",
   termsUrl: "",
   privacyUrl: "",
 }, window.EDGE_RUN || {});

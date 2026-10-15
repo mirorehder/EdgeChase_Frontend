@@ -3,7 +3,7 @@
 //
 // Autoritäre Auswertung: prüft Token, verhindert Replay, plausibilisiert den
 // Score gegen die Spieldauer, zieht die Belohnung serverseitig, legt (falls Wix
-// konfiguriert) den Coupon an und verschickt den Code per E-Mail.
+// konfiguriert) den Coupon an und verschickt den Code per E-Mail (Wix).
 import { verifySession } from "../server/token.js";
 import { drawReward, buildCode, expiryDate } from "../server/reward.js";
 import { claimDailyPlay, releaseDailyPlay, useToken, allowJackpot } from "../server/store.js";
@@ -100,6 +100,6 @@ function messageFor(reward, wix, mailSent) {
     return "Demo-Modus: Code wird angezeigt, aber noch nicht in Wix erstellt (Wix-Keys fehlen).";
   }
   return mailSent
-    ? "Wir haben dir den Code auch per E-Mail geschickt (ggf. im Spam-Ordner nachsehen). Gib ihn im Warenkorb ein."
+    ? "Wir schicken dir den Code auch per E-Mail (ggf. im Spam-Ordner nachsehen). Gib ihn im Warenkorb ein."
     : "Gib den Code im Warenkorb ein. Mach am besten einen Screenshot davon – die E-Mail konnte nicht zugestellt werden.";
 }
