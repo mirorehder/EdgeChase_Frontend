@@ -31,7 +31,7 @@ export const WIX_ENABLED = Boolean(API_KEY && SITE_ID);
 // Standard true – wie bei euren bestehenden Instagram-Coupons und schützt die Marge.
 export const ONE_ITEM = (process.env.COUPON_LIMITED_TO_ONE_ITEM ?? "true").toLowerCase() !== "false";
 // Tag, damit sich die Spiel-Coupons im Wix-Dashboard von anderen trennen lassen.
-const TAG = process.env.COUPON_TAG || "EDGE RUN";
+const TAG = process.env.COUPON_TAG || "EdgeChase Game";
 
 /**
  * Erstellt einen Rabattcode in Wix.
