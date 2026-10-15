@@ -76,7 +76,7 @@ export async function createCoupon(r) {
     const text = await res.text().catch(() => "");
     if (!res.ok) {
       console.error("Wix-Coupon fehlgeschlagen", res.status, text.slice(0, 400));
-      return { created: false, demo: false, error: `wix_${res.status}` };
+      return { created: false, demo: false, error: `wix_${res.status}`, status: res.status };
     }
     let id = null;
     try { id = JSON.parse(text).id || null; } catch { /* Antwort ohne JSON */ }

@@ -15,6 +15,7 @@ import { sendJson, readJson, clampNum } from "../server/http.js";
 // für Scherben-Boni. Mehr ist in der Zeit nicht erreichbar -> gekappt.
 const MAX_METERS_PER_SEC = 95;
 const SCORE_BUFFER = 60;
+const MAX_CODE_ATTEMPTS = 8; // MIRO10, MIRO10-1 … MIRO10-7
 const JACKPOT_MAX_PER_MONTH = Number(process.env.JACKPOT_MAX_PER_MONTH || 1);
 
 export default async function handler(req, res) {
@@ -50,9 +51,17 @@ export default async function handler(req, res) {
     });
   }
 
-  const code = buildCode(data.name, reward);
   const expires = expiryDate();
-  const wix = await createCoupon({ code, kind: reward.kind, value: reward.value, name: data.name, expiresAt: expires });
+  // Code-Schema NAME+Rabatt (MIRO10). Ist er in Wix schon vergeben, quittiert Wix die
+  // Erstellung mit einem Client-Fehler (400/409): dann MIRO10-1, MIRO10-2 … versuchen.
+  let code, wix;
+  for (let attempt = 0; attempt < MAX_CODE_ATTEMPTS; attempt++) {
+    code = buildCode(data.name, reward, attempt);
+    wix = await createCoupon({ code, kind: reward.kind, value: reward.value, name: data.name, expiresAt: expires });
+    const codeTaken = wix.error && (wix.status === 400 || wix.status === 409);
+    if (!codeTaken) break;
+    console.warn(`Code ${code} nicht nutzbar (Wix ${wix.status}), versuche nächste Variante`);
+  }
 
   // Coupon-Erstellung ist technisch gescheitert: KEINEN Code zeigen, der nicht
   // existiert, und den Versuch zurückgeben (Tageslimit freigeben).

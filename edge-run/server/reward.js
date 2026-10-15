@@ -11,8 +11,6 @@
 // die Schwierigkeit ist jetzt das ERREICHEN des Scores (das Spiel ist tödlich),
 // und die Live-Anzeige ist ehrlich (du bekommst mindestens, was du siehst).
 
-import { shortSuffix } from "./token.js";
-
 // Leiter: ab `min` Distanz gilt `pct` % Rabatt. Unter der ersten Stufe: kein Code.
 // Per ENV REWARD_LADDER_JSON überschreibbar.
 const DEFAULT_LADDER = [
@@ -64,15 +62,17 @@ export function drawReward(score) {
   return { reward: { kind: "percent", value: pct } };
 }
 
-// Rabattcode: NAME + Prozent + kurzer Zufalls-Suffix gegen Kollisionen. z. B. DAVID15-K7QA
-export function buildCode(name, reward) {
+// Rabattcode: NAME + Rabatthöhe, z. B. MIRO10. Ist der Code schon vergeben, kommt ein
+// Bindestrich mit Zähler dazu: MIRO10-1, MIRO10-2 … (attempt = 0 ist die Grundform).
+// Länge: höchstens 12 + 2 + 1 + 2 = 17 Zeichen (Wix erlaubt 20).
+export function buildCode(name, reward, attempt = 0) {
   const base = String(name || "EDGE")
     .toUpperCase()
-    .normalize("NFKD").replace(/[̀-ͯ]/g, "")
+    .normalize("NFKD").replace(/[\u0300-\u036f]/g, "") // Umlaute/Akzente entschärfen
     .replace(/[^A-Z0-9]/g, "")
     .slice(0, 12) || "EDGE";
   const core = reward.kind === "free" ? `${base}-FREE` : `${base}${reward.value}`;
-  return `${core}-${shortSuffix(4)}`;
+  return attempt > 0 ? `${core}-${attempt}` : core;
 }
 
 export function expiryDate(days = num(process.env.COUPON_EXPIRY_DAYS, 7)) {

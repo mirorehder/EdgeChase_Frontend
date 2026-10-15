@@ -21,7 +21,7 @@ keinen Build-Schritt, keine Framework-Abhängigkeit und keine npm-Pakete.
 3. **Auswertung:** `POST /api/reward` prüft das Token, verhindert Replay,
    **plausibilisiert den Score gegen die Spieldauer** und **zieht die Belohnung
    serverseitig** aus einer gewichteten Tabelle. Bei Gewinn wird (falls Wix
-   konfiguriert) der Coupon erstellt – Code-Schema `NAME + %`, z. B. `DAVID15-K7QA`.
+   konfiguriert) der Coupon erstellt – Code-Schema `NAME + %`, z. B. `DAVID15` (bei Doppelung `DAVID15-1`, `DAVID15-2` …).
 
 ### Das zentrale Prinzip: Belohnung ≠ Skill
 
@@ -138,6 +138,8 @@ edge-run/
 │   └── http.js           # kleine HTTP-Helfer
 ├── assets/               # statische Assets (NICHT "public/" – siehe Hinweis oben)
 │   ├── logo.png          # offizielles Logo (512px, Runtime)
+│   ├── logo-white.png    # weiße Variante (512px)
+│   ├── logo-mail.png     # weiß, zugeschnitten, für die Mail
 │   ├── logo-original.png # Original 4800px
 │   └── logo.svg          # SVG-Fallback
 ├── vercel.json
