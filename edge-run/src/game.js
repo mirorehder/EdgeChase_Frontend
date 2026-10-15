@@ -1,5 +1,5 @@
 /* =========================================================================
-   EDGE RUN — Endless Runner Engine (Vanilla Canvas, kein Build nötig)
+   EdgeChase Game — Endless Runner Engine (Vanilla Canvas, kein Build nötig)
 
    Spielgefühl: Du sprintest über Dächer, das EDGE (Logo) jagt dich von hinten.
    Fehler lassen es näher kommen (Threat-Meter). Läuft es voll oder stürzt du
@@ -34,7 +34,7 @@ const CFG = {
 const PALETTE = {
   bg0: "#0a0a0b", bg1: "#131317", city0: "#171720", city1: "#20202b",
   ground: "#1c1c22", groundEdge: "#2b2b34", ink: "#f4f4f5",
-  accent: "#ff2b2b", gold: "#ffcf4a", shard: "#ffffff",
+  accent: "#ed1c24", gold: "#ffcf4a", shard: "#ffffff",
 };
 
 export function createGame(canvas, opts = {}) {
@@ -395,8 +395,8 @@ export function createGame(canvas, opts = {}) {
 
     // roter Glow / Bedrohung
     const glow = ctx.createRadialGradient(x, y, 4, x, y, size * 1.3);
-    glow.addColorStop(0, `rgba(255,43,43,${0.28 + S.threat * 0.4})`);
-    glow.addColorStop(1, "rgba(255,43,43,0)");
+    glow.addColorStop(0, `rgba(237,28,36,${0.28 + S.threat * 0.4})`);
+    glow.addColorStop(1, "rgba(237,28,36,0)");
     ctx.fillStyle = glow;
     ctx.beginPath(); ctx.arc(x, y, size * 1.3, 0, Math.PI * 2); ctx.fill();
 

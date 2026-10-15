@@ -51,7 +51,7 @@ export async function createCoupon(r) {
   }
 
   const specification = {
-    name: `EDGE RUN – ${r.name}`.slice(0, 100),
+    name: `EdgeChase – ${r.name}`.slice(0, 100),
     code: r.code,
     active: true,
     startTime: String(Date.now()),

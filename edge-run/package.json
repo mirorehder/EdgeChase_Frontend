@@ -1,8 +1,8 @@
 {
-  "name": "edge-run",
+  "name": "edgechase-game",
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "EDGE RUN – gamifizierter Rabatt-Endless-Runner für Edge Chase (Vercel + Wix-Embed).",
+  "description": "EdgeChase Game – gamifizierter Rabatt-Endless-Runner für EdgeChase (Vercel + Wix-Embed).",
   "engines": { "node": ">=18" }
 }

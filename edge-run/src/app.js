@@ -1,15 +1,15 @@
 /* =========================================================================
-   EDGE RUN — App-Steuerung (Screens, API, Gewinn-Enthüllung)
+   EdgeChase Game — App-Steuerung (Screens, API, Gewinn-Enthüllung)
    ========================================================================= */
 import { createGame } from "./game.js";
 
-// Überschreibbar aus Wix per <script>window.EDGE_RUN={...}</script> vor dem Embed.
+// Überschreibbar aus Wix per <script>window.EDGECHASE={...}</script> vor dem Embed.
 const CONF = Object.assign({
   apiBase: "",                       // "" = gleiche Origin (Vercel)
   shopUrl: "https://www.edgechase.com",
   termsUrl: "",
   privacyUrl: "",
-}, window.EDGE_RUN || {});
+}, window.EDGECHASE || {});
 
 const $ = (s) => document.querySelector(s);
 const screens = {
@@ -272,8 +272,8 @@ document.querySelectorAll("[data-legal]").forEach((a) => {
     const url = a.dataset.legal === "privacy" ? CONF.privacyUrl : CONF.termsUrl;
     if (url) navigateTop(url);
     else alert(a.dataset.legal === "privacy"
-      ? "Datenschutzhinweise: bitte im Shop hinterlegen (window.EDGE_RUN.privacyUrl)."
-      : "Teilnahmebedingungen: bitte im Shop hinterlegen (window.EDGE_RUN.termsUrl).");
+      ? "Datenschutzhinweise: bitte im Shop hinterlegen (window.EDGECHASE.privacyUrl)."
+      : "Teilnahmebedingungen: bitte im Shop hinterlegen (window.EDGECHASE.termsUrl).");
   });
 });
 
@@ -310,7 +310,7 @@ function celebrate() {
   for (let i = 0; i < n; i++) {
     const d = document.createElement("div");
     d.style.cssText = `position:fixed;top:-10px;left:${Math.random() * 100}vw;width:8px;height:14px;
-      background:${["#ff2b2b", "#ffcf4a", "#ffffff"][i % 3]};z-index:99;pointer-events:none;
+      background:${["#ed1c24", "#ffcf4a", "#ffffff"][i % 3]};z-index:99;pointer-events:none;
       transform:rotate(${Math.random() * 360}deg);animation:fall ${1 + Math.random() * 1.5}s linear forwards`;
     document.body.appendChild(d);
     setTimeout(() => d.remove(), 2600);

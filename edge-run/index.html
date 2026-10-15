@@ -3,30 +3,41 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
-  <title>EDGE RUN — Entkomme dem EDGE</title>
-  <meta name="description" content="Spiel dich zu deinem Rabatt. Überlebe so lange du kannst — je weiter du kommst, desto besser deine Chance." />
+  <meta name="theme-color" content="#0b0b0c" />
+  <title>EdgeChase – Spiel dich zu deinem Rabatt</title>
+  <meta name="description" content="Das EDGE jagt dich: lauf, spring und überlebe – je weiter du kommst, desto höher dein Rabatt bei EdgeChase." />
+  <link rel="preload" href="./assets/fonts/archivo-latin-wdth-normal.woff2" as="font" type="font/woff2" crossorigin />
   <link rel="stylesheet" href="./src/styles.css" />
 </head>
 <body>
   <div id="app" class="app">
 
-    <!-- ============ INTRO / EINWILLIGUNG ============ -->
-    <section id="screen-intro" class="screen screen--active">
+    <!-- ============ START / EINWILLIGUNG ============ -->
+    <section id="screen-intro" class="screen screen--active screen--intro">
+      <div class="pre-media" aria-hidden="true">
+        <img src="./assets/hero-1000.jpg"
+             srcset="./assets/hero-1000.jpg 1000w, ./assets/hero-1400.jpg 1400w"
+             sizes="100vw" alt="" decoding="async" fetchpriority="high" />
+      </div>
+      <div class="pre-shade" aria-hidden="true"></div>
+      <div class="grain" aria-hidden="true"></div>
+
       <div class="intro">
-        <img class="intro__logo" src="./assets/logo.png" alt="Edge Chase" width="88" height="88" />
-        <h1 class="intro__title">EDGE<br />RUN</h1>
-        <p class="intro__tag">Das EDGE jagt dich. Lauf, spring, überlebe —<br />und sichere dir deinen Rabatt.</p>
+        <img class="intro__logo" src="./assets/wordmark-white.png" alt="EdgeChase" width="843" height="160" />
+        <p class="eyebrow"><i class="pulse"></i> EdgeChase Game</p>
+        <h1 class="intro__title">Lauf um deinen Rabatt</h1>
+        <p class="intro__tag">Das EDGE jagt dich. Spring, rutsch, überlebe – je weiter du kommst, desto höher dein Rabatt.</p>
 
         <form id="intro-form" class="form" autocomplete="on" novalidate>
           <label class="field">
-            <span class="field__label">Dein Name</span>
+            <span class="sr">Dein Name</span>
             <input id="in-name" name="name" type="text" inputmode="text" maxlength="20"
-                   placeholder="z. B. David" required />
+                   placeholder="Dein Name" autocomplete="given-name" required />
           </label>
           <label class="field">
-            <span class="field__label">Deine E-Mail</span>
+            <span class="sr">Deine E-Mail</span>
             <input id="in-email" name="email" type="email" inputmode="email" maxlength="120"
-                   placeholder="du@example.com" required />
+                   placeholder="Deine E-Mail" autocomplete="email" required />
           </label>
 
           <label class="consent">
@@ -36,7 +47,7 @@
           </label>
 
           <p id="intro-error" class="error" hidden></p>
-          <button id="btn-start" class="btn btn--primary" type="submit">SPIEL STARTEN</button>
+          <button id="btn-start" class="btn btn--primary btn--arrow" type="submit">Spiel starten</button>
         </form>
 
         <button class="link-how" type="button" data-open="how">Wie funktioniert's?</button>
@@ -90,8 +101,8 @@
           </div>
 
           <p id="result-note" class="result__note"></p>
-          <button id="btn-again" class="btn btn--primary" type="button">NOCHMAL</button>
-          <button id="btn-shop" class="btn btn--ghost" type="button" data-shop hidden>ZUM SHOP</button>
+          <button id="btn-again" class="btn btn--primary" type="button">Nochmal</button>
+          <button id="btn-shop" class="btn btn--ghost" type="button" data-shop hidden>Zum Shop</button>
         </div>
       </div>
     </section>
@@ -103,7 +114,7 @@
         <ul>
           <li>Renne so weit wie möglich, ohne dass dich das EDGE einholt.</li>
           <li>Je weiter du kommst, desto höher dein gesicherter Rabatt (oben im Balken).</li>
-          <li>10–15 % sind gut machbar. 25 %+ nur mit langem Lauf — der Hauptpreis ist die Krönung.</li>
+          <li>10–15 % sind gut machbar. 25 %+ nur mit langem Lauf – der Hauptpreis ist die Krönung.</li>
           <li>Ein Versuch pro E-Mail-Adresse. Dein Code wird sofort erzeugt.</li>
         </ul>
         <button class="btn btn--ghost" type="button" data-close="how">Verstanden</button>

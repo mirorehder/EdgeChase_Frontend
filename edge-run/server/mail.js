@@ -12,7 +12,7 @@
 // er braucht zusätzlich die Berechtigung "Manage Email Marketing".
 //
 // Optionale ENV:
-//   MAIL_FROM_NAME   – Absendername, z. B. "EDGE CHASE"
+//   MAIL_FROM_NAME   – Absendername, z. B. "EdgeChase"
 //   MAIL_FROM_EMAIL  – Absenderadresse, z. B. rabatt@edgechase.com. Muss bei Wix als
 //                      Absender VERIFIZIERT sein; ohne Eintrag nutzt Wix den
 //                      Standard-Absender der Site. (Adressen von Gratis-Anbietern wie
@@ -89,7 +89,7 @@ async function send({ to, subject, html, idempotencyKey }) {
 // ---------- Mail-Layout (Edge-Chase-Look: schwarz/weiß, Signal-Rot, kursive Schlagzeilen) ----------
 // E-Mail-Clients vertragen weder <style>-Blöcke noch moderne Layouts zuverlässig:
 // deshalb Tabellen und ausschließlich Inline-Styles.
-const COL = { bg: "#0a0a0b", card: "#141416", line: "#26262b", ink: "#f4f4f5", dim: "#9a9aa2", accent: "#ff2b2b" };
+const COL = { bg: "#0b0b0c", card: "#161618", line: "#2c2c2e", ink: "#f4f3ef", dim: "#a3a19a", accent: "#ed1c24" };
 const HEAD = "'Arial Black','Helvetica Neue',Helvetica,Arial,sans-serif";
 const BODY = "'Helvetica Neue',Helvetica,Arial,sans-serif";
 const MONO = "Menlo,Consolas,'Courier New',monospace";
@@ -102,7 +102,7 @@ const step = (nr, text) => `<tr>
   <td style="padding:7px 0;font:400 15px/1.45 ${BODY};color:${COL.ink};vertical-align:top">${text}</td></tr>`;
 
 export function renderCodeMail({ name, code, percent, until, oneItem }) {
-  const logo = `${ASSET_BASE}/assets/logo-mail.png`;
+  const wordmark = `${ASSET_BASE}/assets/wordmark-white.png`;
   const preheader = `Dein Code ${code}: ${percent} % Rabatt, gültig bis ${until}.`;
   const button = SHOP_URL
     ? `<tr><td style="padding:22px 28px 0"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
@@ -111,7 +111,7 @@ export function renderCodeMail({ name, code, percent, until, oneItem }) {
     : "";
   return `<!doctype html>
 <html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="color-scheme" content="dark"><meta name="supported-color-schemes" content="dark"><title>Dein EDGE RUN Rabattcode</title></head>
+<meta name="color-scheme" content="dark"><meta name="supported-color-schemes" content="dark"><title>Dein EdgeChase Rabattcode</title></head>
 <body style="margin:0;padding:0;background:${COL.bg}">
 <div style="display:none;max-height:0;overflow:hidden;opacity:0;font-size:1px;line-height:1px;color:${COL.bg}">${esc(preheader)}&#8199;&zwnj;&#8199;&zwnj;&#8199;&zwnj;&#8199;&zwnj;&#8199;&zwnj;</div>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${COL.bg}" style="background:${COL.bg}"><tr><td align="center">
@@ -119,14 +119,13 @@ export function renderCodeMail({ name, code, percent, until, oneItem }) {
 
   <tr><td height="4" bgcolor="${COL.accent}" style="height:4px;line-height:4px;font-size:0;background:${COL.accent}">&nbsp;</td></tr>
 
-  <tr><td style="padding:30px 28px 0"><table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
-    <td style="padding-right:14px;vertical-align:middle"><img src="${esc(logo)}" width="56" height="46" alt="EDGE CHASE" style="display:block;border:0;outline:none;width:56px;height:46px;color:${COL.ink};font:900 italic 14px ${HEAD}"></td>
-    <td style="vertical-align:middle"><div style="font:900 italic 20px/1 ${HEAD};letter-spacing:.06em;color:${COL.ink}">EDGE CHASE</div>
-      <div style="font:700 10px/1 ${BODY};letter-spacing:.28em;color:${COL.dim};margin-top:7px">THE BEAUTY OF MADNESS</div></td>
-  </tr></table></td></tr>
+  <tr><td style="padding:30px 28px 0">
+    <img src="${esc(wordmark)}" width="190" height="36" alt="EdgeChase" style="display:block;border:0;outline:none;width:190px;height:36px;color:${COL.ink};font:900 italic 20px ${HEAD}">
+    <div style="font:700 10px/1 ${BODY};letter-spacing:.28em;color:${COL.dim};margin-top:12px">THE BEAUTY OF MADNESS</div>
+  </td></tr>
 
   <tr><td style="padding:34px 28px 0">
-    <div style="font:700 11px/1 ${BODY};letter-spacing:.28em;color:${COL.accent}">EDGE RUN · DEIN RABATT</div>
+    <div style="font:700 11px/1 ${BODY};letter-spacing:.28em;color:${COL.accent}">EDGECHASE · DEIN RABATT</div>
     <h1 style="margin:14px 0 0;font:900 italic 38px/1.02 ${HEAD};letter-spacing:-.01em;color:${COL.ink};word-break:break-word">STARK GELAUFEN,<br>${esc(String(name).toUpperCase())}!</h1>
   </td></tr>
 
@@ -160,8 +159,8 @@ export function renderCodeMail({ name, code, percent, until, oneItem }) {
   </td></tr>
 
   <tr><td style="padding:38px 28px 34px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-top:1px solid ${COL.line}"><tr><td style="padding-top:22px">
-    <div style="font:900 italic 13px/1 ${HEAD};letter-spacing:.1em;color:${COL.ink}">EDGE CHASE</div>
-    <div style="font:400 12px/1.6 ${BODY};color:#6f6f78;margin-top:10px">Du bekommst diese Mail, weil du bei EDGE RUN mitgespielt hast.</div>
+    <img src="${esc(wordmark)}" width="110" height="21" alt="EdgeChase" style="display:block;border:0;width:110px;height:21px;color:${COL.ink};font:900 italic 13px ${HEAD}">
+    <div style="font:400 12px/1.6 ${BODY};color:#6f6f78;margin-top:10px">Du bekommst diese Mail, weil du beim EdgeChase Game mitgespielt hast.</div>
   </td></tr></table></td></tr>
 
 </table></td></tr></table></body></html>`;
@@ -170,16 +169,16 @@ export function renderCodeMail({ name, code, percent, until, oneItem }) {
 /** Rabattcode an den Spieler. */
 export function sendCodeMail({ to, name, code, percent, expiresAt, sid, oneItem }) {
   const html = renderCodeMail({ name, code, percent, until: fmtDate(expiresAt), oneItem });
-  return send({ to, subject: `Dein EDGE RUN Rabattcode: ${code}`, html, idempotencyKey: guidFor("code", sid) });
+  return send({ to, subject: `Dein EdgeChase Rabattcode: ${code}`, html, idempotencyKey: guidFor("code", sid) });
 }
 
 /** Meldung ans Team: Hauptpreis gewonnen -> Gewinner manuell kontaktieren. */
 export async function sendTeamJackpotAlert({ name, email, score, code, sid }) {
   console.warn(`JACKPOT: ${name} <${email}> Score ${score}, Referenz ${code}`); // bleibt in den Vercel-Logs
   if (!TEAM_TO.length) return { sent: false, skipped: true };
-  const html = `<p>Jemand hat den Hauptpreis (Gratis-Kleidungsstück) bei <b>EDGE RUN</b> gewonnen.</p>
+  const html = `<p>Jemand hat den Hauptpreis (Gratis-Kleidungsstück) beim <b>EdgeChase Game</b> gewonnen.</p>
 <ul><li>Name: ${esc(name)}</li><li>E-Mail: ${esc(email)}</li><li>Score: ${esc(score)}</li><li>Referenz: ${esc(code)}</li></ul>
 <p>Bitte den Gewinner kontaktieren und den Gewinn manuell abwickeln. Es wurde <b>kein</b> Wix-Coupon automatisch erstellt.</p>`;
-  const subject = `EDGE RUN JACKPOT: ${String(name).replace(/[\r\n]+/g, " ")} hat das Gratis-Teil gewonnen`;
+  const subject = `EdgeChase JACKPOT: ${String(name).replace(/[\r\n]+/g, " ")} hat das Gratis-Teil gewonnen`;
   return send({ to: TEAM_TO, subject, html, idempotencyKey: guidFor("jackpot", sid) });
 }

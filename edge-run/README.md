@@ -1,6 +1,6 @@
-# EDGE RUN 🏃‍♂️💨
+# EdgeChase Game 🏃‍♂️💨
 
-Gamifizierter Rabatt-Endless-Runner für **Edge Chase**. Der Spieler sprintet über
+Gamifizierter Rabatt-Endless-Runner für **EdgeChase**. Der Spieler sprintet über
 Dächer und wird vom Edge-Chase-Logo („dem EDGE") gejagt – je weiter er kommt,
 desto besser die Chance auf einen Rabattcode. Läuft eigenständig auf **Vercel**
 und wird per **iframe** in die Wix-Seite eingebettet.
@@ -78,7 +78,7 @@ Empfohlener Trigger: **Exit-Intent** oder nach ~5 Sekunden ein dezentes Banner
 Zusätzlich ein fester kleiner Button „🎮 Rabatt erspielen".
 
 Optionale Konfiguration aus Wix heraus (vor dem iframe-Inhalt setzbar, wenn du
-den HTML-Block selbst hostest): `window.EDGE_RUN = { shopUrl, termsUrl, privacyUrl }`.
+den HTML-Block selbst hostest): `window.EDGECHASE = { shopUrl, termsUrl, privacyUrl }`.
 
 ---
 
@@ -123,7 +123,7 @@ Das Logo wird im Spiel weiß eingefärbt und rotiert als Verfolger mit rotem Glo
 edge-run/
 ├── index.html            # Screens: Intro / Spiel / Ergebnis
 ├── src/
-│   ├── styles.css        # Brand-Styling (schwarz/weiß + Signal-Rot)
+│   ├── styles.css        # Design der EdgeChase-Website (Archivo, Tinte/Papier, Rot #ed1c24)
 │   ├── game.js           # Endless-Runner-Engine (Canvas)
 │   └── app.js            # Screen-Flow, API-Calls, Gewinn-Enthüllung
 ├── api/                  # nur die zwei Endpunkte (je Datei = eine Vercel-Function)
@@ -141,7 +141,10 @@ edge-run/
 │   ├── logo-white.png    # weiße Variante (512px)
 │   ├── logo-mail.png     # weiß, zugeschnitten, für die Mail
 │   ├── logo-original.png # Original 4800px
-│   └── logo.svg          # SVG-Fallback
+│   ├── logo.svg          # SVG-Fallback
+│   ├── wordmark-white.png # Wort-Bild-Logo (weiß) für Startseite und Mail
+│   ├── hero-1000.jpg / hero-1400.jpg  # Foto der Startseite (wie auf der Website)
+│   └── fonts/            # Archivo (Variable, OFL-Lizenz), lokal eingebunden
 ├── vercel.json
 └── .env.example
 ```
