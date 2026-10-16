@@ -75,10 +75,4 @@ export function buildCode(name, reward, attempt = 0) {
   return attempt > 0 ? `${core}-${attempt}` : core;
 }
 
-export function expiryDate(days = num(process.env.COUPON_EXPIRY_DAYS, 7)) {
-  const d = new Date();
-  d.setDate(d.getDate() + days);
-  return d;
-}
-
 function num(v, def) { const n = Number(v); return Number.isFinite(n) ? n : def; }

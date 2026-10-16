@@ -101,9 +101,9 @@ const step = (nr, text) => `<tr>
   <td style="padding:7px 14px 7px 0;font:900 italic 20px/1.2 ${HEAD};color:${COL.accent};width:34px;vertical-align:top">${nr}</td>
   <td style="padding:7px 0;font:400 15px/1.45 ${BODY};color:${COL.ink};vertical-align:top">${text}</td></tr>`;
 
-export function renderCodeMail({ name, code, percent, until, oneItem, limit }) {
+export function renderCodeMail({ name, code, percent, oneItem, limit }) {
   const wordmark = `${ASSET_BASE}/assets/wordmark-white.png`;
-  const preheader = `Your code ${code}: ${percent} % off, valid until ${until}.`;
+  const preheader = `Your code ${code}: ${percent} % off – single use.`;
   const button = SHOP_URL
     ? `<tr><td style="padding:22px 28px 0"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
         <td align="center" bgcolor="${COL.accent}" style="background:${COL.accent};border-radius:6px"><a href="${esc(SHOP_URL)}" style="display:block;padding:17px 24px;font:800 14px/1 ${BODY};letter-spacing:.16em;color:#ffffff;text-decoration:none">REDEEM NOW</a></td>
@@ -155,7 +155,6 @@ export function renderCodeMail({ name, code, percent, until, oneItem, limit }) {
   ${button}
 
   <tr><td style="padding:30px 28px 0"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-top:1px solid ${COL.line}">
-    ${fact("VALID UNTIL", `<b>${esc(until)}</b>`)}
     ${fact("REDEEMABLE", "once")}
     ${fact("APPLIES TO", oneItem ? "one item per order (the cheapest in your cart)" : "your whole cart")}
   </table></td></tr>
@@ -180,8 +179,8 @@ export function renderCodeMail({ name, code, percent, until, oneItem, limit }) {
 }
 
 /** Rabattcode an den Spieler. */
-export function sendCodeMail({ to, name, code, percent, expiresAt, sid, oneItem, limit }) {
-  const html = renderCodeMail({ name, code, percent, until: fmtDate(expiresAt), oneItem, limit });
+export function sendCodeMail({ to, name, code, percent, sid, oneItem, limit }) {
+  const html = renderCodeMail({ name, code, percent, oneItem, limit });
   return send({ to, subject: `Your EdgeChase discount code: ${code}`, html, idempotencyKey: guidFor("code", sid) });
 }
 

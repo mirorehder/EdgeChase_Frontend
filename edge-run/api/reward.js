@@ -5,8 +5,8 @@
 // Score gegen die Spieldauer, zieht die Belohnung serverseitig, legt (falls Wix
 // konfiguriert) den Coupon an und verschickt den Code per E-Mail (Wix).
 import { verifySession } from "../server/token.js";
-import { drawReward, buildCode, expiryDate } from "../server/reward.js";
-import { releasePlay, useToken, allowJackpot, PLAY_LIMIT_MODE } from "../server/store.js";
+import { drawReward, buildCode } from "../server/reward.js";
+import { releasePlay, useToken, allowJackpot, logResult, PLAY_LIMIT_MODE } from "../server/store.js";
 import { createCoupon, ONE_ITEM } from "../server/wix.js";
 import { sendCodeMail, sendTeamJackpotAlert } from "../server/mail.js";
 import { sendJson, readJson, clampNum } from "../server/http.js";
@@ -51,27 +51,26 @@ export default async function handler(req, res) {
     }
     const testCode = "TEST-" + (reward.kind === "free" ? "GRATIS" : buildCode(data.name, reward));
     return sendJson(res, 200, {
-      ok: true, reward, code: testCode, score, test: true, demo: true, mailSent: false,
-      expiresAt: reward.kind === "free" ? null : expiryDate().toISOString(), limit: "off",
+      ok: true, reward, code: testCode, score, test: true, demo: true, mailSent: false, expiresAt: null, limit: "off",
       message: "Test mode (email 12345): this code is not real – no coupon was created and no email was sent.",
     });
   }
 
   // Kein Gewinn -> kein Code, keine Mail.
   if (reward.kind === "none") {
+    await logResult({ name: data.name, email: data.em, score, kind: "none" });
     return sendJson(res, 200, {
       ok: true, reward, code: null, score, limit: PLAY_LIMIT_MODE,
       message: "Too short for a code – keep running, you get a discount from a certain distance!",
     });
   }
 
-  const expires = expiryDate();
   // Code-Schema NAME+Rabatt (MIRO10). Ist er in Wix schon vergeben, quittiert Wix die
   // Erstellung mit einem Client-Fehler (400/409): dann MIRO10-1, MIRO10-2 … versuchen.
   let code, wix;
   for (let attempt = 0; attempt < MAX_CODE_ATTEMPTS; attempt++) {
     code = buildCode(data.name, reward, attempt);
-    wix = await createCoupon({ code, kind: reward.kind, value: reward.value, name: data.name, expiresAt: expires });
+    wix = await createCoupon({ code, kind: reward.kind, value: reward.value, name: data.name });
     const codeTaken = wix.error && (wix.status === 400 || wix.status === 409);
     if (!codeTaken) break;
     console.warn(`Code ${code} nicht nutzbar (Wix ${wix.status}), versuche nächste Variante`);
@@ -87,13 +86,15 @@ export default async function handler(req, res) {
     });
   }
 
+  await logResult({ name: data.name, email: data.em, score, kind: reward.kind, percent: reward.value, code });
+
   // Mailversand. Ein Fehler hier ist kein Abbruchgrund: der Code wird trotzdem angezeigt.
   let mailSent = false;
   if (reward.kind === "free") {
     // Hauptpreis: kein automatischer Coupon -> das Team muss den Gewinner kontaktieren.
     await sendTeamJackpotAlert({ name: data.name, email: data.em, score, code, sid: data.sid });
   } else if (data.em) {
-    const mail = await sendCodeMail({ to: data.em, name: data.name, code, percent: reward.value, expiresAt: expires, sid: data.sid, oneItem: ONE_ITEM, limit: PLAY_LIMIT_MODE });
+    const mail = await sendCodeMail({ to: data.em, name: data.name, code, percent: reward.value, sid: data.sid, oneItem: ONE_ITEM, limit: PLAY_LIMIT_MODE });
     mailSent = Boolean(mail.sent);
   }
 
@@ -102,7 +103,7 @@ export default async function handler(req, res) {
     reward,
     code,
     score,
-    expiresAt: reward.kind === "free" ? null : expires.toISOString(),
+    expiresAt: null,
     demo: Boolean(wix.demo),
     manual: Boolean(wix.manual),
     mailSent,

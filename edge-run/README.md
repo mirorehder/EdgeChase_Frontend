@@ -112,12 +112,20 @@ Alles über ENV-Variablen, **ohne Code-Änderung** (siehe `.env.example`):
 | `PLAY_LIMIT_BYPASS` | Komma-getrennte Test-Adressen, die ohne Limit spielen dürfen. |
 | `REWARD_LADDER_JSON` | Rabatt-Leiter (Distanz → %) überschreiben. |
 | `REWARD_BUMP_CHANCE`, `REWARD_FREE_CHANCE`, `REWARD_FREE_MIN` | Chance auf nächsthöhere Stufe / Gratis-Teil und dessen Mindestdistanz. |
-| `COUPON_EXPIRY_DAYS` | Gültigkeit der Codes. |
 | `JACKPOT_MAX_PER_MONTH` | Deckel für Gratis-Teile. |
 
 Rabatt-Leiter im Code: `server/reward.js` (`DEFAULT_LADDER`); Schwierigkeit: `CFG` in `src/game.js`.
 
 ---
+
+## Spieler-Verzeichnis (für die Mail zum Drop-Tag)
+
+Mit Redis/KV (Upstash, ist angebunden) merkt sich das Spiel jeden Spieler:
+- `players:contacts` (Hash): E-Mail → Name, erstes Spiel
+- `players:results` (Liste): jeder gewertete Lauf mit Name, E-Mail, Score, Rabatt und Code
+
+Einsehbar im Upstash-Dashboard (Vercel → Storage → Data Browser). Codes laufen nicht ab
+(einmal einlösbar); die Test-Adresse `12345` wird nicht gespeichert.
 
 ## Logo
 

@@ -35,7 +35,7 @@ const TAG = process.env.COUPON_TAG || "EdgeChase Game";
 
 /**
  * Erstellt einen Rabattcode in Wix.
- * @param {{code:string, kind:"percent"|"free", value:number, name:string, expiresAt:Date}} r
+ * @param {{code:string, kind:"percent"|"free", value:number, name:string}} r
  */
 export async function createCoupon(r) {
   // Gratis-Teil (Jackpot) wird NICHT automatisch erstellt: extrem selten und
@@ -55,7 +55,7 @@ export async function createCoupon(r) {
     code: r.code,
     active: true,
     startTime: String(Date.now()),
-    expirationTime: String(r.expiresAt.getTime()),
+    // Bewusst KEIN Ablaufdatum: der Drop hat noch nicht begonnen.
     usageLimit: 1,                       // Code nur 1x einlösbar
     scope: { namespace: "stores" },      // gilt für alle Produkte im Shop
     percentOffRate: r.value,             // Prozent-Rabatt

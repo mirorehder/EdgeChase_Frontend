@@ -4,7 +4,7 @@
 // Tageslimit) stecken signiert im Token – der Client kann sie nicht fälschen.
 import { signSession, emailHash, randomSid } from "../server/token.js";
 import { ladder } from "../server/reward.js";
-import { claimPlay, PLAY_LIMIT_MODE } from "../server/store.js";
+import { claimPlay, rememberContact, PLAY_LIMIT_MODE } from "../server/store.js";
 import { sendJson, readJson } from "../server/http.js";
 
 const TEST_EMAIL = "12345";
@@ -41,6 +41,7 @@ export default async function handler(req, res) {
     });
   }
 
+  await rememberContact(cleanEmail, cleanName.slice(0, 20));
   const token = signSession({
     sid: randomSid(),
     name: cleanName.slice(0, 20),

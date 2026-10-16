@@ -212,9 +212,8 @@ function renderReward(res, score) {
   if (res.code) {
     codeWrap.hidden = false;
     $("#result-code").textContent = res.code;
-    $("#result-expiry").textContent = res.expiresAt
-      ? "Valid until " + formatDate(res.expiresAt) + (res.demo ? " · (demo – not a real code)" : "")
-      : (res.demo ? "Demo – not a real code" : "");
+    $("#result-expiry").textContent = res.reward && res.reward.kind === "free" ? ""
+      : "Single use" + (res.demo ? " · (demo – not a real code)" : "");
   } else {
     codeWrap.hidden = true;
   }

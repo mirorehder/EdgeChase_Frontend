@@ -105,3 +105,21 @@ export async function allowJackpot(maxPerMonth) {
   try { return (await incr(`jackpot:${monthKey()}`)) <= maxPerMonth; }
   catch (e) { console.warn("allowJackpot:", e.message); return false; } // im Zweifel: nein
 }
+
+// ---------------------------------------------------------------------------
+// Spieler-Verzeichnis (für die Mail zum Drop-Tag). Nur mit KV/Redis – ohne KV passiert nichts.
+//   players:contacts  Hash   E-Mail (klein geschrieben) -> {name, first}   (jede Adresse einmal)
+//   players:results   Liste  {t, name, email, score, kind, percent, code}  (jeder gewertete Lauf)
+// Einsehbar im Upstash-Dashboard (Vercel -> Storage -> Data Browser).
+// Fehler hier dürfen das Spiel nie stören.
+// ---------------------------------------------------------------------------
+export async function rememberContact(email, name) {
+  if (!KV_ENABLED) return;
+  try { await kv(["hsetnx", "players:contacts", String(email).trim().toLowerCase(), JSON.stringify({ name, first: new Date().toISOString() })]); }
+  catch (e) { console.warn("rememberContact:", e.message); }
+}
+export async function logResult(rec) {
+  if (!KV_ENABLED) return;
+  try { await kv(["rpush", "players:results", JSON.stringify({ t: new Date().toISOString(), ...rec })]); }
+  catch (e) { console.warn("logResult:", e.message); }
+}
