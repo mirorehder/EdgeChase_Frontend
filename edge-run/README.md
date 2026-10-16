@@ -161,7 +161,7 @@ edge-run/
 │   ├── logo-original.png # Original 4800px
 │   ├── logo.svg          # SVG-Fallback
 │   ├── wordmark-white.png # Wort-Bild-Logo (weiß) für Startseite und Mail
-│   ├── hero-1000.jpg / hero-1400.jpg  # Foto der Startseite (wie auf der Website)
+│   ├── bg.jpg            # Hintergrundfoto der Startseite
 │   └── fonts/            # Archivo (Variable, OFL-Lizenz), lokal eingebunden
 ├── vercel.json
 └── .env.example
