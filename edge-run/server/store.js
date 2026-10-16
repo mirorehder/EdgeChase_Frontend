@@ -123,3 +123,11 @@ export async function logResult(rec) {
   try { await kv(["rpush", "players:results", JSON.stringify({ t: new Date().toISOString(), ...rec })]); }
   catch (e) { console.warn("logResult:", e.message); }
 }
+
+// Ausdrückliche Einwilligung für die Drop-Mail (freiwillige Checkbox, nicht vorangekreuzt).
+//   players:optin  Hash  E-Mail -> {name, t (erste Zustimmung), src}   – nur Adressen, die angehakt haben.
+export async function optInContact(email, name) {
+  if (!KV_ENABLED) return;
+  try { await kv(["hsetnx", "players:optin", String(email).trim().toLowerCase(), JSON.stringify({ name, t: new Date().toISOString(), src: "game-checkbox" })]); }
+  catch (e) { console.warn("optInContact:", e.message); }
+}

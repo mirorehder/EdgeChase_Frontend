@@ -122,6 +122,7 @@ Rabatt-Leiter im Code: `server/reward.js` (`DEFAULT_LADDER`); Schwierigkeit: `CF
 
 Mit Redis/KV (Upstash, ist angebunden) merkt sich das Spiel jeden Spieler:
 - `players:contacts` (Hash): E-Mail → Name, erstes Spiel
+- `players:optin` (Hash): nur Adressen, die die freiwillige Checkbox „Email me when the drop goes live" angehakt haben (mit Zeitstempel) – nur an diese darf die Drop-Mail gehen
 - `players:results` (Liste): jeder gewertete Lauf mit Name, E-Mail, Score, Rabatt und Code
 
 Einsehbar im Upstash-Dashboard (Vercel → Storage → Data Browser). Codes laufen nicht ab

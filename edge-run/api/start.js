@@ -4,7 +4,7 @@
 // Tageslimit) stecken signiert im Token – der Client kann sie nicht fälschen.
 import { signSession, emailHash, randomSid } from "../server/token.js";
 import { ladder } from "../server/reward.js";
-import { claimPlay, rememberContact, PLAY_LIMIT_MODE } from "../server/store.js";
+import { claimPlay, rememberContact, optInContact, PLAY_LIMIT_MODE } from "../server/store.js";
 import { sendJson, readJson } from "../server/http.js";
 
 const TEST_EMAIL = "12345";
@@ -12,7 +12,7 @@ const TEST_EMAIL = "12345";
 export default async function handler(req, res) {
   if (req.method !== "POST") return sendJson(res, 405, { ok: false, error: "method_not_allowed" });
 
-  const { name, email } = await readJson(req);
+  const { name, email, notify } = await readJson(req);
   const cleanName = String(name || "").trim();
   const cleanEmail = String(email || "").trim();
 
@@ -42,6 +42,7 @@ export default async function handler(req, res) {
   }
 
   await rememberContact(cleanEmail, cleanName.slice(0, 20));
+  if (notify === true) await optInContact(cleanEmail, cleanName.slice(0, 20));   // ausdrückliche, freiwillige Einwilligung (Checkbox)
   const token = signSession({
     sid: randomSid(),
     name: cleanName.slice(0, 20),

@@ -64,7 +64,7 @@ form.addEventListener("submit", async (e) => {
   const btn = $("#btn-start");
   btn.disabled = true; btn.textContent = "STARTING…";
   try {
-    const res = await api("/api/start", { name, email });
+    const res = await api("/api/start", { name, email, notify: $("#in-notify").checked });
     if (!res.ok) {
       if (res.error === "already_played") {
         // schon gespielt -> direkt Ergebnis/Blocker zeigen
