@@ -125,7 +125,7 @@ export function createGame(canvas, opts = {}) {
   const glowRed = buildGlow("rgba(255,60,60,1)");
   const glowWarm = buildGlow("rgba(255,200,140,1)");
   let raf = 0, loopOn = false, running = false, lastT = 0, acc = 0, resizeT = 0;
-  let dprCap = 2, emaDt = 1 / 60, slowFrames = 0;
+  let dprCap = 2, sceneCap = 2.2, emaDt = 1 / 60, slowFrames = 0;
   let S;
 
   /* ---------------- Zustand ---------------- */
@@ -158,7 +158,7 @@ export function createGame(canvas, opts = {}) {
     Wu = W / U; Hu = H / U;
     GY = Hu * (portrait ? 0.68 : 0.78);
     playerX = clamp(Wu * 0.24, 72, 130);
-    const Us = Math.min(U * DPR, 2.2);                           // Szenerie bewusst nicht in voller Retina-Auflösung
+    const Us = Math.min(U * DPR, sceneCap);                           // Szenerie bewusst nicht in voller Retina-Auflösung
     scn = buildScenery({ Wu, Hu, GY, U: Us, W: Math.ceil(Wu * Us), H: Math.ceil(Hu * Us), wordmarkImg, skyH: portrait ? GY * 0.95 : Math.min(GY, 300) });
     roof = buildRoof(Math.min(U * DPR, 3));
     vigDark = buildVignette(false); vigRed = buildVignette(true);
@@ -802,6 +802,6 @@ export function createGame(canvas, opts = {}) {
   return {
     prepare, start, stop,
     get score() { return S ? S.score : 0; },
-    _test: { state: () => S, update, draw, layout, reset, press: { jump: pressJump, release: releaseJump, slide: pressSlide, unslide: releaseSlide }, geo: () => ({ Wu, Hu, GY, U, playerX }), hitbox, obstTop, setRunning: (v) => { running = v; } },
+    _test: { state: () => S, update, draw, layout, reset, press: { jump: pressJump, release: releaseJump, slide: pressSlide, unslide: releaseSlide }, geo: () => ({ Wu, Hu, GY, U, playerX }), hitbox, obstTop, setRunning: (v) => { running = v; }, setQuality: (d, sc) => { dprCap = d; sceneCap = sc; } },
   };
 }
