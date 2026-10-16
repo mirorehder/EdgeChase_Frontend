@@ -46,7 +46,7 @@ export default async function handler(req, res) {
   // Kein Gewinn -> kein Code, keine Mail.
   if (reward.kind === "none") {
     return sendJson(res, 200, {
-      ok: true, reward, code: null, score,
+      ok: true, reward, code: null, score, limit: PLAY_LIMIT_MODE,
       message: "Zu kurz für einen Code – lauf weiter, ab etwas Distanz gibt's Rabatt!",
     });
   }
@@ -79,7 +79,7 @@ export default async function handler(req, res) {
     // Hauptpreis: kein automatischer Coupon -> das Team muss den Gewinner kontaktieren.
     await sendTeamJackpotAlert({ name: data.name, email: data.em, score, code, sid: data.sid });
   } else if (data.em) {
-    const mail = await sendCodeMail({ to: data.em, name: data.name, code, percent: reward.value, expiresAt: expires, sid: data.sid, oneItem: ONE_ITEM });
+    const mail = await sendCodeMail({ to: data.em, name: data.name, code, percent: reward.value, expiresAt: expires, sid: data.sid, oneItem: ONE_ITEM, limit: PLAY_LIMIT_MODE });
     mailSent = Boolean(mail.sent);
   }
 
@@ -92,6 +92,7 @@ export default async function handler(req, res) {
     demo: Boolean(wix.demo),
     manual: Boolean(wix.manual),
     mailSent,
+    limit: PLAY_LIMIT_MODE,
     message: messageFor(reward, wix, mailSent) + (PLAY_LIMIT_MODE === "off" ? " [Testmodus: Spiel-Limit aus]" : ""),
   });
 }

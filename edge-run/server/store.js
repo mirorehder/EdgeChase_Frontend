@@ -8,6 +8,8 @@
 // einer warmen Lambda-Instanz gültig). Das Spiel funktioniert damit sofort,
 // aber das Tageslimit ist erst mit KV wirklich fälschungssicher.
 
+import { emailHash } from "./token.js";
+
 const KV_URL = process.env.KV_REST_API_URL;
 const KV_TOKEN = process.env.KV_REST_API_TOKEN;
 export const KV_ENABLED = Boolean(KV_URL && KV_TOKEN);
@@ -53,7 +55,9 @@ async function kv(cmd) {
   return r.json();
 }
 
-const dayKey = () => new Date().toISOString().slice(0, 10);
+// "Heute" = Kalendertag in der Schweiz (Mitternacht Basel), nicht UTC – sonst setzt sich das Limit
+// mitten in der Nacht zurück (01/02 Uhr). Das schwedische Datumsformat liefert JJJJ-MM-TT.
+const dayKey = () => new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Zurich" });
 const monthKey = () => new Date().toISOString().slice(0, 7);
 
 // Spiel-Limit je E-Mail-Adresse (gehasht). Per ENV PLAY_LIMIT:
@@ -62,6 +66,10 @@ const monthKey = () => new Date().toISOString().slice(0, 7);
 //   once   – ein Versuch pro Adresse, für immer
 const MODE_RAW = String(process.env.PLAY_LIMIT || "daily").toLowerCase();
 export const PLAY_LIMIT_MODE = ["off", "daily", "once"].includes(MODE_RAW) ? MODE_RAW : "daily";
+// Test-Zugang: Adressen aus PLAY_LIMIT_BYPASS (Komma-getrennt) spielen ohne Limit. Nur für eure
+// eigenen Tests – am besten eine nicht erratbare Adresse nehmen (z. B. name+test7k@gmail.com),
+// denn wer die Adresse kennt und eintippt, hat unbegrenzte Versuche.
+const BYPASS = new Set((process.env.PLAY_LIMIT_BYPASS || "").split(",").map((e) => e.trim()).filter(Boolean).map(emailHash));
 const playKey = (emailHash) => (PLAY_LIMIT_MODE === "once" ? `played:once:${emailHash}` : `played:${dayKey()}:${emailHash}`);
 const playTtl = () => (PLAY_LIMIT_MODE === "once" ? 60 * 60 * 24 * 365 * 5 : 60 * 60 * 36);
 
@@ -69,7 +77,7 @@ const playTtl = () => (PLAY_LIMIT_MODE === "once" ? 60 * 60 * 24 * 365 * 5 : 60 
 // Auswertung: sonst könnte man nach einem schlechten Lauf den Tab schließen und den
 // Versuch nie verbrauchen. true = darf spielen; false = hat schon gespielt.
 export async function claimPlay(emailHash) {
-  if (PLAY_LIMIT_MODE === "off") return true;
+  if (PLAY_LIMIT_MODE === "off" || BYPASS.has(emailHash)) return true;
   try { return await setNX(playKey(emailHash), playTtl()); }
   catch (e) { console.warn("claimPlay:", e.message); return true; } // Fehler = nicht aussperren
 }
@@ -77,7 +85,7 @@ export async function claimPlay(emailHash) {
 // Gibt den Versuch wieder frei – nur nach einem technischen Fehler auf unserer Seite
 // (z. B. Wix-Coupon konnte nicht erstellt werden), damit der Spieler nicht verliert.
 export async function releasePlay(emailHash) {
-  if (PLAY_LIMIT_MODE === "off") return;
+  if (PLAY_LIMIT_MODE === "off" || BYPASS.has(emailHash)) return;
   const key = playKey(emailHash);
   try {
     if (!KV_ENABLED) { mem.delete(key); return; }

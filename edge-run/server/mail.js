@@ -101,13 +101,24 @@ const step = (nr, text) => `<tr>
   <td style="padding:7px 14px 7px 0;font:900 italic 20px/1.2 ${HEAD};color:${COL.accent};width:34px;vertical-align:top">${nr}</td>
   <td style="padding:7px 0;font:400 15px/1.45 ${BODY};color:${COL.ink};vertical-align:top">${text}</td></tr>`;
 
-export function renderCodeMail({ name, code, percent, until, oneItem }) {
+export function renderCodeMail({ name, code, percent, until, oneItem, limit }) {
   const wordmark = `${ASSET_BASE}/assets/wordmark-white.png`;
   const preheader = `Dein Code ${code}: ${percent} % Rabatt, gültig bis ${until}.`;
   const button = SHOP_URL
     ? `<tr><td style="padding:22px 28px 0"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
         <td align="center" bgcolor="${COL.accent}" style="background:${COL.accent};border-radius:6px"><a href="${esc(SHOP_URL)}" style="display:block;padding:17px 24px;font:800 14px/1 ${BODY};letter-spacing:.16em;color:#ffffff;text-decoration:none">JETZT EINLÖSEN</a></td>
       </tr></table></td></tr>`
+    : "";
+  const tryText = limit === "daily"
+    ? "Dein Versuch für heute ist vorbei. Morgen kannst du es noch einmal probieren – vielleicht wird der Rabatt dann noch höher."
+    : limit === "once"
+      ? "Das war dein Versuch – pro E-Mail-Adresse gibt es einen."
+      : "";
+  const tryNote = tryText
+    ? `<tr><td style="padding:22px 28px 0"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${COL.card}" style="background:${COL.card};border:1px solid ${COL.line};border-radius:6px"><tr><td style="padding:16px 18px">
+        <div style="font:700 10px/1 ${BODY};letter-spacing:.28em;color:${COL.accent}">NÄCHSTER VERSUCH</div>
+        <div style="font:400 14px/1.5 ${BODY};color:${COL.ink};margin-top:9px">${esc(tryText)}</div>
+      </td></tr></table></td></tr>`
     : "";
   return `<!doctype html>
 <html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -149,6 +160,8 @@ export function renderCodeMail({ name, code, percent, until, oneItem }) {
     ${fact("GILT FÜR", oneItem ? "einen Artikel pro Bestellung (den günstigsten im Warenkorb)" : "deinen ganzen Warenkorb")}
   </table></td></tr>
 
+  ${tryNote}
+
   <tr><td style="padding:30px 28px 0">
     <div style="font:700 11px/1 ${BODY};letter-spacing:.28em;color:${COL.dim};margin-bottom:8px">SO LÖST DU IHN EIN</div>
     <table role="presentation" cellpadding="0" cellspacing="0" border="0">
@@ -167,8 +180,8 @@ export function renderCodeMail({ name, code, percent, until, oneItem }) {
 }
 
 /** Rabattcode an den Spieler. */
-export function sendCodeMail({ to, name, code, percent, expiresAt, sid, oneItem }) {
-  const html = renderCodeMail({ name, code, percent, until: fmtDate(expiresAt), oneItem });
+export function sendCodeMail({ to, name, code, percent, expiresAt, sid, oneItem, limit }) {
+  const html = renderCodeMail({ name, code, percent, until: fmtDate(expiresAt), oneItem, limit });
   return send({ to, subject: `Dein EdgeChase Rabattcode: ${code}`, html, idempotencyKey: guidFor("code", sid) });
 }
 

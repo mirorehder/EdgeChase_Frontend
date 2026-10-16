@@ -216,6 +216,17 @@ function renderReward(res, score) {
     : "Code an der Kasse einlösen. Nur solange gültig – zöger nicht!");
 
   shopBtn.hidden = false;
+  showLimitInfo(res.limit);
+}
+
+// Nach dem Ergebnis: sagen, wann man wieder spielen darf – und "Nochmal" nur anbieten, wenn es geht.
+function showLimitInfo(limit) {
+  const el = $("#result-limit"), again = $("#btn-again");
+  const text = limit === "daily" ? "Dein Versuch für heute ist vorbei – morgen kannst du es noch einmal probieren."
+    : limit === "once" ? "Das war dein Versuch – pro E-Mail-Adresse gibt es einen." : "";
+  el.querySelector("span").textContent = text;
+  el.hidden = !text;
+  again.hidden = !!text;   // bei Limit gibt es kein "Nochmal"
 }
 
 function headlineFor(pct) {
