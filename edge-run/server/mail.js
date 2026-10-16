@@ -42,7 +42,7 @@ export const MAIL_ENABLED = Boolean(API_KEY && SITE_ID);
 // Nutzereingaben (Name!) niemals ungeprüft ins HTML setzen.
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
-const fmtDate = (d) => d.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "Europe/Berlin" });
+const fmtDate = (d) => d.toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "Europe/Berlin" });
 
 // Wix verlangt eine GUID als idempotencyKey. Aus Session-ID + Zweck abgeleitet:
 // bei einer Wiederholung derselben Auswertung entsteht dieselbe GUID -> keine Doppelmail.
@@ -103,26 +103,26 @@ const step = (nr, text) => `<tr>
 
 export function renderCodeMail({ name, code, percent, until, oneItem, limit }) {
   const wordmark = `${ASSET_BASE}/assets/wordmark-white.png`;
-  const preheader = `Dein Code ${code}: ${percent} % Rabatt, gültig bis ${until}.`;
+  const preheader = `Your code ${code}: ${percent} % off, valid until ${until}.`;
   const button = SHOP_URL
     ? `<tr><td style="padding:22px 28px 0"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
-        <td align="center" bgcolor="${COL.accent}" style="background:${COL.accent};border-radius:6px"><a href="${esc(SHOP_URL)}" style="display:block;padding:17px 24px;font:800 14px/1 ${BODY};letter-spacing:.16em;color:#ffffff;text-decoration:none">JETZT EINLÖSEN</a></td>
+        <td align="center" bgcolor="${COL.accent}" style="background:${COL.accent};border-radius:6px"><a href="${esc(SHOP_URL)}" style="display:block;padding:17px 24px;font:800 14px/1 ${BODY};letter-spacing:.16em;color:#ffffff;text-decoration:none">REDEEM NOW</a></td>
       </tr></table></td></tr>`
     : "";
   const tryText = limit === "daily"
-    ? "Dein Versuch für heute ist vorbei. Morgen kannst du es noch einmal probieren – vielleicht wird der Rabatt dann noch höher."
+    ? "Today's attempt is over. Come back tomorrow and try again – maybe the discount will be even bigger."
     : limit === "once"
-      ? "Das war dein Versuch – pro E-Mail-Adresse gibt es einen."
+      ? "That was your attempt – there is one per email address."
       : "";
   const tryNote = tryText
     ? `<tr><td style="padding:22px 28px 0"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${COL.card}" style="background:${COL.card};border:1px solid ${COL.line};border-radius:6px"><tr><td style="padding:16px 18px">
-        <div style="font:700 10px/1 ${BODY};letter-spacing:.28em;color:${COL.accent}">NÄCHSTER VERSUCH</div>
+        <div style="font:700 10px/1 ${BODY};letter-spacing:.28em;color:${COL.accent}">NEXT ATTEMPT</div>
         <div style="font:400 14px/1.5 ${BODY};color:${COL.ink};margin-top:9px">${esc(tryText)}</div>
       </td></tr></table></td></tr>`
     : "";
   return `<!doctype html>
-<html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="color-scheme" content="dark"><meta name="supported-color-schemes" content="dark"><title>Dein EdgeChase Rabattcode</title></head>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark"><meta name="supported-color-schemes" content="dark"><title>Your EdgeChase discount code</title></head>
 <body style="margin:0;padding:0;background:${COL.bg}">
 <div style="display:none;max-height:0;overflow:hidden;opacity:0;font-size:1px;line-height:1px;color:${COL.bg}">${esc(preheader)}&#8199;&zwnj;&#8199;&zwnj;&#8199;&zwnj;&#8199;&zwnj;&#8199;&zwnj;</div>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${COL.bg}" style="background:${COL.bg}"><tr><td align="center">
@@ -136,44 +136,44 @@ export function renderCodeMail({ name, code, percent, until, oneItem, limit }) {
   </td></tr>
 
   <tr><td style="padding:34px 28px 0">
-    <div style="font:700 11px/1 ${BODY};letter-spacing:.28em;color:${COL.accent}">EDGECHASE · DEIN RABATT</div>
-    <h1 style="margin:14px 0 0;font:900 italic 38px/1.02 ${HEAD};letter-spacing:-.01em;color:${COL.ink};word-break:break-word">STARK GELAUFEN,<br>${esc(String(name).toUpperCase())}!</h1>
+    <div style="font:700 11px/1 ${BODY};letter-spacing:.28em;color:${COL.accent}">EDGECHASE · YOUR DISCOUNT</div>
+    <h1 style="margin:14px 0 0;font:900 italic 38px/1.02 ${HEAD};letter-spacing:-.01em;color:${COL.ink};word-break:break-word">NICE RUN,<br>${esc(String(name).toUpperCase())}!</h1>
   </td></tr>
 
   <tr><td style="padding:26px 28px 0"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${COL.card}" style="background:${COL.card};border:1px solid ${COL.line};border-left:4px solid ${COL.accent};border-radius:6px">
     <tr><td style="padding:22px 24px">
       <div style="font:900 italic 76px/.95 ${HEAD};color:${COL.accent};letter-spacing:-.02em">${esc(percent)}%</div>
-      <div style="font:700 11px/1.3 ${BODY};letter-spacing:.24em;color:${COL.dim};margin-top:10px">RABATT AUF DEINE BESTELLUNG</div>
+      <div style="font:700 11px/1.3 ${BODY};letter-spacing:.24em;color:${COL.dim};margin-top:10px">OFF YOUR ORDER</div>
     </td></tr></table></td></tr>
 
   <tr><td style="padding:14px 28px 0"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="${COL.bg}" style="border:1px dashed #4a4a54;border-radius:6px">
     <tr><td align="center" style="padding:20px 12px">
-      <div style="font:700 11px/1 ${BODY};letter-spacing:.28em;color:${COL.dim}">DEIN CODE</div>
+      <div style="font:700 11px/1 ${BODY};letter-spacing:.28em;color:${COL.dim}">YOUR CODE</div>
       <div style="font:800 30px/1.25 ${MONO};letter-spacing:.07em;color:${COL.ink};margin-top:10px;word-break:break-all">${esc(code)}</div>
     </td></tr></table></td></tr>
 
   ${button}
 
   <tr><td style="padding:30px 28px 0"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-top:1px solid ${COL.line}">
-    ${fact("GÜLTIG BIS", `<b>${esc(until)}</b>`)}
-    ${fact("EINLÖSBAR", "einmal")}
-    ${fact("GILT FÜR", oneItem ? "einen Artikel pro Bestellung (den günstigsten im Warenkorb)" : "deinen ganzen Warenkorb")}
+    ${fact("VALID UNTIL", `<b>${esc(until)}</b>`)}
+    ${fact("REDEEMABLE", "once")}
+    ${fact("APPLIES TO", oneItem ? "one item per order (the cheapest in your cart)" : "your whole cart")}
   </table></td></tr>
 
   ${tryNote}
 
   <tr><td style="padding:30px 28px 0">
-    <div style="font:700 11px/1 ${BODY};letter-spacing:.28em;color:${COL.dim};margin-bottom:8px">SO LÖST DU IHN EIN</div>
+    <div style="font:700 11px/1 ${BODY};letter-spacing:.28em;color:${COL.dim};margin-bottom:8px">HOW TO REDEEM</div>
     <table role="presentation" cellpadding="0" cellspacing="0" border="0">
-      ${step("01", "Artikel in den Warenkorb legen")}
-      ${step("02", "Im Warenkorb den Code eingeben – am besten per Copy &amp; Paste")}
-      ${step("03", "Der Rabatt wird automatisch abgezogen")}
+      ${step("01", "Add your items to the cart")}
+      ${step("02", "Enter the code at checkout – ideally with copy &amp; paste")}
+      ${step("03", "The discount is deducted automatically")}
     </table>
   </td></tr>
 
   <tr><td style="padding:38px 28px 34px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-top:1px solid ${COL.line}"><tr><td style="padding-top:22px">
     <img src="${esc(wordmark)}" width="110" height="21" alt="EdgeChase" style="display:block;border:0;width:110px;height:21px;color:${COL.ink};font:900 italic 13px ${HEAD}">
-    <div style="font:400 12px/1.6 ${BODY};color:#6f6f78;margin-top:10px">Du bekommst diese Mail, weil du beim EdgeChase Game mitgespielt hast.</div>
+    <div style="font:400 12px/1.6 ${BODY};color:#6f6f78;margin-top:10px">You are receiving this email because you played the EdgeChase Game.</div>
   </td></tr></table></td></tr>
 
 </table></td></tr></table></body></html>`;
@@ -182,16 +182,16 @@ export function renderCodeMail({ name, code, percent, until, oneItem, limit }) {
 /** Rabattcode an den Spieler. */
 export function sendCodeMail({ to, name, code, percent, expiresAt, sid, oneItem, limit }) {
   const html = renderCodeMail({ name, code, percent, until: fmtDate(expiresAt), oneItem, limit });
-  return send({ to, subject: `Dein EdgeChase Rabattcode: ${code}`, html, idempotencyKey: guidFor("code", sid) });
+  return send({ to, subject: `Your EdgeChase discount code: ${code}`, html, idempotencyKey: guidFor("code", sid) });
 }
 
 /** Meldung ans Team: Hauptpreis gewonnen -> Gewinner manuell kontaktieren. */
 export async function sendTeamJackpotAlert({ name, email, score, code, sid }) {
   console.warn(`JACKPOT: ${name} <${email}> Score ${score}, Referenz ${code}`); // bleibt in den Vercel-Logs
   if (!TEAM_TO.length) return { sent: false, skipped: true };
-  const html = `<p>Jemand hat den Hauptpreis (Gratis-Kleidungsstück) beim <b>EdgeChase Game</b> gewonnen.</p>
-<ul><li>Name: ${esc(name)}</li><li>E-Mail: ${esc(email)}</li><li>Score: ${esc(score)}</li><li>Referenz: ${esc(code)}</li></ul>
-<p>Bitte den Gewinner kontaktieren und den Gewinn manuell abwickeln. Es wurde <b>kein</b> Wix-Coupon automatisch erstellt.</p>`;
-  const subject = `EdgeChase JACKPOT: ${String(name).replace(/[\r\n]+/g, " ")} hat das Gratis-Teil gewonnen`;
+  const html = `<p>Someone has won the grand prize (free garment) in the <b>EdgeChase Game</b>.</p>
+<ul><li>Name: ${esc(name)}</li><li>Email: ${esc(email)}</li><li>Score: ${esc(score)}</li><li>Reference: ${esc(code)}</li></ul>
+<p>Please contact the winner and handle the prize manually. <b>No</b> Wix coupon was created automatically.</p>`;
+  const subject = `EdgeChase JACKPOT: ${String(name).replace(/[\r\n]+/g, " ")} won the free garment`;
   return send({ to: TEAM_TO, subject, html, idempotencyKey: guidFor("jackpot", sid) });
 }

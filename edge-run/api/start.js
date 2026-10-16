@@ -17,7 +17,7 @@ export default async function handler(req, res) {
   const cleanEmail = String(email || "").trim();
 
   if (cleanName.length < 2 || cleanName.length > 40) {
-    return sendJson(res, 400, { ok: false, error: "invalid", message: "Bitte gültigen Namen eingeben." });
+    return sendJson(res, 400, { ok: false, error: "invalid", message: "Please enter a valid name." });
   }
   // Test-Zugang: E-Mail "12345" lädt das Spiel ohne Limit. Bewusst ohne echte Wirkung –
   // die Auswertung erzeugt dafür keinen Wix-Coupon und verschickt keine Mail (siehe reward.js).
@@ -26,7 +26,7 @@ export default async function handler(req, res) {
     return sendJson(res, 200, { ok: true, token, ladder: ladder(), test: true });
   }
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(cleanEmail)) {
-    return sendJson(res, 400, { ok: false, error: "invalid", message: "Bitte gültige E-Mail eingeben." });
+    return sendJson(res, 400, { ok: false, error: "invalid", message: "Please enter a valid email address." });
   }
 
   // Hat diese Adresse schon gespielt? Dann gar nicht erst starten (der Versuch wird
@@ -36,8 +36,8 @@ export default async function handler(req, res) {
     return sendJson(res, 200, {
       ok: false, error: "already_played", limit: PLAY_LIMIT_MODE,
       message: PLAY_LIMIT_MODE === "once"
-        ? "Mit dieser E-Mail-Adresse wurde schon gespielt – jede Adresse hat einen Versuch."
-        : "Du hast heute schon gespielt – morgen wieder!",
+        ? "This email address has already played – each address gets one attempt."
+        : "You've already played today – come back tomorrow!",
     });
   }
 

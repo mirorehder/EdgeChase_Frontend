@@ -23,11 +23,11 @@ export default async function handler(req, res) {
 
   const body = await readJson(req);
   const data = verifySession(body.token);
-  if (!data) return sendJson(res, 401, { ok: false, error: "invalid_session", message: "Session ungültig oder abgelaufen. Bitte neu starten." });
+  if (!data) return sendJson(res, 401, { ok: false, error: "invalid_session", message: "Session invalid or expired. Please start again." });
 
   // Replay-Schutz: jedes Token nur einmal einlösbar.
   if (!(await useToken(data.sid))) {
-    return sendJson(res, 409, { ok: false, error: "already_scored", message: "Dieser Lauf wurde bereits gewertet." });
+    return sendJson(res, 409, { ok: false, error: "already_scored", message: "This run has already been scored." });
   }
 
   // Score gegen Dauer plausibilisieren (Anti-Cheat).
@@ -47,13 +47,13 @@ export default async function handler(req, res) {
   // KEIN Wix-Coupon und es geht KEINE Mail raus – sonst könnte jeder, der "12345" kennt, Codes erzeugen.
   if (data.test) {
     if (reward.kind === "none") {
-      return sendJson(res, 200, { ok: true, reward, code: null, score, limit: PLAY_LIMIT_MODE, test: true, message: "Testmodus: zu kurz für einen Code." });
+      return sendJson(res, 200, { ok: true, reward, code: null, score, limit: PLAY_LIMIT_MODE, test: true, message: "Test mode: too short for a code." });
     }
     const testCode = "TEST-" + (reward.kind === "free" ? "GRATIS" : buildCode(data.name, reward));
     return sendJson(res, 200, {
       ok: true, reward, code: testCode, score, test: true, demo: true, mailSent: false,
       expiresAt: reward.kind === "free" ? null : expiryDate().toISOString(), limit: "off",
-      message: "Testmodus (E-Mail 12345): Dieser Code ist nicht echt – es wurde kein Coupon erstellt und keine Mail verschickt.",
+      message: "Test mode (email 12345): this code is not real – no coupon was created and no email was sent.",
     });
   }
 
@@ -61,7 +61,7 @@ export default async function handler(req, res) {
   if (reward.kind === "none") {
     return sendJson(res, 200, {
       ok: true, reward, code: null, score, limit: PLAY_LIMIT_MODE,
-      message: "Zu kurz für einen Code – lauf weiter, ab etwas Distanz gibt's Rabatt!",
+      message: "Too short for a code – keep running, you get a discount from a certain distance!",
     });
   }
 
@@ -83,7 +83,7 @@ export default async function handler(req, res) {
     await releasePlay(data.eh);
     return sendJson(res, 502, {
       ok: false, error: "coupon_failed",
-      message: "Dein Rabattcode konnte gerade nicht erstellt werden. Bitte versuch es in ein paar Minuten noch einmal – dein Versuch ist nicht verbraucht.",
+      message: "Your discount code could not be created right now. Please try again in a few minutes – your attempt has not been used up.",
     });
   }
 
@@ -107,18 +107,18 @@ export default async function handler(req, res) {
     manual: Boolean(wix.manual),
     mailSent,
     limit: PLAY_LIMIT_MODE,
-    message: messageFor(reward, wix, mailSent) + (PLAY_LIMIT_MODE === "off" ? " [Testmodus: Spiel-Limit aus]" : ""),
+    message: messageFor(reward, wix, mailSent) + (PLAY_LIMIT_MODE === "off" ? " [Test mode: play limit off]" : ""),
   });
 }
 
 function messageFor(reward, wix, mailSent) {
   if (reward.kind === "free") {
-    return "Wahnsinn – du hast den Hauptpreis geknackt! Wir melden uns per E-Mail bei dir.";
+    return "Insane – you cracked the grand prize! We'll contact you by email.";
   }
   if (wix.demo) {
-    return "Demo-Modus: Code wird angezeigt, aber noch nicht in Wix erstellt (Wix-Keys fehlen).";
+    return "Demo mode: the code is shown but not yet created in Wix (Wix keys missing).";
   }
   return mailSent
-    ? "Wir schicken dir den Code auch per E-Mail (ggf. im Spam-Ordner nachsehen). Gib ihn im Warenkorb ein."
-    : "Gib den Code im Warenkorb ein. Mach am besten einen Screenshot davon – die E-Mail konnte nicht zugestellt werden.";
+    ? "We'll also email you the code (check your spam folder if needed). Enter it at checkout."
+    : "Enter the code at checkout. Take a screenshot of it to be safe – the email could not be delivered.";
 }

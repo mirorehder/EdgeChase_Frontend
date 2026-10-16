@@ -58,28 +58,28 @@ form.addEventListener("submit", async (e) => {
   const name = $("#in-name").value.trim();
   const email = $("#in-email").value.trim();
 
-  if (name.length < 2) return showError("Bitte gib deinen Namen ein.");
-  if (email !== "12345" && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return showError("Bitte gib eine gültige E-Mail an.");
+  if (name.length < 2) return showError("Please enter your name.");
+  if (email !== "12345" && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return showError("Please enter a valid email address.");
 
   const btn = $("#btn-start");
-  btn.disabled = true; btn.textContent = "STARTET…";
+  btn.disabled = true; btn.textContent = "STARTING…";
   try {
     const res = await api("/api/start", { name, email });
     if (!res.ok) {
       if (res.error === "already_played") {
         // schon gespielt -> direkt Ergebnis/Blocker zeigen
         show("result");
-        renderBlocked(res.message || "Du hast heute bereits gespielt.", res.limit);
+        renderBlocked(res.message || "You have already played today.", res.limit);
         return;
       }
-      throw new Error(res.message || "Start fehlgeschlagen");
+      throw new Error(res.message || "Could not start the game");
     }
     session = { token: res.token, name, ladder: res.ladder };
     startGameFlow();
   } catch (err) {
-    showError(err.message || "Etwas ist schiefgelaufen. Bitte erneut versuchen.");
+    showError(err.message || "Something went wrong. Please try again.");
   } finally {
-    btn.disabled = false; btn.textContent = "SPIEL STARTEN";
+    btn.disabled = false; btn.textContent = "START GAME";
   }
 });
 function showError(msg) { errBox.textContent = msg; errBox.hidden = false; }
@@ -139,7 +139,7 @@ function startGameFlow() {
 function countdown(done) {
   const el = $("#countdown");
   el.hidden = false;
-  const seq = ["3", "2", "1", "LOS!"];
+  const seq = ["3", "2", "1", "GO!"];
   let i = 0;
   el.textContent = seq[i];
   const iv = setInterval(() => {
@@ -166,7 +166,7 @@ async function handleGameOver(result) {
     });
     if (!res.ok) {
       if (res.error === "already_played") return renderBlocked(res.message, res.limit);
-      throw new Error(res.message || "Auswertung fehlgeschlagen");
+      throw new Error(res.message || "Could not evaluate your run");
     }
     renderReward(res, result.score);
   } catch (err) {
@@ -195,33 +195,33 @@ function renderReward(res, score) {
   if (r.kind === "free") {
     headline.textContent = "JACKPOT";
     prize.classList.add("prize--jackpot");
-    value.textContent = "GRATIS";
-    label.textContent = "KLEIDUNGSSTÜCK";
+    value.textContent = "FREE";
+    label.textContent = "GARMENT";
     celebrate();
   } else if (r.kind === "percent") {
     headline.textContent = headlineFor(r.value);
     value.textContent = r.value + "%";
-    label.textContent = "RABATT";
+    label.textContent = "DISCOUNT";
   } else {
-    headline.textContent = "KNAPP!";
+    headline.textContent = "SO CLOSE!";
     prize.classList.add("prize--none");
     value.textContent = "0%";
-    label.textContent = "DIESMAL KEIN CODE";
+    label.textContent = "NO CODE THIS TIME";
   }
 
   if (res.code) {
     codeWrap.hidden = false;
     $("#result-code").textContent = res.code;
     $("#result-expiry").textContent = res.expiresAt
-      ? "Gültig bis " + formatDate(res.expiresAt) + (res.demo ? " · (Demo – noch kein echter Wix-Code)" : "")
-      : (res.demo ? "Demo – noch kein echter Wix-Code" : "");
+      ? "Valid until " + formatDate(res.expiresAt) + (res.demo ? " · (demo – not a real code)" : "")
+      : (res.demo ? "Demo – not a real code" : "");
   } else {
     codeWrap.hidden = true;
   }
 
   note.textContent = res.message || (r.kind === "none"
-    ? "Kein Code diesmal – aber du bist für kommende Drops & Aktionen dabei."
-    : "Code an der Kasse einlösen. Nur solange gültig – zöger nicht!");
+    ? "No code this time – but you're in for upcoming drops & promotions."
+    : "Redeem the code at checkout. Valid for a limited time – don't wait!");
 
   shopBtn.hidden = false;
   showLimitInfo(res.limit);
@@ -230,8 +230,8 @@ function renderReward(res, score) {
 // Nach dem Ergebnis: sagen, wann man wieder spielen darf – und "Nochmal" nur anbieten, wenn es geht.
 function showLimitInfo(limit) {
   const el = $("#result-limit"), again = $("#btn-again");
-  const text = limit === "daily" ? "Dein Versuch für heute ist vorbei – morgen kannst du es noch einmal probieren."
-    : limit === "once" ? "Das war dein Versuch – pro E-Mail-Adresse gibt es einen." : "";
+  const text = limit === "daily" ? "Today's attempt is over – come back tomorrow and try again."
+    : limit === "once" ? "That was your attempt – there is one per email address." : "";
   el.querySelector("span").textContent = text;
   el.hidden = !text;
   again.hidden = !!text;   // bei Limit gibt es kein "Nochmal"
@@ -240,19 +240,19 @@ function showLimitInfo(limit) {
 function headlineFor(pct) {
   if (pct >= 30) return "MADNESS!";
   if (pct >= 20) return "INSANE RUN";
-  return "STARKER LAUF";
+  return "STRONG RUN";
 }
 
 function renderBlocked(msg, limit) {
   $("#result-loading").hidden = true;
   const content = $("#result-content");
   content.hidden = false;
-  $("#result-headline").textContent = "SCHON GESPIELT";
+  $("#result-headline").textContent = "ALREADY PLAYED";
   $("#result-prize").classList.add("prize--none");
   $("#prize-value").textContent = "1×";
-  $("#prize-label").textContent = limit === "once" ? "PRO E-MAIL-ADRESSE" : "PRO TAG";
+  $("#prize-label").textContent = limit === "once" ? "PER EMAIL ADDRESS" : "PER DAY";
   $("#result-code-wrap").hidden = true;
-  $("#result-note").textContent = msg || "Komm morgen wieder und versuch dein Glück erneut.";
+  $("#result-note").textContent = msg || "Come back tomorrow and try your luck again.";
   $("#btn-again").hidden = true;
   $("#btn-shop").hidden = false;
 }
@@ -261,11 +261,11 @@ function renderError(msg) {
   $("#result-loading").hidden = true;
   const content = $("#result-content");
   content.hidden = false;
-  $("#result-headline").textContent = "HOPPLA";
+  $("#result-headline").textContent = "OOPS";
   $("#prize-value").textContent = "!";
-  $("#prize-label").textContent = "FEHLER";
+  $("#prize-label").textContent = "ERROR";
   $("#result-code-wrap").hidden = true;
-  $("#result-note").textContent = msg || "Verbindung fehlgeschlagen. Bitte erneut versuchen.";
+  $("#result-note").textContent = msg || "Connection failed. Please try again.";
 }
 
 /* ---------- Buttons ---------- */
@@ -278,8 +278,8 @@ $("#btn-again").addEventListener("click", () => {
 $("#btn-shop").addEventListener("click", () => navigateTop(CONF.shopUrl));
 $("#btn-copy").addEventListener("click", async () => {
   const code = $("#result-code").textContent;
-  try { await navigator.clipboard.writeText(code); flash($("#btn-copy"), "Kopiert!"); }
-  catch { fallbackCopy(code); flash($("#btn-copy"), "Kopiert!"); }
+  try { await navigator.clipboard.writeText(code); flash($("#btn-copy"), "Copied!"); }
+  catch { fallbackCopy(code); flash($("#btn-copy"), "Copied!"); }
 });
 
 /* ---------- How-to Modal ---------- */
@@ -311,7 +311,7 @@ function fallbackCopy(text) {
   ta.select(); try { document.execCommand("copy"); } catch {} document.body.removeChild(ta);
 }
 function formatDate(iso) {
-  try { return new Date(iso).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" }); }
+  try { return new Date(iso).toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" }); }
   catch { return iso; }
 }
 function celebrate() {

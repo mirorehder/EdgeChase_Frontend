@@ -1,11 +1,11 @@
 <!doctype html>
-<html lang="de">
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <meta name="theme-color" content="#0b0b0c" />
-  <title>EdgeChase – Spiel dich zu deinem Rabatt</title>
-  <meta name="description" content="Das EDGE jagt dich: lauf, spring und überlebe – je weiter du kommst, desto höher dein Rabatt bei EdgeChase." />
+  <title>EdgeChase – Play your way to a discount</title>
+  <meta name="description" content="The EDGE is chasing you: run, jump and survive – the further you get, the bigger your EdgeChase discount." />
   <link rel="preload" href="./assets/fonts/archivo-latin-wdth-normal.woff2" as="font" type="font/woff2" crossorigin />
   <link rel="stylesheet" href="./src/styles.css" />
 </head>
@@ -23,37 +23,37 @@
       <div class="intro">
         <img class="intro__logo" src="./assets/wordmark-white.png" alt="EdgeChase" width="843" height="160" />
         <p class="eyebrow"><i class="pulse"></i> EdgeChase Game</p>
-        <h1 class="intro__title">Lauf um deinen Rabatt</h1>
-        <p class="intro__tag">Das EDGE jagt dich. Spring, rutsch, überlebe – je weiter du kommst, desto höher dein Rabatt.</p>
+        <h1 class="intro__title">Run for your discount</h1>
+        <p class="intro__tag">The EDGE is chasing you. Jump, slide, survive – the further you get, the bigger your discount.</p>
 
         <form id="intro-form" class="form" autocomplete="on" novalidate>
           <label class="field">
-            <span class="sr">Dein Name</span>
+            <span class="sr">Your name</span>
             <input id="in-name" name="name" type="text" inputmode="text" maxlength="20"
-                   placeholder="Dein Name" autocomplete="given-name" required />
+                   placeholder="Your name" autocomplete="given-name" required />
           </label>
           <label class="field">
-            <span class="sr">Deine E-Mail</span>
+            <span class="sr">Your email</span>
             <input id="in-email" name="email" type="email" inputmode="email" maxlength="120"
-                   placeholder="Deine E-Mail" autocomplete="email" required />
+                   placeholder="Your email" autocomplete="email" required />
           </label>
 
-          <p class="form-note">Dein Rabattcode wird dir per E-Mail geschickt.</p>
+          <p class="form-note">Your discount code will be sent to you by email.</p>
 
           <p id="intro-error" class="error" hidden></p>
-          <button id="btn-start" class="btn btn--primary btn--arrow" type="submit">Spiel starten</button>
+          <button id="btn-start" class="btn btn--primary btn--arrow" type="submit">Start game</button>
         </form>
 
-        <button class="link-how" type="button" data-open="how">Wie funktioniert's?</button>
+        <button class="link-how" type="button" data-open="how">How does it work?</button>
       </div>
     </section>
 
     <!-- ============ SPIEL ============ -->
     <section id="screen-game" class="screen">
       <div class="hud">
-        <div class="hud__score"><span class="hud__label">DISTANZ</span><span id="hud-score">0</span></div>
+        <div class="hud__score"><span class="hud__label">DISTANCE</span><span id="hud-score">0</span></div>
         <div class="hud__discount">
-          <span class="hud__label">RABATT</span>
+          <span class="hud__label">DISCOUNT</span>
           <span id="hud-discount" class="hud__discount-val">–</span>
         </div>
         <div class="hud__threat">
@@ -64,8 +64,8 @@
       <canvas id="game-canvas"></canvas>
       <div id="countdown" class="countdown" hidden></div>
       <div id="controls-hint" class="controls-hint">
-        <span class="controls-hint__mobile">Tippen = Springen · nach unten wischen = Rutschen</span>
-        <span class="controls-hint__desktop">Leertaste / ↑ = Springen · ↓ = Rutschen</span>
+        <span class="controls-hint__mobile">Tap = jump · swipe down = slide</span>
+        <span class="controls-hint__desktop">Space / ↑ = jump · ↓ = slide</span>
       </div>
     </section>
 
@@ -74,30 +74,30 @@
       <div class="result">
         <div id="result-loading" class="result__loading">
           <div class="spinner"></div>
-          <p>Dein Ergebnis wird geprüft…</p>
+          <p>Checking your result…</p>
         </div>
 
         <div id="result-content" class="result__content" hidden>
-          <p class="result__eyebrow">DISTANZ <span id="result-score">0</span></p>
+          <p class="result__eyebrow">DISTANCE <span id="result-score">0</span></p>
           <h2 id="result-headline" class="result__headline">—</h2>
           <div id="result-prize" class="prize">
             <div class="prize__value" id="prize-value">—</div>
-            <div class="prize__label" id="prize-label">RABATT</div>
+            <div class="prize__label" id="prize-label">DISCOUNT</div>
           </div>
 
           <div id="result-code-wrap" class="code" hidden>
-            <span class="code__label">DEIN CODE</span>
+            <span class="code__label">YOUR CODE</span>
             <div class="code__row">
               <code id="result-code">—</code>
-              <button id="btn-copy" class="btn btn--ghost" type="button">Kopieren</button>
+              <button id="btn-copy" class="btn btn--ghost" type="button">Copy</button>
             </div>
             <p class="code__meta" id="result-expiry"></p>
           </div>
 
           <p id="result-note" class="result__note"></p>
           <p id="result-limit" class="eyebrow result__limit" hidden><i class="pulse"></i><span></span></p>
-          <button id="btn-again" class="btn btn--primary" type="button">Nochmal</button>
-          <button id="btn-shop" class="btn btn--ghost" type="button" data-shop hidden>Zurück zur Startseite</button>
+          <button id="btn-again" class="btn btn--primary" type="button">Play again</button>
+          <button id="btn-shop" class="btn btn--ghost" type="button" data-shop hidden>Back to homepage</button>
         </div>
       </div>
     </section>
@@ -105,14 +105,14 @@
     <!-- ============ INFO-OVERLAY ============ -->
     <div id="modal-how" class="modal" hidden>
       <div class="modal__box">
-        <h3>So läuft's</h3>
+        <h3>How it works</h3>
         <ul>
-          <li>Renne so weit wie möglich, ohne dass dich das EDGE einholt.</li>
-          <li>Je weiter du kommst, desto höher dein gesicherter Rabatt (oben im Balken).</li>
-          <li>10–15 % sind gut machbar. 25 %+ nur mit langem Lauf – der Hauptpreis ist die Krönung.</li>
-          <li>Ein Versuch pro Tag und E-Mail-Adresse – morgen darfst du es nochmal probieren. Dein Code wird sofort erzeugt und per Mail geschickt.</li>
+          <li>Run as far as you can without the EDGE catching you.</li>
+          <li>The further you get, the higher your secured discount (shown at the top).</li>
+          <li>10–15 % is very doable. 25 %+ takes a long run – the grand prize is the crown.</li>
+          <li>One try per day and email address – come back tomorrow for another go. Your code is created instantly and sent by email.</li>
         </ul>
-        <button class="btn btn--ghost" type="button" data-close="how">Verstanden</button>
+        <button class="btn btn--ghost" type="button" data-close="how">Got it</button>
       </div>
     </div>
   </div>
