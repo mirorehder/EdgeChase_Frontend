@@ -65,6 +65,20 @@ angezeigt, aber (noch) nicht in Wix erstellt.
    `SESSION_SECRET`.
 5. Deploy. Ergebnis: `https://<projekt>.vercel.app`.
 
+### Eigene Domain (game.edgechase.com)
+
+Die Domain `edgechase.com` wird bei Wix verwaltet (Nameserver `ns6/ns7.wixdns.net`).
+In Vercel ist `game.edgechase.com` dem Projekt zugeordnet. Fehlt nur noch der
+DNS-Eintrag bei Wix (Domains → DNS-Einträge verwalten → CNAME):
+
+| Typ | Host | Wert |
+|---|---|---|
+| CNAME | `game` | `908035fbd16fadf4.vercel-dns-017.com` |
+
+Danach stellt Vercel das HTTPS-Zertifikat automatisch aus. Sobald die Domain läuft,
+`ASSET_BASE_URL=https://game.edgechase.com` setzen (Logo in der Mail) und im
+iframe die neue Adresse verwenden.
+
 ### In Wix einbetten
 
 Am besten als **Lightbox/Popup** mit einem HTML-/iframe-Element:
