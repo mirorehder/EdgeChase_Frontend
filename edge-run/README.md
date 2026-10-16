@@ -110,12 +110,12 @@ Alles über ENV-Variablen, **ohne Code-Änderung** (siehe `.env.example`):
 | `PLAY_LIMIT` | `off` (Test), `daily` (Standard, Tageswechsel 0 Uhr Schweizer Zeit) oder `once` (ein Versuch je E-Mail-Adresse). |
 | *(Test-Zugang)* | E-Mail `12345` im Formular: Spiel lädt ohne Limit, Auswertung zeigt einen `TEST-…`-Code, **erzeugt aber keinen Wix-Coupon und verschickt keine Mail**. Für echte Codes: `PLAY_LIMIT_BYPASS`. |
 | `PLAY_LIMIT_BYPASS` | Komma-getrennte Test-Adressen, die ohne Limit spielen dürfen. |
-| `REWARD_LOW_MAX`, `REWARD_MID_MAX` | Score-Grenzen der Stufen. |
-| `REWARD_TABLE_JSON` | Komplette Gewinntabellen überschreiben. |
+| `REWARD_LADDER_JSON` | Rabatt-Leiter (Distanz → %) überschreiben. |
+| `REWARD_BUMP_CHANCE`, `REWARD_FREE_CHANCE`, `REWARD_FREE_MIN` | Chance auf nächsthöhere Stufe / Gratis-Teil und dessen Mindestdistanz. |
 | `COUPON_EXPIRY_DAYS` | Gültigkeit der Codes. |
 | `JACKPOT_MAX_PER_MONTH` | Deckel für Gratis-Teile. |
 
-Belohnungstabellen im Code: `server/reward.js` (`DEFAULT_TABLES`).
+Rabatt-Leiter im Code: `server/reward.js` (`DEFAULT_LADDER`); Schwierigkeit: `CFG` in `src/game.js`.
 
 ---
 

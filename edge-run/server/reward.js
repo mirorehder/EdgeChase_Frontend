@@ -15,13 +15,13 @@
 // Per ENV REWARD_LADDER_JSON überschreibbar.
 const DEFAULT_LADDER = [
   { min: 150, pct: 10 },
-  { min: 900, pct: 15 },
-  { min: 2200, pct: 20 },
-  { min: 4200, pct: 25 },
-  { min: 7000, pct: 30 },
+  { min: 1200, pct: 15 },
+  { min: 3500, pct: 20 },
+  { min: 5500, pct: 25 },
+  { min: 8000, pct: 30 },
 ];
 
-const FREE_MIN = num(process.env.REWARD_FREE_MIN, 7000);      // Jackpot erst ab hier
+const FREE_MIN = num(process.env.REWARD_FREE_MIN, 8000);      // Jackpot erst ab hier
 const FREE_CHANCE = num(process.env.REWARD_FREE_CHANCE, 0.004); // ~0,4 %
 const BUMP_CHANCE = num(process.env.REWARD_BUMP_CHANCE, 0.15);  // Chance auf +1 Stufe
 

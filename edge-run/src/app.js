@@ -87,8 +87,8 @@ function showError(msg) { errBox.textContent = msg; errBox.hidden = false; }
 /* ---------- Spielablauf ---------- */
 // Rabatt-Leiter (Fallback, falls /api/start keine mitliefert). Server ist maßgeblich.
 const DEFAULT_LADDER = [
-  { min: 150, pct: 10 }, { min: 900, pct: 15 }, { min: 2200, pct: 20 },
-  { min: 4200, pct: 25 }, { min: 7000, pct: 30 },
+  { min: 150, pct: 10 }, { min: 1200, pct: 15 }, { min: 3500, pct: 20 },
+  { min: 5500, pct: 25 }, { min: 8000, pct: 30 },
 ];
 function discountForScore(score, rungs) {
   let pct = 0;

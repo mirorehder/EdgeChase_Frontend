@@ -31,6 +31,9 @@ const CFG = {
   gapMinM: 20, gapMaxM: 34,
   beamClear: 27,          // lichte Höhe unter dem Balken (Rutschen passt, Stehen nicht)
   shardM: 1,              // Meter-Bonus pro Scherbe
+  // Schwierigkeitsrampe: ab rampFrom Metern wird alles härter, bei rampTo ist das Maximum erreicht.
+  // (Tempo, Abstände, Hindernis-Größen, Kombinationen, Strafe pro Treffer.)
+  rampFrom: 400, rampTo: 3500, extraSpeed: 260, hitExtra: 0.35, decayCut: 0.85, comboBase: 0.2, comboMax: 0.8, spaceCut: 0.4,
 };
 
 const ROOF_H = 10;
@@ -231,6 +234,7 @@ export function createGame(canvas, opts = {}) {
 
   /* ---------------- Hindernisse ---------------- */
   // block: drüber springen · beam: drunter rutschen (oder drüber) · gap: Lücke zwischen den Dächern
+  const diff = () => clamp((S.dist * CFG.mPerU - CFG.rampFrom) / (CFG.rampTo - CFG.rampFrom), 0, 1);
   const obstTop = (o) => (o.type === "beam" ? GY - CFG.beamClear - o.h : GY - o.h);
   function chooseType() {
     const seq = ["block", "beam", "block", "gap"];            // sanfter Einstieg: jedes Hindernis einmal kennenlernen
@@ -240,24 +244,34 @@ export function createGame(canvas, opts = {}) {
     if (type === S.lastType && S.sameRun >= 2) type = type === "block" ? "beam" : "block";
     return type;
   }
+  function makeObstacle(type, x, d) {
+    if (type === "block") {
+      const k = rng();
+      if (k < 0.4) return { type, kind: "crate", x, w: 28 + rng() * 22 * d, h: 25 + rng() * 4 + 22 * d };
+      if (k < 0.65) return { type, kind: "stack", x, w: 28, h: 52 + 16 * d };
+      return { type, kind: "vent", x, w: 46 + rng() * 6 + 14 * d, h: 30 + 10 * d };
+    }
+    if (type === "beam") return { type, kind: "beam", x, w: 56 + rng() * 26 + 50 * d, h: 12 + 26 * d };
+    // Lücke: am Anfang großzügig, später fast so breit, wie ein Sprung überhaupt reicht
+    const easy = 92 + (S.base - CFG.speed0) * 0.12, hard = (S.base * 0.5 - 8) * 0.88;
+    return { type, kind: "gap", x, w: lerp(easy, Math.max(easy, hard), d) + rng() * 26, h: 0 };
+  }
   function spawnObstacle() {
+    const d = diff();
     const type = chooseType();
     S.sameRun = type === S.lastType ? S.sameRun + 1 : 1; S.lastType = type; S.spawned++;
     const x = Wu + 40;
-    let o;
-    if (type === "block") {
-      const k = rng();
-      if (k < 0.4) o = { type, kind: "crate", x, w: 28, h: 25 + rng() * 4 };
-      else if (k < 0.65) o = { type, kind: "stack", x, w: 28, h: 52 };
-      else o = { type, kind: "vent", x, w: 46 + rng() * 6, h: 30 };
-    } else if (type === "beam") {
-      o = { type, kind: "beam", x, w: 56 + rng() * 26, h: 12 };
-    } else {
-      o = { type, kind: "gap", x, w: 92 + (S.base - CFG.speed0) * 0.12 + rng() * 26, h: 0 };
-    }
+    const o = makeObstacle(type, x, d);
     S.obstacles.push(o);
-    // Scherben als Wegweiser: Bogen über Block/Lücke, tiefe Reihe unter dem Balken
-    if (rng() < (type === "beam" ? 0.5 : 0.4)) {
+    let endX = o.x + o.w;
+    // Kombination: gleich danach ein zweites, anderes Hindernis (Landen und sofort reagieren)
+    const comboChance = d > 0.1 ? CFG.comboBase + (CFG.comboMax - CFG.comboBase) * d : 0;
+    if (comboChance && rng() < comboChance) {
+      const t2 = type === "beam" ? (rng() < 0.7 ? "block" : "gap") : (rng() < 0.55 ? "beam" : type === "gap" ? "block" : "gap");
+      const o2 = makeObstacle(t2, o.x + o.w + S.v * (0.36 + rng() * 0.2), d);
+      S.obstacles.push(o2); S.lastType = t2; endX = o2.x + o2.w;
+    } else if (rng() < (type === "beam" ? 0.5 : 0.4) * (1 - 0.7 * d)) {
+      // Scherben als Wegweiser (werden mit der Schwierigkeit seltener): Bogen über Block/Lücke, tiefe Reihe unter dem Balken
       if (type === "beam") for (let i = 0; i < 4; i++) S.shards.push({ x: o.x + 8 + i * ((o.w - 16) / 3), y: 8 });
       else {
         const peak = type === "gap" ? 52 : Math.max(o.h + 20, 50), n = 5;
@@ -267,6 +281,7 @@ export function createGame(canvas, opts = {}) {
         }
       }
     }
+    return endX - x;                                         // belegte Länge (u): Abstand bis zum nächsten Hindernis darauf aufschlagen
   }
   const overGap = (x) => { for (const o of S.obstacles) if (o.type === "gap" && x > o.x + 4 && x < o.x + o.w - 4) return true; return false; };
 
@@ -322,7 +337,7 @@ export function createGame(canvas, opts = {}) {
     const p = S.p;
     // --- Tempo ---
     S.runT += dt;
-    S.base = CFG.speed0 + (CFG.speedMax - CFG.speed0) * (1 - Math.exp(-S.runT / CFG.tau));
+    S.base = CFG.speed0 + (CFG.speedMax - CFG.speed0) * (1 - Math.exp(-S.runT / CFG.tau)) + CFG.extraSpeed * diff();
     const want = S.stumble > 0 ? 0.45 : 1;
     S.mul += (want - S.mul) * Math.min(1, dt * (want < S.mul ? 25 : 6));
     if (S.stumble > 0) S.stumble -= dt;
@@ -376,8 +391,8 @@ export function createGame(canvas, opts = {}) {
     S.spawnAcc += S.v * dt * CFG.mPerU;
     if (S.spawnAcc >= S.nextSpawnM) {
       S.spawnAcc = 0;
-      S.nextSpawnM = (CFG.gapMinM + rng() * (CFG.gapMaxM - CFG.gapMinM)) * (0.8 + (S.base / CFG.speedMax) * 0.6);
-      spawnObstacle();
+      const occupied = spawnObstacle();
+      S.nextSpawnM = (CFG.gapMinM + rng() * (CFG.gapMaxM - CFG.gapMinM)) * (0.8 + (Math.min(S.base, CFG.speedMax) / CFG.speedMax) * 0.6) * (1 - CFG.spaceCut * diff()) + occupied * CFG.mPerU;
     }
     for (const o of S.obstacles) o.x -= S.v * dt;
     for (const s of S.shards) s.x -= S.v * dt;
@@ -393,14 +408,14 @@ export function createGame(canvas, opts = {}) {
     }
     for (const s of S.shards) {
       if (Math.hypot(playerX - s.x, (GY - p.h - 18) - (GY - s.y)) < 17) {
-        s.gone = true; S.bonus += CFG.shardM; S.threat = Math.max(0, S.threat - CFG.shardRelief);
+        s.gone = true; S.bonus += CFG.shardM; S.threat = Math.max(0, S.threat - CFG.shardRelief * (1 - 0.7 * diff()));
         burst(s.x, GY - s.y, "255,255,255", 7, 160);
       }
     }
 
     // --- Threat: erst prüfen (ein Treffer kann auf 1.0 setzen), dann erholen ---
     if (S.threat >= 1) return die("caught");
-    S.threat = Math.max(0, S.threat - CFG.threatDecay * dt);
+    S.threat = Math.max(0, S.threat - CFG.threatDecay * (1 - CFG.decayCut * diff()) * dt);
 
     // --- Effekte ---
     if (p.onGround && !p.sliding) { S.dustT -= dt; if (S.dustT <= 0) { S.dustT = 0.07; dustPuff(playerX - 6, 1, -S.v * 0.12); } }
@@ -420,7 +435,7 @@ export function createGame(canvas, opts = {}) {
   }
 
   function registerHit() {
-    S.hits++; S.threat = Math.min(1, S.threat + CFG.threatOnHit);
+    S.hits++; S.threat = Math.min(1, S.threat + CFG.threatOnHit + CFG.hitExtra * diff());
     S.stumble = CFG.stumble; S.invuln = 0.5; S.hitStop = 0.07; S.shake = 3.2; S.flash = 0.45; S.flashCol = "237,28,36";
     S.p.hitK = 1;
     burst(playerX + 4, GY - S.p.h - 18, "237,28,36", 14, 320);
@@ -615,7 +630,7 @@ export function createGame(canvas, opts = {}) {
   function drawBlock(o) {
     const y = obstTop(o), x = o.x;
     if (o.kind === "crate") crate(x, y, o.w, o.h);
-    else if (o.kind === "stack") { crate(x, y + 26, o.w, 26); crate(x + 1, y, o.w - 2, 26); }
+    else if (o.kind === "stack") { const n = o.h > 64 ? 3 : 2, ch = o.h / n; for (let i = 0; i < n; i++) crate(x + (i % 2), y + o.h - ch * (i + 1), o.w - (i % 2) * 2, ch); }
     else {                                                                                                  // Klimagerät
       metal(x, y + 4, o.w, o.h - 4, "#30303a", "#18181d");
       metal(x - 1.5, y, o.w + 3, 4.5, "#454550", "#2a2a32");
@@ -802,6 +817,6 @@ export function createGame(canvas, opts = {}) {
   return {
     prepare, start, stop,
     get score() { return S ? S.score : 0; },
-    _test: { state: () => S, update, draw, layout, reset, press: { jump: pressJump, release: releaseJump, slide: pressSlide, unslide: releaseSlide }, geo: () => ({ Wu, Hu, GY, U, playerX }), hitbox, obstTop, setRunning: (v) => { running = v; }, setQuality: (d, sc) => { dprCap = d; sceneCap = sc; } },
+    _test: { state: () => S, update, draw, layout, reset, press: { jump: pressJump, release: releaseJump, slide: pressSlide, unslide: releaseSlide }, geo: () => ({ Wu, Hu, GY, U, playerX }), hitbox, obstTop, setRunning: (v) => { running = v; }, cfg: CFG, setQuality: (d, sc) => { dprCap = d; sceneCap = sc; } },
   };
 }
