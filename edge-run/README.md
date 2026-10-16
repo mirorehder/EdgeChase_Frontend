@@ -108,6 +108,7 @@ Alles über ENV-Variablen, **ohne Code-Änderung** (siehe `.env.example`):
 | `WIX_API_KEY`, `WIX_SITE_ID` | Aktiviert echte Wix-Coupons. Leer = Demo. |
 | `KV_REST_API_URL`, `KV_REST_API_TOKEN` | Vercel KV: macht Spiel-Limit/Replay-Schutz dauerhaft. |
 | `PLAY_LIMIT` | `off` (Test), `daily` (Standard, Tageswechsel 0 Uhr Schweizer Zeit) oder `once` (ein Versuch je E-Mail-Adresse). |
+| *(Test-Zugang)* | E-Mail `12345` im Formular: Spiel lädt ohne Limit, Auswertung zeigt einen `TEST-…`-Code, **erzeugt aber keinen Wix-Coupon und verschickt keine Mail**. Für echte Codes: `PLAY_LIMIT_BYPASS`. |
 | `PLAY_LIMIT_BYPASS` | Komma-getrennte Test-Adressen, die ohne Limit spielen dürfen. |
 | `REWARD_LOW_MAX`, `REWARD_MID_MAX` | Score-Grenzen der Stufen. |
 | `REWARD_TABLE_JSON` | Komplette Gewinntabellen überschreiben. |

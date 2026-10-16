@@ -43,6 +43,20 @@ export default async function handler(req, res) {
     reward = { kind: "percent", value: 30 };
   }
 
+  // Test-Zugang (E-Mail "12345"): Belohnung wird ausgewürfelt und angezeigt, aber es entsteht
+  // KEIN Wix-Coupon und es geht KEINE Mail raus – sonst könnte jeder, der "12345" kennt, Codes erzeugen.
+  if (data.test) {
+    if (reward.kind === "none") {
+      return sendJson(res, 200, { ok: true, reward, code: null, score, limit: PLAY_LIMIT_MODE, test: true, message: "Testmodus: zu kurz für einen Code." });
+    }
+    const testCode = "TEST-" + (reward.kind === "free" ? "GRATIS" : buildCode(data.name, reward));
+    return sendJson(res, 200, {
+      ok: true, reward, code: testCode, score, test: true, demo: true, mailSent: false,
+      expiresAt: reward.kind === "free" ? null : expiryDate().toISOString(), limit: "off",
+      message: "Testmodus (E-Mail 12345): Dieser Code ist nicht echt – es wurde kein Coupon erstellt und keine Mail verschickt.",
+    });
+  }
+
   // Kein Gewinn -> kein Code, keine Mail.
   if (reward.kind === "none") {
     return sendJson(res, 200, {
