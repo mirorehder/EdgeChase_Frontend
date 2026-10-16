@@ -94,7 +94,7 @@ Empfohlener Trigger: **Exit-Intent** oder nach ~5 Sekunden ein dezentes Banner
 Zusätzlich ein fester kleiner Button „🎮 Rabatt erspielen".
 
 Optionale Konfiguration aus Wix heraus (vor dem iframe-Inhalt setzbar, wenn du
-den HTML-Block selbst hostest): `window.EDGECHASE = { shopUrl, termsUrl, privacyUrl }`.
+den HTML-Block selbst hostest): `window.EDGECHASE = { shopUrl }`.
 
 ---
 
@@ -170,6 +170,7 @@ edge-run/
 ## Rechtliches (Kurz-Hinweis)
 
 Geschicklichkeitsspiel + kostenlose Teilnahme ⇒ **kein** Glücksspiel. Trotzdem:
-Teilnahmebedingungen und Datenschutzhinweise verlinken (Felder `termsUrl`/
-`privacyUrl`), E-Mail-Nutzung nur mit Double-Opt-in. Kein Rechtsrat – bitte kurz
-gegenlesen lassen.
+Teilnahmebedingungen und Datenschutzhinweise gehören auf die Website (der Code
+wird per E-Mail verschickt, die E-Mail-Adresse wird als Hash für das Tageslimit
+gespeichert). Das Spiel selbst zeigt vor dem Start keine Checkbox mehr. Kein
+Rechtsrat – bitte kurz gegenlesen lassen.

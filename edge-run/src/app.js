@@ -7,8 +7,6 @@ import { createGame } from "./game.js";
 const CONF = Object.assign({
   apiBase: "",                       // "" = gleiche Origin (Vercel)
   shopUrl: "https://www.edgechase.com",
-  termsUrl: "",
-  privacyUrl: "",
 }, window.EDGECHASE || {});
 
 const $ = (s) => document.querySelector(s);
@@ -59,11 +57,9 @@ form.addEventListener("submit", async (e) => {
   errBox.hidden = true;
   const name = $("#in-name").value.trim();
   const email = $("#in-email").value.trim();
-  const consent = $("#in-consent").checked;
 
   if (name.length < 2) return showError("Bitte gib deinen Namen ein.");
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return showError("Bitte gib eine gültige E-Mail an.");
-  if (!consent) return showError("Bitte akzeptiere die Teilnahmebedingungen.");
 
   const btn = $("#btn-start");
   btn.disabled = true; btn.textContent = "STARTET…";
@@ -286,19 +282,9 @@ $("#btn-copy").addEventListener("click", async () => {
   catch { fallbackCopy(code); flash($("#btn-copy"), "Kopiert!"); }
 });
 
-/* ---------- How-to Modal & Legal ---------- */
+/* ---------- How-to Modal ---------- */
 $(".link-how").addEventListener("click", () => { $("#modal-how").hidden = false; });
 $('[data-close="how"]').addEventListener("click", () => { $("#modal-how").hidden = true; });
-document.querySelectorAll("[data-legal]").forEach((a) => {
-  a.addEventListener("click", (e) => {
-    e.preventDefault();
-    const url = a.dataset.legal === "privacy" ? CONF.privacyUrl : CONF.termsUrl;
-    if (url) navigateTop(url);
-    else alert(a.dataset.legal === "privacy"
-      ? "Datenschutzhinweise: bitte im Shop hinterlegen (window.EDGECHASE.privacyUrl)."
-      : "Teilnahmebedingungen: bitte im Shop hinterlegen (window.EDGECHASE.termsUrl).");
-  });
-});
 
 /* ---------- Helfer ---------- */
 async function api(path, body) {
