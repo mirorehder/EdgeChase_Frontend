@@ -16,7 +16,9 @@ keinen Build-Schritt, keine Framework-Abhängigkeit und keine npm-Pakete.
 1. **Intro:** Spieler gibt Name + E-Mail ein und akzeptiert die Bedingungen.
    → `POST /api/start` gibt ein **signiertes Session-Token** zurück (Name &
    E-Mail-Hash stecken fälschungssicher darin).
-2. **Spiel:** Canvas-Endless-Runner. Distanz = Score. Tempo steigt. Das Logo
+2. **Spiel:** Canvas-Endless-Runner über Dächer (Skyline mit Neon-Schriftzug,
+   gegliederter Läufer, Kisten/Klimageräte, Hängebalken, Dachlücken). Distanz =
+   Score, in Metern aus der Laufzeit – auf Handy und Desktop identisch. Das Logo
    holt bei Fehlern auf (Threat-Meter); volles Meter oder Sturz = vorbei.
 3. **Auswertung:** `POST /api/reward` prüft das Token, verhindert Replay,
    **plausibilisiert den Score gegen die Spieldauer** und **zieht die Belohnung
@@ -91,7 +93,8 @@ Alles über ENV-Variablen, **ohne Code-Änderung** (siehe `.env.example`):
 | `SESSION_SECRET` | **Pflicht.** Signaturschlüssel der Token. |
 | `WIX_API_KEY`, `WIX_SITE_ID` | Aktiviert echte Wix-Coupons. Leer = Demo. |
 | `KV_REST_API_URL`, `KV_REST_API_TOKEN` | Vercel KV: macht Spiel-Limit/Replay-Schutz dauerhaft. |
-| `PLAY_LIMIT` | `off` (Test), `daily` (Standard) oder `once` (ein Versuch je E-Mail-Adresse). |
+| `PLAY_LIMIT` | `off` (Test), `daily` (Standard, Tageswechsel 0 Uhr Schweizer Zeit) oder `once` (ein Versuch je E-Mail-Adresse). |
+| `PLAY_LIMIT_BYPASS` | Komma-getrennte Test-Adressen, die ohne Limit spielen dürfen. |
 | `REWARD_LOW_MAX`, `REWARD_MID_MAX` | Score-Grenzen der Stufen. |
 | `REWARD_TABLE_JSON` | Komplette Gewinntabellen überschreiben. |
 | `COUPON_EXPIRY_DAYS` | Gültigkeit der Codes. |
@@ -124,7 +127,8 @@ edge-run/
 ├── index.html            # Screens: Intro / Spiel / Ergebnis
 ├── src/
 │   ├── styles.css        # Design der EdgeChase-Website (Archivo, Tinte/Papier, Rot #ed1c24)
-│   ├── game.js           # Endless-Runner-Engine (Canvas)
+│   ├── game.js           # Endless-Runner-Engine (Canvas, fester Zeitschritt, Läufer-Animation)
+│   ├── art.js            # vorgerenderte Szenerie (Himmel, Skyline-Ebenen, Fassade, Neon-Schild)
 │   └── app.js            # Screen-Flow, API-Calls, Gewinn-Enthüllung
 ├── api/                  # nur die zwei Endpunkte (je Datei = eine Vercel-Function)
 │   ├── start.js          # Session-Token + Rabatt-Leiter ausgeben

@@ -36,7 +36,17 @@ function preloadLogo() {
   });
 }
 
+function preloadImage(src) {
+  return new Promise((resolve) => {
+    const im = new Image();
+    im.onload = () => resolve(im);
+    im.onerror = () => resolve(null);
+    im.src = src;
+  });
+}
+
 let logoImg = null;
+let wordmarkImg = null;
 let game = null;
 let session = null;          // { token, name }
 
@@ -105,6 +115,7 @@ function startGameFlow() {
 
   game = createGame(canvas, {
     logoImg,
+    wordmarkImg,
     onScore: (s) => {
       scoreEl.textContent = s;
       const pct = discountForScore(s, rungs);
@@ -122,6 +133,7 @@ function startGameFlow() {
     onGameOver: handleGameOver,
   });
 
+  game.prepare();          // Szene schon während des Countdowns zeigen
   countdown(() => {
     game.start();
     setTimeout(() => hintEl.classList.add("controls-hint--hidden"), 2600);
@@ -335,7 +347,7 @@ function celebrate() {
 
 /* ---------- Init ---------- */
 (async function init() {
-  logoImg = await preloadLogo();
+  [logoImg, wordmarkImg] = await Promise.all([preloadLogo(), preloadImage("./assets/wordmark-white.png")]);
   // Intro-Logo aus SVG lassen (CSS invert); Canvas nutzt logoImg.
   show("intro");
 })();
