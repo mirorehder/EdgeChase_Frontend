@@ -461,7 +461,10 @@ export function ClipLibrary({ track }: { track: Track }) {
         <div className="ordner-liste">
           {gruppen.map(({ folder, clips: gruppeClips }) => {
             const schluessel = folder?.id ?? "ohne-ordner";
-            const offen = offeneOrdner.has(schluessel);
+            // Eine Gruppe ohne Ordner (Sparte ganz ohne eingetragene Ordner, oder
+            // "Ohne Ordner" daneben) hat keinen Knopf zum Aufklappen - sie muss
+            // immer offen sein, sonst bleiben ihre Clips unsichtbar.
+            const offen = folder === null || offeneOrdner.has(schluessel);
 
             return (
               <div key={schluessel} className="ordner">
