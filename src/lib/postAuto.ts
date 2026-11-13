@@ -11,7 +11,7 @@
  * Zeilen (fertig, aber ohne postedAt) - nicht ein Scan des Drive-Ordners. Die
  * Anwendung kennt ihre eigenen Videos, und daran hängt schon der Zustand.
  */
-import { prisma } from "./db";
+import { prisma, mitDbWiederholung } from "./db";
 import type { Track } from "./trackClient";
 import { TRACKS, trackBeschreibung, erlaubteTrackKeys } from "./trackClient";
 import { istVerwendbar } from "./sound";
@@ -1003,7 +1003,10 @@ export async function bestandDerSparte(track: Track) {
 
 /** Geht alle Sparten mit Automatik durch - der Einstieg für den Pinger. */
 export async function posteAlleFaelligen(jetzt = new Date()): Promise<PostLaufErgebnis[]> {
-  const sparten = await spartenMitAutomatik();
+  // Die erste Abfrage weckt bei Bedarf den schlafenden Neon-Knoten; scheitert sie
+  // am Verbindungsaufbau, wird sie wiederholt, statt den Pinger mit 500 zu
+  // beantworten (siehe mitDbWiederholung).
+  const sparten = await mitDbWiederholung(() => spartenMitAutomatik());
   const ergebnisse: PostLaufErgebnis[] = [];
   for (const track of sparten) {
     ergebnisse.push(await posteFaelliges(track, jetzt).catch((err) => ({

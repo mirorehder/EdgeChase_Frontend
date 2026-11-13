@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { prisma } from "./db";
 import { env } from "./env";
+import { logActivity } from "./activity";
 import { nextQueuedJobId } from "./pipeline";
 
 /**
@@ -18,19 +19,48 @@ import { nextQueuedJobId } from "./pipeline";
  */
 const ANSTOSS_MS = 1500;
 
-export async function dispatchJob(jobId: string, baseUrl: string): Promise<void> {
-  const url = `${baseUrl}/api/jobs/${jobId}/process`;
+/**
+ * Schickt den Anstoss ab und meldet im Protokoll, wenn er abgelehnt wird.
+ *
+ * Früher wurde jede Antwort verschluckt: lehnte die Plattform den Selbstaufruf
+ * ab (etwa mit 401 durch den Deployment-Schutz oder ein falsches Secret),
+ * blieb der Auftrag still auf "wartet" stehen, ohne dass irgendwo ein Grund
+ * stand. Eine abgelehnte Antwort kommt schnell und fällt in das Anstoss-
+ * Fenster; ein laufender Render antwortet erst am Ende und bleibt unbemerkt.
+ *
+ * Ist der Automatisierungs-Bypass von Vercel aktiv (VERCEL_AUTOMATION_BYPASS_SECRET,
+ * setzt Vercel selbst), geht er mit, damit der Deployment-Schutz den
+ * Selbstaufruf nicht abfängt.
+ */
+async function anstossen(url: string, videoId: string): Promise<void> {
+  const headers: Record<string, string> = { "x-api-key": env.cronSecret };
+  const bypass = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
+  if (bypass) headers["x-vercel-protection-bypass"] = bypass;
 
-  const anfrage = fetch(url, {
-    method: "POST",
-    headers: { "x-api-key": env.cronSecret },
-  }).catch(() => {
-    // Der Auftrag bleibt dann auf "wartet" stehen und wird beim nächsten Lauf
-    // oder von Hand nachgeholt - ein verlorener Anstoss darf den Aufrufer
-    // nicht zu Fall bringen.
-  });
+  const anfrage = fetch(url, { method: "POST", headers })
+    .then(async (res) => {
+      if (!res.ok) {
+        await logActivity(
+          `Anstoss abgelehnt: HTTP ${res.status} von ${new URL(url).pathname}. ` +
+            (res.status === 401
+              ? "Prüfe CRON_SECRET und den Deployment-Schutz (Vercel Authentication) des Projekts."
+              : "Der Auftrag bleibt auf \"wartet\"."),
+          { level: "error", videoId },
+        ).catch(() => {});
+      }
+    })
+    .catch(async (err) => {
+      await logActivity(
+        `Anstoss nicht abgeschickt: ${err instanceof Error ? err.message : String(err)}`,
+        { level: "error", videoId },
+      ).catch(() => {});
+    });
 
   await Promise.race([anfrage, new Promise((r) => setTimeout(r, ANSTOSS_MS))]);
+}
+
+export async function dispatchJob(jobId: string, baseUrl: string): Promise<void> {
+  await anstossen(`${baseUrl}/api/jobs/${jobId}/process`, jobId);
 }
 
 /**
@@ -38,13 +68,7 @@ export async function dispatchJob(jobId: string, baseUrl: string): Promise<void>
  * an - mit eigenen 300 Sekunden, unabhängig vom Render des nächsten Auftrags.
  */
 export async function dispatchPost(jobId: string, baseUrl: string): Promise<void> {
-  const anfrage = fetch(`${baseUrl}/api/jobs/${jobId}/serie-post`, {
-    method: "POST",
-    headers: { "x-api-key": env.cronSecret },
-  }).catch(() => {
-    // Bleibt das Video ungepostet, holt es der nächste Tageslauf nach.
-  });
-  await Promise.race([anfrage, new Promise((r) => setTimeout(r, ANSTOSS_MS))]);
+  await anstossen(`${baseUrl}/api/jobs/${jobId}/serie-post`, jobId);
 }
 
 /**
