@@ -80,13 +80,13 @@ export function formuliereOptin(
 ): string {
   if (sprache === "de") {
     return (
-      `Hey ${name}! 👋 Dein ${prozent}%-Code liegt bereit. ` +
-      `Antworte kurz mit JA und er ist unterwegs 🎁`
+      `Hey ${name}! 👋 Folge uns zuerst auf Instagram – dann antworte hier kurz mit JA ` +
+      `und dein ${prozent}%-Code ist sofort unterwegs 🎁`
     );
   }
   return (
-    `Hey ${name}! 👋 I've got your ${prozent}% code ready for you. ` +
-    `Reply YES and I'll send it over 🎁`
+    `Hey ${name}! 👋 Follow us on Instagram first – then reply YES here ` +
+    `and your ${prozent}% code is on its way 🎁`
   );
 }
 
