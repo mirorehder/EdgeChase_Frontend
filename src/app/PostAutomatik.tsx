@@ -15,39 +15,22 @@ export interface TrendSoundEintrag {
 }
 
 export interface PostZeitplanStand {
+  /** "Direkt nach dem Erstellen posten". */
   enabled: boolean;
-  postsPerDay: number;
-  fensterVonMin: number;
-  fensterBisMin: number;
-  minAbstandMin: number;
   alsTrialReel: boolean;
-  quelle: string;
   hashtags: string;
   trendSounds: TrendSoundEintrag[];
   /** Die für diese Sparte gewählten Stimmungs-/Genre-Tags (Katalog-Schlüssel). */
   soundTags: string[];
-  /** Feste Uhrzeiten in Schweizer Zeit (Minuten seit Mitternacht),
-   *  aufsteigend sortiert. Leer = alte Betriebsart mit Fenster/Abstand. */
-  postingTimes: number[];
-}
-
-/** Minuten seit Mitternacht ↔ "HH:MM" (Schweizer Zeit). */
-function zuZeit(min: number): string {
-  const h = Math.floor(min / 60);
-  const m = min % 60;
-  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
-}
-function zuMinuten(zeit: string): number {
-  const [h, m] = zeit.split(":").map(Number);
-  return (h || 0) * 60 + (m || 0);
 }
 
 /**
- * Die Posting-Automatik einer Sparte: an/aus, wie oft pro Tag, Zeitfenster,
- * Mindestabstand, Trial-Reel.
+ * Die Posting-Einstellungen einer Sparte - ein Teil des Täglichen Laufs.
  *
- * Bewusst getrennt vom Erzeugungs-Zeitplan: erzeugen und posten dürfen
- * verschieden getaktet sein.
+ * Erstellen und Posten sind ein Ablauf: ist "Direkt posten" an, geht das Video
+ * des Tageslaufs raus, sobald es fertig gerendert ist. Hier steht nur, WIE
+ * gepostet wird (Trial-Reel oder öffentlich, Hashtags, Sounds) - einen eigenen
+ * Zeitplan fürs Posten gibt es nicht mehr.
  */
 export function PostAutomatik({
   track,
@@ -72,12 +55,7 @@ export function PostAutomatik({
       const res = await fetch("/api/post-schedule", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          track,
-          ...z,
-          // Der Server erwartet HH:MM-Strings; die UI haelt Minuten.
-          postingTimes: z.postingTimes.map(zuZeit),
-        }),
+        body: JSON.stringify({ track, ...z }),
       });
       const daten = await res.json();
       if (!res.ok) throw new Error(daten.error ?? "Konnte nicht gespeichert werden.");
@@ -90,109 +68,40 @@ export function PostAutomatik({
     }
   }
 
-  // Serien posten gleich nach dem Rendern - Zeitfenster, Anzahl und Abstand
-  // der Automatik gibt es dort nicht.
+  // Serien posten immer direkt nach dem Rendern - dort gibt es keinen Schalter.
   const sofort = trackBeschreibung(track).sofortPosten;
-  const nachUhrzeiten = z.postingTimes.length > 0;
-  const zusammenfassung = sofort
-    ? `sofort nach dem Rendern · ${z.alsTrialReel ? "als Trial-Reel" : "öffentlich"}`
-    : z.enabled
-    ? nachUhrzeiten
-      ? `Uhrzeiten: ${z.postingTimes.map(zuZeit).join(", ")} CH`
-      : `${z.postsPerDay}×/Tag · ${zuZeit(z.fensterVonMin)}–${zuZeit(z.fensterBisMin)} CH · Abstand ${z.minAbstandMin} min`
-    : "aus";
+  const direkt = sofort || z.enabled;
+  const zusammenfassung = direkt
+    ? `direkt nach dem Erstellen · ${z.alsTrialReel ? "als Trial-Reel" : "öffentlich"}`
+    : "aus - Videos werden nur erstellt";
 
   return (
     <section className="post-automatik">
       <button className="abschnitt-titel" onClick={() => setOffen(!offen)} aria-expanded={offen}>
         <span className="video-pfeil">{offen ? "▾" : "▸"}</span>
-        Automatisch posten
-        <span className="ordner-zahl" style={{ color: z.enabled ? "var(--ok)" : undefined }}>
+        Posten nach dem Erstellen
+        <span className="ordner-zahl" style={{ color: direkt ? "var(--ok)" : undefined }}>
           {zusammenfassung}
         </span>
       </button>
 
       {offen && (
         <div className="clip-editor">
-          {sofort && (
+          {sofort ? (
             <p className="chat-hint">
               Diese Sparte postet jedes Video sofort, wenn es fertig gerendert ist - ein einziger
-              Ablauf, ohne Uhrzeiten und ohne zweiten Schalter. Hier stellst du nur ein, wie
-              gepostet wird: Trial-Reel oder öffentlich, Hashtags und Sounds.
+              Ablauf, ohne Schalter. Hier stellst du nur ein, wie gepostet wird: Trial-Reel oder
+              öffentlich, Hashtags und Sounds.
             </p>
-          )}
-          {!sofort && (
-            <>
-          <label className="schalter">
-            <input
-              type="checkbox"
-              checked={z.enabled}
-              onChange={(e) => setZ({ ...z, enabled: e.target.checked })}
-            />
-            Automatik an - diese Sparte postet fertige Videos selbst
-          </label>
-
-          <UhrzeitenListe
-            uhrzeiten={z.postingTimes}
-            setzen={(neu) => setZ({ ...z, postingTimes: neu })}
-          />
-
-          {!nachUhrzeiten && (
-            <>
-              <div className="field-row">
-                <label>
-                  Wie oft pro Tag
-                  <input
-                    type="number"
-                    min={1}
-                    max={20}
-                    value={z.postsPerDay}
-                    onChange={(e) => setZ({ ...z, postsPerDay: Number(e.target.value) })}
-                  />
-                </label>
-                <label>
-                  Mindestabstand (Min.)
-                  <input
-                    type="number"
-                    min={0}
-                    step={15}
-                    value={z.minAbstandMin}
-                    onChange={(e) => setZ({ ...z, minAbstandMin: Number(e.target.value) })}
-                  />
-                </label>
-              </div>
-
-              <div className="field-row">
-                <label>
-                  Frühestens (CH-Zeit)
-                  <input
-                    type="time"
-                    value={zuZeit(z.fensterVonMin)}
-                    onChange={(e) => setZ({ ...z, fensterVonMin: zuMinuten(e.target.value) })}
-                  />
-                </label>
-                <label>
-                  Spätestens (CH-Zeit)
-                  <input
-                    type="time"
-                    value={zuZeit(z.fensterBisMin)}
-                    onChange={(e) => setZ({ ...z, fensterBisMin: zuMinuten(e.target.value) })}
-                  />
-                </label>
-              </div>
-            </>
-          )}
-
-          <label>
-            Welche Videos
-            <select value={z.quelle} onChange={(e) => setZ({ ...z, quelle: e.target.value })}>
-              <option value="scheduled">nur aus dem Tageslauf</option>
-              <option value="manual">nur Handversuche</option>
-              <option value="beliebig">alle fertigen</option>
-            </select>
-          </label>
-
-            </>
+          ) : (
+            <label className="schalter">
+              <input
+                type="checkbox"
+                checked={z.enabled}
+                onChange={(e) => setZ({ ...z, enabled: e.target.checked })}
+              />
+              Direkt posten - das Video des Täglichen Laufs geht raus, sobald es fertig gerendert ist
+            </label>
           )}
 
           <label className="schalter">
@@ -233,19 +142,14 @@ export function PostAutomatik({
             setzen={(neu) => setZ({ ...z, trendSounds: neu })}
           />
 
-          {!sofort && (
           <span className="clip-meta">
-            Alle Uhrzeiten in Schweizer Zeit. Gepostet wird{" "}
-            {nachKrassheit ? "das älteste fertige Reel" : "das älteste fertige Video"}, das noch
-            nicht draussen ist. {nachUhrzeiten
-              ? "Beim ersten Pinger-Klopfer nach einer geplanten Uhrzeit geht der Post raus - je nach Pinger-Rhythmus mit bis zu einer Stunde Verspätung."
-              : `Höchstens ${z.postsPerDay === 1 ? "eines" : z.postsPerDay} pro Tag, mit dem eingestellten Abstand dazwischen.`}{" "}
-            Sound-Rangfolge: eigener Sound am Konzept &rarr; einer aus dem Trend-Sound-Pool, dessen
-            Tags zur gewählten Stimmung passen &rarr; kein Post (ein stummes Reel ist unerwünscht).
-            Ist keine Stimmung gewählt, zählt der ganze Pool; passt kein Sound zur Stimmung, ebenso
-            (lieber irgendein Sound als keiner).
+            Gepostet wird einmal pro Lauf, direkt nach dem Render. Sound-Rangfolge: eigener Sound
+            am Konzept &rarr; einer aus dem Trend-Sound-Pool, dessen Tags zur gewählten Stimmung
+            passen &rarr; kein Post (ein stummes Reel ist unerwünscht). Ist keine Stimmung
+            gewählt, zählt der ganze Pool; passt kein Sound zur Stimmung, ebenso (lieber
+            irgendein Sound als keiner). Scheitert ein Post, versucht es der nächste Lauf noch
+            bis zu dreimal.
           </span>
-          )}
 
           {meldung && (
             <p className={`action-message ${meldung.fehler ? "error" : ""}`}>{meldung.text}</p>
@@ -373,90 +277,6 @@ function TrendSoundListe({
       </div>
 
       {fehler && <span className="clip-meta" style={{ color: "var(--err)" }}>{fehler}</span>}
-    </div>
-  );
-}
-
-/**
- * Feste Post-Uhrzeiten in Schweizer Zeit.
- *
- * Ist die Liste nicht leer, gelten diese Uhrzeiten ausschliesslich - Fenster
- * und Mindestabstand darunter blenden dann aus.
- */
-function UhrzeitenListe({
-  uhrzeiten,
-  setzen,
-}: {
-  uhrzeiten: number[];
-  setzen: (neu: number[]) => void;
-}) {
-  const [neue, setNeue] = useState("");
-
-  function hinzufuegen() {
-    const treffer = /^(\d{1,2}):(\d{2})$/.exec(neue.trim());
-    if (!treffer) return;
-    const stunde = Number(treffer[1]);
-    const minute = Number(treffer[2]);
-    if (stunde < 0 || stunde > 23 || minute < 0 || minute > 59) return;
-    const min = stunde * 60 + minute;
-    if (uhrzeiten.includes(min)) {
-      setNeue("");
-      return;
-    }
-    setzen([...uhrzeiten, min].sort((a, b) => a - b));
-    setNeue("");
-  }
-
-  return (
-    <div className="trend-pool">
-      <span className="video-label">Feste Post-Uhrzeiten (CH-Zeit)</span>
-
-      {uhrzeiten.length === 0 ? (
-        <span className="clip-meta">
-          Keine gesetzt - es gilt die Fenster/Abstand-Betriebsart unten. Sobald hier auch nur eine
-          Uhrzeit steht, ersetzt sie Fenster und Abstand vollständig.
-        </span>
-      ) : (
-        <ul className="trend-pool-liste">
-          {uhrzeiten.map((min) => {
-            const h = Math.floor(min / 60);
-            const m = min % 60;
-            return (
-              <li key={min}>
-                <span className="trend-pool-titel">
-                  {String(h).padStart(2, "0")}:{String(m).padStart(2, "0")} CH
-                </span>
-                <button
-                  type="button"
-                  className="secondary"
-                  onClick={() => setzen(uhrzeiten.filter((x) => x !== min))}
-                >
-                  Entfernen
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-
-      <div className="field-row">
-        <label>
-          Neue Uhrzeit (HH:MM)
-          <input
-            type="time"
-            value={neue}
-            onChange={(e) => setNeue(e.target.value)}
-          />
-        </label>
-        <button
-          type="button"
-          className="secondary"
-          onClick={hinzufuegen}
-          disabled={!/^\d{1,2}:\d{2}$/.test(neue.trim())}
-        >
-          Hinzufügen
-        </button>
-      </div>
     </div>
   );
 }

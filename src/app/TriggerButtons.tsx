@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Track } from "@/lib/trackClient";
+import { PostWahl } from "./PostWahl";
 
 /**
  * Auslöser einer Sparte.
@@ -14,13 +15,15 @@ import type { Track } from "@/lib/trackClient";
 export function TriggerButtons({ track }: { track: Track }) {
   const router = useRouter();
   const [busy, setBusy] = useState<"trigger" | "sync" | null>(null);
+  const [posten, setPosten] = useState(false);
   const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null);
 
   async function run(kind: "trigger" | "sync") {
     setBusy(kind);
     setMessage(null);
     try {
-      const url = kind === "trigger" ? "/api/trigger" : `/api/clips/sync?track=${track}`;
+      const url =
+        kind === "trigger" ? `/api/trigger${posten ? "?posten=1" : ""}` : `/api/clips/sync?track=${track}`;
       const res = await fetch(url, { method: "POST" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Unbekannter Fehler");
@@ -28,7 +31,8 @@ export function TriggerButtons({ track }: { track: Track }) {
       setMessage({
         text:
           kind === "trigger"
-            ? data.hinweis ?? `Video-Job gestartet (${data.jobId}).`
+            ? data.hinweis ??
+              `Video-Job gestartet (${data.jobId})${posten ? " - wird nach dem Render gepostet." : "."}`
             : `Abgleich fertig: ${data.syncResult.newlyAdded} neue Clips, ${data.analyzed.length} analysiert.` +
               (data.syncResult.removed > 0
                 ? ` ${data.syncResult.removed} nicht mehr im Ordner, entfernt.`
@@ -53,9 +57,12 @@ export function TriggerButtons({ track }: { track: Track }) {
     <div>
       <div className="actions">
         {track === "promo" && (
-          <button onClick={() => run("trigger")} disabled={busy !== null}>
-            {busy === "trigger" ? "Video wird erzeugt…" : "Jetzt Promo-Video erzeugen"}
-          </button>
+          <>
+            <button onClick={() => run("trigger")} disabled={busy !== null}>
+              {busy === "trigger" ? "Video wird erzeugt…" : "Jetzt Promo-Video erzeugen"}
+            </button>
+            <PostWahl wert={posten} setzen={setPosten} disabled={busy !== null} />
+          </>
         )}
         <button className="secondary" onClick={() => run("sync")} disabled={busy !== null}>
           {busy === "sync"

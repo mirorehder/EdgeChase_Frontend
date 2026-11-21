@@ -13,7 +13,7 @@
  */
 import { prisma } from "../src/lib/db";
 import { waehleRotierend } from "../src/lib/dailyConfig";
-import { posteFaelliges } from "../src/lib/postAuto";
+import { posteFertigesVideo } from "../src/lib/postAuto";
 
 const BASIS = process.env.BASIS_URL ?? "http://127.0.0.1:3100";
 const MARKE = "PRUEF-CAPTION";
@@ -65,17 +65,11 @@ async function main() {
   pruefe("hookTexts gespeichert", zurueck.hookTexts, ["Overlay eins"]);
 
   console.log("\n3. Beim Posten: eigene Caption schlägt den KI-Titel");
-  // Ganztägiges Fenster + kein Mindestabstand → unabhängig von der Uhrzeit fällig.
-  await prisma.postZeitplan.upsert({
-    where: { id: "promo" },
-    create: { id: "promo", enabled: true, quelle: "beliebig", fensterVonMin: 0, fensterBisMin: 1439, minAbstandMin: 0 },
-    update: { enabled: true, quelle: "beliebig", fensterVonMin: 0, fensterBisMin: 1439, minAbstandMin: 0 },
-  });
   // _music im Dateinamen → Sound gilt als vorhanden, der Lauf kommt bis zum
   // (Trockenlauf-)Post und protokolliert die verwendete Caption.
-  await prisma.promoVideo.create({
+  const v1 = await prisma.promoVideo.create({
     data: {
-      track: "promo", status: "done", origin: "scheduled",
+      track: "promo", status: "done", origin: "scheduled", autoPost: true,
       hookText: `${MARKE} hook`, fileTitle: `${MARKE} KI-Titel`,
       postCaption: `${MARKE} EIGENE CAPTION`,
       driveFileName: "clip_music.mp4",
@@ -83,7 +77,7 @@ async function main() {
       scenes: [] as unknown as object,
     },
   });
-  const lauf = await posteFaelliges("promo", new Date());
+  const lauf = await posteFertigesVideo(v1.id);
   pruefe("Trockenlauf (keine Zugangsdaten)", lauf.trockenlauf, true);
   const log1 = await prisma.activityLog.findFirst({
     where: { track: "promo", message: { contains: "EIGENE CAPTION" } },
@@ -94,9 +88,9 @@ async function main() {
   await prisma.promoVideo.deleteMany({ where: { hookText: { startsWith: MARKE } } });
 
   console.log("\n3b. Ohne eigene Caption: KI-Titel als Bildunterschrift");
-  await prisma.promoVideo.create({
+  const v2 = await prisma.promoVideo.create({
     data: {
-      track: "promo", status: "done", origin: "scheduled",
+      track: "promo", status: "done", origin: "scheduled", autoPost: true,
       hookText: `${MARKE} hook2`, fileTitle: `${MARKE} KI-TITEL-FALLBACK`,
       postCaption: null,
       driveFileName: "clip_music.mp4",
@@ -104,7 +98,7 @@ async function main() {
       scenes: [] as unknown as object,
     },
   });
-  await posteFaelliges("promo", new Date());
+  await posteFertigesVideo(v2.id);
   const log2 = await prisma.activityLog.findFirst({
     where: { track: "promo", message: { contains: "KI-TITEL-FALLBACK" } },
     orderBy: { at: "desc" },

@@ -58,8 +58,9 @@ export interface TrackBeschreibung {
    */
   zaehler: boolean;
   /**
-   * Wird das Video gleich nach dem Rendern gepostet (ein einziger Ablauf),
-   * statt später von der Posting-Automatik nach Zeitplan?
+   * Postet die Sparte ihre Videos immer direkt nach dem Rendern, ohne Schalter
+   * "Direkt posten"? Alle anderen Sparten posten direkt, wenn dieser Schalter im
+   * Täglichen Lauf an ist (siehe postenAktiv).
    */
   sofortPosten: boolean;
 }
