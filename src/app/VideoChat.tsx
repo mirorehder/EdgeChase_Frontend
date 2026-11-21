@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { bewertungsart, type Track } from "@/lib/trackClient";
+import { bewertungsart, trackBeschreibung, type Track } from "@/lib/trackClient";
+import { PostWahl } from "./PostWahl";
 
 interface Turn {
   role: "user" | "assistant";
@@ -37,6 +38,7 @@ export function VideoChat({ track }: { track: Track }) {
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState<null | "denkt" | "rendert">(null);
   const [error, setError] = useState<string | null>(null);
+  const [posten, setPosten] = useState(trackBeschreibung(track).sofortPosten);
   const endRef = useRef<HTMLDivElement>(null);
 
   // Dem Verlauf nachlaufen, sobald etwas dazukommt - aber nicht beim ersten
@@ -66,7 +68,7 @@ export function VideoChat({ track }: { track: Track }) {
       const res = await fetch(`/api/chat?track=${track}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ turns: nextTurns }),
+        body: JSON.stringify({ turns: nextTurns, posten }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Unbekannter Fehler");
@@ -93,6 +95,7 @@ export function VideoChat({ track }: { track: Track }) {
           content:
             renderData.status === "done"
               ? "Fertig - das Video liegt in Drive und steht unten in der Liste. " +
+                (posten ? "Es wird jetzt gepostet. " : "") +
                 "Wenn es sitzt: dort aufklappen und „Als Konzept speichern\" - dann lässt es " +
                 "sich jederzeit wieder erzeugen und kommt auch im Zeitplan vor."
               : `Der Render ist fehlgeschlagen: ${renderData.lastError ?? renderData.error ?? "unbekannter Fehler"}`,
@@ -142,6 +145,8 @@ export function VideoChat({ track }: { track: Track }) {
       </div>
 
       {error && <p className="action-message error">{error}</p>}
+
+      <PostWahl wert={posten} setzen={setPosten} disabled={busy !== null} />
 
       <form
         className="chat-input"

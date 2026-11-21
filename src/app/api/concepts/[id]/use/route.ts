@@ -11,8 +11,13 @@ import type { Track } from "@/lib/trackClient";
 export const maxDuration = 120;
 export const dynamic = "force-dynamic";
 
-export async function POST(_request: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
   try {
+    // Handversuch: der Nutzer wählt, ob das Video nach dem Render gleich gepostet
+    // wird (?posten=1) oder nur erstellt (?posten=0). Ohne Angabe: nur erstellen.
+    const postenParam = new URL(request.url).searchParams.get("posten");
+    const posten = postenParam === "1";
+
     const concept = await prisma.concept.findUnique({ where: { id: params.id } });
     if (!concept) {
       return NextResponse.json({ error: "Konzept nicht gefunden." }, { status: 404 });
@@ -23,9 +28,9 @@ export async function POST(_request: NextRequest, { params }: { params: { id: st
     // von selbst.
     if (concept.counterNext !== null) {
       try {
-        const { jobId, zahl } = await erzeugeSerienVideo(concept.id, { origin: "manual" });
+        const { jobId, zahl } = await erzeugeSerienVideo(concept.id, { origin: "manual", posten });
         // Gerendert wird vom Aufrufer (Dashboard-Knopf) über /process; danach
-        // geht das Posten von selbst raus.
+        // geht das Posten raus, wenn der Nutzer das gewählt hat.
         return NextResponse.json({ jobId, zahl });
       } catch (err) {
         if (err instanceof SerieHeuteSchonErzeugt) {
@@ -38,7 +43,9 @@ export async function POST(_request: NextRequest, { params }: { params: { id: st
     // Virale Edits gehen einen anderen Weg: dort liefert das Konzept nur den
     // Text, die Auswahl richtet sich nach den Höhepunkten der Parkour-Clips.
     if (concept.track !== "promo") {
-      return NextResponse.json({ jobId: await createViralJobFromConcept(concept.id) });
+      return NextResponse.json({
+        jobId: await createViralJobFromConcept(concept.id, { autoPost: posten }),
+      });
     }
 
     const jobId = await createJobFromSpec(
@@ -54,6 +61,7 @@ export async function POST(_request: NextRequest, { params }: { params: { id: st
         clipNames: [],
       },
       `Konzept „${concept.title}"`,
+      posten,
     );
 
     return NextResponse.json({ jobId });

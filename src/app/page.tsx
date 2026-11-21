@@ -91,6 +91,8 @@ async function ladeSparte(track: Track): Promise<TrackData> {
     postedMediaId: job.postedMediaId,
     postError: job.postError,
     hasPublicCopy: !!job.publicUrl,
+    autoPost: job.autoPost,
+    altbestand: job.altbestand,
     scenes: (job.scenes as unknown as ComposedScene[]).map((s) => ({
       clipName: clipNameById.get(s.clipId) ?? "(gelöscht)",
       seconds: s.seconds,
@@ -221,8 +223,22 @@ export default async function DashboardPage() {
           <p className="sparte-hinweis">{HINWEIS[track]}</p>
 
           <TriggerButtons track={track} />
-          {track === "promo" ? <DailySettings /> : <ViralSchedule track={track} />}
-          <PostAutomatik track={track} stand={postZeitplan} katalog={soundTagKatalog} />
+          {/* Erstellen und Posten sind ein Ablauf: die Posting-Einstellungen sind ein
+              Teil des Täglichen Laufs und stehen in dessen Abschnitt. */}
+          {track === "promo" ? (
+            <DailySettings
+              postEinstellungen={
+                <PostAutomatik track={track} stand={postZeitplan} katalog={soundTagKatalog} />
+              }
+            />
+          ) : (
+            <ViralSchedule
+              track={track}
+              postEinstellungen={
+                <PostAutomatik track={track} stand={postZeitplan} katalog={soundTagKatalog} />
+              }
+            />
+          )}
           <PostHistorie
             track={track}
             posts={data.postHistorie}

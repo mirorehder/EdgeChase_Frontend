@@ -1,23 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import { env } from "@/lib/env";
-import { posteAlleFaelligen } from "@/lib/postAuto";
+import { holeRueckstandNach } from "@/lib/postAuto";
 
 // Das Posten wartet auf Instagrams Videoverarbeitung - das kann dauern.
 export const maxDuration = 300;
 export const dynamic = "force-dynamic";
 
 /**
- * Der Anlaufpunkt für den externen Wecker (cron-job.org o.ä.).
+ * Holt gescheiterte Posts nach - früher der Anlaufpunkt des externen Weckers.
  *
- * Auf dem Hobby-Tarif läuft Vercels eigener Cron nur einmal am Tag. Ein
- * externer Dienst ruft diese Route deshalb alle paar Minuten auf; sie schaut
- * für jede Sparte nach, ob laut Zeitplan ein Video fällig ist, und postet
- * höchstens eines je Sparte. Der Mindestabstand und das Tageslimit sorgen
- * dafür, dass häufiges Anklopfen nichts überstürzt.
+ * Erstellen und Posten sind jetzt ein Ablauf: das Video geht direkt nach dem
+ * Render raus, ein Zeitplan fürs Posten gibt es nicht mehr. Ein externer Wecker
+ * (cron-job.org) wird nicht mehr gebraucht. Die Route bleibt, damit ein noch
+ * eingerichteter Wecker nicht ins Leere läuft und abgeschaltet wird: sie holt
+ * den Rückstand der letzten Tage nach (nie Altbestand, höchstens drei Versuche
+ * je Video) und antwortet sonst mit "nichts zu tun".
  *
  * Geschützt über dasselbe Geheimnis wie der Tages-Cron: ?secret=… oder der
- * Header "Authorization: Bearer …". Ohne gültiges Geheimnis passiert nichts -
- * sonst könnte jeder das Posten auslösen.
+ * Header "Authorization: Bearer …".
  */
 async function lauf(request: NextRequest) {
   const ausHeader = request.headers.get("authorization");
@@ -27,10 +27,11 @@ async function lauf(request: NextRequest) {
     return NextResponse.json({ error: "Nicht autorisiert." }, { status: 401 });
   }
 
-  const ergebnisse = await posteAlleFaelligen();
+  const ergebnisse = await holeRueckstandNach();
   return NextResponse.json({
     gepostet: ergebnisse.filter((e) => e.gepostet).length,
     ergebnisse,
+    hinweis: "Posten läuft direkt nach dem Erstellen - dieser Aufruf holt nur Rückstand nach.",
   });
 }
 

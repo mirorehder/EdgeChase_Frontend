@@ -86,8 +86,8 @@ async function lauf(request: NextRequest) {
   const ergebnisse: { track: Track; anzahl: number }[] = [];
 
   for (const track of ["promo", "viral", "sports", "clothing", "coaching", "serie"] as Track[]) {
-    // Bestehenden Zeitplan holen (Standard, wenn noch nicht vorhanden), damit
-    // enabled/Zeitfenster/Abstand nicht ueberschrieben werden.
+    // Bestehende Einstellungen holen (Standard, wenn noch nicht vorhanden), damit
+    // enabled und Trial-Schalter nicht ueberschrieben werden.
     const bestand = await getPostZeitplan(track);
     const hashtags = HASHTAGS[track];
     const pool = POOLS[track];
@@ -97,12 +97,7 @@ async function lauf(request: NextRequest) {
       create: {
         id: track,
         enabled: bestand.enabled,
-        postsPerDay: bestand.postsPerDay,
-        fensterVonMin: bestand.fensterVonMin,
-        fensterBisMin: bestand.fensterBisMin,
-        minAbstandMin: bestand.minAbstandMin,
         alsTrialReel: bestand.alsTrialReel,
-        quelle: bestand.quelle,
         hashtags,
         trendSounds: pool as unknown as object,
       },

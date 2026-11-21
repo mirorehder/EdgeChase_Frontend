@@ -151,6 +151,8 @@ tr:last-child td {
 .status-done { background: rgba(62, 207, 142, 0.15); color: var(--ok); }
 .status-rendering, .status-queued { background: rgba(245, 166, 35, 0.15); color: var(--warn); }
 .status-failed { background: rgba(239, 68, 68, 0.15); color: var(--err); }
+.daily .post-automatik { margin-top: 20px; }
+.status-alt { background: rgba(138, 143, 153, 0.18); color: var(--muted); }
 
 .clip-list {
   color: var(--muted);

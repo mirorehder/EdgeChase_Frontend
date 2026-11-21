@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
   const track = trackFromRequest(request);
 
   try {
-    const { turns } = (await request.json()) as { turns: ChatTurn[] };
+    const { turns, posten } = (await request.json()) as { turns: ChatTurn[]; posten?: boolean };
     if (!turns?.length) {
       return NextResponse.json({ error: "Keine Anweisung erhalten." }, { status: 400 });
     }
@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
     // sieht in beiden Fällen gleich aus.
     const letzterWunsch = [...turns].reverse().find((t) => t.role === "user")?.content ?? "";
     if (bewertungsart(track) === "krassheit") {
-      return await reelsDialog(track, turns, letzterWunsch);
+      return await reelsDialog(track, turns, letzterWunsch, posten === true);
     }
 
     const [clips, recentVideos] = await Promise.all([
@@ -81,7 +81,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ status: "question", reply: result.reply });
     }
 
-    const jobId = await createJobFromSpec(track, result.spec, letzterWunsch);
+    const jobId = await createJobFromSpec(track, result.spec, letzterWunsch, posten === true);
 
     return NextResponse.json({
       status: "ready",
@@ -104,7 +104,12 @@ export async function POST(request: NextRequest) {
  * Liste von vierzig Trickbeschreibungen würde ihn zu Zusagen verleiten, die
  * er nicht einhalten kann.
  */
-async function reelsDialog(track: Track, turns: ChatTurn[], letzterWunsch: string) {
+async function reelsDialog(
+  track: Track,
+  turns: ChatTurn[],
+  letzterWunsch: string,
+  posten: boolean,
+) {
   const verwendbar = await usableFolderIds(track);
 
   const [ordnerZeilen, brauchbar, recentVideos] = await Promise.all([
@@ -165,7 +170,7 @@ async function reelsDialog(track: Track, turns: ChatTurn[], letzterWunsch: strin
     return NextResponse.json({ status: "question", reply: result.reply });
   }
 
-  const jobId = await createViralJobFromSpec(track, result.spec, letzterWunsch);
+  const jobId = await createViralJobFromSpec(track, result.spec, letzterWunsch, posten);
 
   return NextResponse.json({ status: "ready", reply: result.reply, spec: result.spec, jobId });
 }

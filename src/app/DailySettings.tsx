@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 type TextQuelle = "ki" | "eigene";
 
@@ -66,7 +66,12 @@ function TextListe({
   );
 }
 
-export function DailySettings() {
+export function DailySettings({
+  postEinstellungen,
+}: {
+  /** Die Posting-Einstellungen der Sparte - ein Teil dieses Abschnitts. */
+  postEinstellungen?: ReactNode;
+}) {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -267,6 +272,7 @@ export function DailySettings() {
             {note && <span className="action-message">{note}</span>}
           </div>
         </div>
+          {postEinstellungen}
         </>
       )}
     </section>

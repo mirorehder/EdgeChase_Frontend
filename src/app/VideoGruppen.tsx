@@ -33,6 +33,10 @@ export interface VideoZeile {
   postedMediaId: string | null;
   postError: string | null;
   hasPublicCopy: boolean;
+  // Erstellen und Posten in einem Ablauf: geht das Video nach dem Render raus,
+  // oder ist es Altbestand (vor der Umstellung entstanden, wird nicht angefasst)?
+  autoPost: boolean;
+  altbestand: boolean;
   scenes: { clipName: string; seconds: number }[];
 }
 
@@ -158,6 +162,7 @@ function VideoEintrag({ zeile }: { zeile: VideoZeile }) {
         <span className={`status status-${zeile.status}`}>
           {STATUS_LABEL[zeile.status] ?? zeile.status}
         </span>
+        {zeile.altbestand && <span className="status status-alt">Altbestand</span>}
         <span className="video-meta">
           {formatDate(zeile.createdAt)} · {laenge(zeile)}
         </span>
@@ -262,6 +267,27 @@ function VideoEintrag({ zeile }: { zeile: VideoZeile }) {
               Noch keine öffentliche Kopie für Instagram vorhanden - der Post-Knopf ist deshalb
               gesperrt. Ältere Videos bekommen die Kopie über „Für Instagram nachrüsten".
             </p>
+          )}
+
+          {/* Was mit dem Video beim Posten passiert - ohne diese Zeilen sieht man
+              nicht, ob es von selbst rausgeht, wartet oder liegen bleibt. */}
+          {zeile.altbestand && !zeile.postedAt && (
+            <p className="hinweis-text">
+              Altbestand: vor der Umstellung auf „Erstellen und Posten in einem Ablauf" entstanden.
+              Die Automatik fasst es nicht an - gepostet wird nur von Hand.
+            </p>
+          )}
+          {!zeile.altbestand && zeile.autoPost && !zeile.postedAt && zeile.status !== "failed" && (
+            <p className="hinweis-text">
+              {zeile.status === "done"
+                ? zeile.postError
+                  ? "Wird automatisch gepostet - der letzte Versuch ist gescheitert, der nächste Lauf versucht es noch einmal."
+                  : "Wird jetzt automatisch gepostet."
+                : "Wird nach dem Render automatisch gepostet."}
+            </p>
+          )}
+          {zeile.postError && !zeile.postedAt && (
+            <p className="error-text">Posten: {zeile.postError}</p>
           )}
 
           {postMeldung && (

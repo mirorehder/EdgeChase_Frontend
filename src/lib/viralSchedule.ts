@@ -22,10 +22,11 @@ const DEFAULTS: ViralScheduleSettings = {
   conceptIds: [],
 };
 
-/** Obergrenze pro Tag und Sparte. Jeder Edit belegt eine eigene Vercel-
- *  Ausführung und einen eigenen Lambda-Render; darüber hinaus wird der
- *  Tageslauf zur Dauerbeschäftigung, ohne dass mehr dabei herauskäme. */
-export const MAX_VIDEOS_PER_DAY = 5;
+/** Ein Video pro Tag und Sparte. Erstellen und Posten sind ein Ablauf: ein Lauf
+ *  postet sein Video gleich nach dem Render, und der Tageslauf kann nur einmal
+ *  am Tag laufen. Mehrere Videos gingen alle zur selben Uhrzeit raus. Auch ein
+ *  früher gespeicherter höherer Wert gilt deshalb als 1. */
+export const MAX_VIDEOS_PER_DAY = 1;
 
 /** Die Sparten, die überhaupt einen Zeitplan haben. Die Promo-Sparte hat
  *  ihren eigenen Satz Einstellungen. */
@@ -37,7 +38,7 @@ export async function getViralSchedule(track: Track): Promise<ViralScheduleSetti
 
   return {
     enabled: row.enabled,
-    videosPerDay: row.videosPerDay,
+    videosPerDay: Math.min(MAX_VIDEOS_PER_DAY, Math.max(1, row.videosPerDay)),
     conceptMode: row.conceptMode === "fixed" ? "fixed" : "rotation",
     conceptIds: Array.isArray(row.conceptIds) ? (row.conceptIds as string[]) : [],
   };

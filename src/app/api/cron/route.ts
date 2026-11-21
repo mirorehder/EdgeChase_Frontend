@@ -4,17 +4,18 @@ import { planDailyJob, planViralRun } from "@/lib/pipeline";
 import { baseUrlFromRequest, starteWartende, weckeWartende } from "@/lib/dispatch";
 import { logActivity } from "@/lib/activity";
 import { ZEITPLAN_SPARTEN } from "@/lib/viralSchedule";
-import { erlaubteTrackKeys, trackBeschreibung } from "@/lib/trackClient";
-import { posteSerienVideo, ungepostetSerienVideos } from "@/lib/postAuto";
+import { erlaubteTrackKeys } from "@/lib/trackClient";
+import { holeRueckstandNach } from "@/lib/postAuto";
 
 // Abgleich, Analyse und Zusammenstellung brauchen mehr als den Vercel-
 // Standardwert von 10 Sekunden. Gerendert wird hier nicht mehr.
 export const maxDuration = 300;
 
 /**
- * Der einzige Zeitplan-Aufruf des Tages.
+ * Der einzige Zeitplan-Aufruf des Tages: erstellt das Video jeder Sparte, und
+ * gepostet wird direkt nach dem Render (kein zweiter Zeitplan, kein Pinger).
  *
- * Der Tarif erlaubt nur einen, deshalb hängen beide Sparten daran. Diese Route
+ * Der Tarif erlaubt nur einen, deshalb hängen alle Sparten daran. Diese Route
  * plant nur: sie gleicht die Bibliothek ab, stellt die Videos zusammen und
  * legt die Aufträge an. Gerendert wird danach in eigenen Ausführungen, eine je
  * Video - jede mit ihren eigenen 300 Sekunden.
@@ -41,14 +42,17 @@ export async function GET(request: NextRequest) {
   // Sparten und erzeugen nichts doppelt.
   const erlaubt = new Set(erlaubteTrackKeys());
 
-  // Serien: Videos, die gestern fertig wurden, aber nicht rausgingen (Fehler
-  // beim Posten), werden zuerst nachgeholt. Der Normalfall postet sofort nach
-  // dem Rendern; das hier ist nur das Netz darunter.
-  for (const sparte of [...erlaubt].filter((t) => trackBeschreibung(t).sofortPosten)) {
-    for (const id of (await ungepostetSerienVideos(sparte)).slice(0, 3)) {
-      await posteSerienVideo(id).catch(() => null);
-    }
-  }
+  // Erstellen und Posten sind ein Ablauf: ein Video geht direkt nach dem Render
+  // raus. Was dabei gestern oder vorgestern gescheitert ist, wird zuerst
+  // nachgeholt. Der Normalfall postet längst sofort; das hier ist nur das Netz
+  // darunter, und es fasst weder Altbestand noch Videos an, deren drei
+  // Versuche aufgebraucht sind.
+  await holeRueckstandNach().catch((err) =>
+    logActivity(
+      `Rückstand beim Posten konnte nicht nachgeholt werden: ${err instanceof Error ? err.message : String(err)}`,
+      { level: "error" },
+    ),
+  );
 
   let jobId: string | null = null;
   let promoFehler: string | null = null;
