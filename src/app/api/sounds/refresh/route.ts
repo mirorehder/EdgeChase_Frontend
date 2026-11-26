@@ -3,7 +3,7 @@ import { istBerechtigt } from "@/lib/ingestAuth";
 import { igZugang } from "@/lib/instagram";
 import { erlaubteTrackKeys } from "@/lib/trackClient";
 import { logActivity } from "@/lib/activity";
-import { bibliotheksStand, nimmSoundsAuf } from "@/lib/soundBibliothek";
+import { bibliotheksStand, nimmSoundsAuf, raeumeFalscheTreffer } from "@/lib/soundBibliothek";
 import { holeTrendSounds, sucheOriginalSounds } from "@/lib/soundQuelle";
 import { FESTE_LIEDER } from "@/lib/soundListe";
 
@@ -47,6 +47,7 @@ async function auffuellen(request: NextRequest) {
     for (const lied of FESTE_LIEDER) {
       treffer.push(...(await sucheOriginalSounds(track, lied)));
     }
+    await raeumeFalscheTreffer(FESTE_LIEDER).catch(() => 0);
     const v = await nimmSoundsAuf(treffer, "viral", 12);
     viral = { lieder: FESTE_LIEDER.length, gefunden: treffer.length, neu: v.neu, bewertet: v.bewertet };
   } catch (err) {

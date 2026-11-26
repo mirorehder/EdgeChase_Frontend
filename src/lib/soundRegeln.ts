@@ -103,11 +103,16 @@ export function normalisiereTitel(t: string): string {
 }
 
 /**
- * Gehoert ein Katalog-Sound zu diesem Lied? Der Titel des Lieds muss (wortweise)
- * im Titel des Sounds vorkommen. Zu kurze Liedtitel (unter 4 Zeichen) passen nie.
- * Bei kurzen oder allgemeinen Titeln (unter 10 Zeichen) muss zusaetzlich der
- * Kuenstler (ein Wort davon) im Sound-Titel oder im Creator-Namen vorkommen -
- * sonst gaebe es zu viele Zufallstreffer ("Aces", "Divine").
+ * Gehoert ein Katalog-Sound zu diesem Lied?
+ *
+ *  - Der Liedtitel muss (wortweise) im Titel des Sounds vorkommen, mindestens 4 Zeichen.
+ *  - Steht er am ANFANG des Sound-Titels ("Without a Warning - The Weeknd"), genuegt
+ *    ein Titel ab 10 Zeichen.
+ *  - Steht er irgendwo mittendrin ("Abonne toi pour d'hallucinations"), muss der
+ *    Titel mindestens 18 Zeichen lang sein.
+ *  - Kuerzere Titel brauchen zusaetzlich den Kuenstler (ein Wort davon) im Sound-
+ *    Titel oder im Creator-Namen. Sonst gaebe es zu viele Zufallstreffer
+ *    ("Aces", "Divine", "On Your Own").
  */
 export function passtZumLied(
   soundTitel: string,
@@ -119,11 +124,14 @@ export function passtZumLied(
   if (lied.length < 4) return false;
   const titel = normalisiereTitel(soundTitel);
   if (!` ${titel} `.includes(` ${lied} `)) return false;
-  if (lied.length >= 10 || !kuenstler) return true;
-  const woerter = normalisiereTitel(kuenstler)
+
+  const amAnfang = titel === lied || titel.startsWith(`${lied} `);
+  if (amAnfang ? lied.length >= 10 : lied.length >= 18) return true;
+
+  const woerter = normalisiereTitel(kuenstler ?? "")
     .split(" ")
     .filter((w) => w.length >= 3);
-  if (woerter.length === 0) return true;
+  if (woerter.length === 0) return false;
   const feld = ` ${titel} ${normalisiereTitel(creator ?? "")} `;
   return woerter.some((w) => feld.includes(w));
 }
