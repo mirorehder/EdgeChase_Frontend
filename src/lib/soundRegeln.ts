@@ -23,6 +23,8 @@ export interface SoundKandidat {
   trendRang: number | null;
   /** Dein Urteil: "gut", "schlecht" oder null. */
   urteil: string | null;
+  /** Gehoert zu einem aktuell viralen Lied ("Titel - Kuenstler"). */
+  viralLied: string | null;
 }
 
 /** Ein Sound länger als das hier ist für Reels unhandlich. */
@@ -81,12 +83,34 @@ export function istGeeignet(k: SoundKandidat, videoMs: number): boolean {
 }
 
 /**
- * Wie bekannt ein Sound wirkt: vorne in der Trend-Liste = bekannt. Sounds, die
- * nicht aus der Trend-Liste stammen, gelten als kaum bekannt.
+ * Wie bekannt ein Sound wirkt: vorne in der Trend-Liste = bekannt; gehoert er
+ * zu einem aktuell viralen Lied, gilt er ebenfalls als bekannt. Alles andere
+ * (z. B. blosse Stichwortsuche) gilt als kaum bekannt.
  */
-export function bekanntWert(trendRang: number | null): number {
-  if (trendRang == null) return 0.15;
-  return Math.max(0.2, 1 - (trendRang - 1) / 30);
+export function bekanntWert(trendRang: number | null, viralLied: string | null = null): number {
+  const ausTrend = trendRang == null ? 0.15 : Math.max(0.2, 1 - (trendRang - 1) / 30);
+  return viralLied ? Math.max(ausTrend, 0.85) : ausTrend;
+}
+
+/** Vereinheitlicht einen Titel zum Vergleichen: Kleinbuchstaben, nur Buchstaben und Ziffern. */
+export function normalisiereTitel(t: string): string {
+  return t
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+/**
+ * Gehoert ein Katalog-Sound zu diesem Lied? Der Titel des Lieds muss (wortweise)
+ * im Titel des Sounds vorkommen. Zu kurze Liedtitel (unter 4 Zeichen) passen
+ * nie - zu viele Zufallstreffer.
+ */
+export function passtZumLied(soundTitel: string, liedTitel: string): boolean {
+  const lied = normalisiereTitel(liedTitel);
+  if (lied.length < 4) return false;
+  return ` ${normalisiereTitel(soundTitel)} `.includes(` ${lied} `);
 }
 
 /**
@@ -100,7 +124,7 @@ export function grundWert(k: SoundKandidat, zufall: number): number {
   const wert =
     druck * 0.35 +
     start * 0.15 +
-    bekanntWert(k.trendRang) * 0.2 +
+    bekanntWert(k.trendRang, k.viralLied) * 0.2 +
     frischeWert(k.alterTage) * 0.15 +
     zufall * 0.1;
   return k.urteil === "gut" ? wert + 0.3 : wert;

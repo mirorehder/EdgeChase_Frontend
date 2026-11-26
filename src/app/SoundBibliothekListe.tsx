@@ -24,6 +24,7 @@ export interface SoundZeile {
   zuletztGepostet: string | null;
   trendRang: number | null;
   urteil: string | null;
+  viralLied: string | null;
 }
 
 const prozent = (v: number | null) => (v == null ? "–" : `${Math.round(v * 100)}`);
@@ -47,11 +48,16 @@ export function SoundBibliothekListe({ sounds }: { sounds: SoundZeile[] }) {
         neu?: number;
         bewertet?: number;
         fehler?: string[];
+        viral?: { lieder: number; gefunden: number; neu: number; bewertet: number; hinweis?: string } | null;
       };
       setMeldung(
         res.ok
-          ? `${daten.erhalten} Sounds geholt, ${daten.neu} neu, ${daten.bewertet} bewertet` +
-              (daten.fehler?.length ? `, ${daten.fehler.length} Fehler (siehe Protokoll)` : "")
+          ? `${daten.erhalten} Trend-Sounds geholt, ${daten.neu} neu, ${daten.bewertet} bewertet` +
+              (daten.fehler?.length ? `, ${daten.fehler.length} Fehler (siehe Protokoll)` : "") +
+              (daten.viral
+                ? `. Virale Lieder: ${daten.viral.lieder} geprüft, ${daten.viral.gefunden} passende Sounds, ${daten.viral.neu} neu, ${daten.viral.bewertet} bewertet` +
+                  (daten.viral.hinweis ? ` (${daten.viral.hinweis})` : "")
+                : "")
           : `Fehlgeschlagen: ${daten.error ?? res.status}`,
       );
       router.refresh();
@@ -130,7 +136,11 @@ export function SoundBibliothekListe({ sounds }: { sounds: SoundZeile[] }) {
                   </span>
                   <span className="historie-details">
                     {s.sekunden} s
-                    {s.trendRang != null ? ` · Trend-Platz ${s.trendRang}` : " · nicht in der Trend-Liste"}
+                    {s.viralLied
+                      ? ` · zum viralen Lied: ${s.viralLied}`
+                      : s.trendRang != null
+                        ? ` · Trend-Platz ${s.trendRang}`
+                        : " · nicht in der Trend-Liste"}
                     {s.alterTage != null ? ` · ${s.alterTage} Tage alt` : ""}
                     {s.status !== "aktiv" ? ` · ${s.status}` : ""}
                     {s.tauglich === false ? " · untauglich" : ""}

@@ -231,6 +231,7 @@ export default async function DashboardPage() {
     zuletztGepostet: zuletzt.get(r.audioId) ?? null,
     trendRang: r.trendRang,
     urteil: r.urteil,
+    viralLied: r.viralLied,
   }));
   const daten = Object.fromEntries(
     spartenListe.map((s, i) => [s.key, sparten[i]]),
