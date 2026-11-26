@@ -113,7 +113,6 @@ export async function GET(request: NextRequest) {
         posten: {
           direktPosten,
           alsTrialReel: zeitplan.alsTrialReel,
-          hatSoundPool: zeitplan.trendSounds.length > 0,
           hatHashtags: !!zeitplan.hashtags.trim(),
         },
         // Bestandsaufnahme: wie viele Videos in welchem Zustand, und welche

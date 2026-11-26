@@ -110,70 +110,44 @@ async function main() {
       track: "viral",
       enabled: true,
       hashtags: "#Parkour Freerunning",
-      trendSounds: [
-        // Ein Link, eine nackte ID, ein Unsinn - Server filtert.
-        { link: "https://www.instagram.com/reels/audio/354553290259617/", titel: "Unstoppable" },
-        { audioId: "128365293012345" },
-        { link: "kein link" },
-      ],
     }),
   });
   const zurueck = await put.json();
   pruefe("Schalter 'Direkt posten' über die Route gesetzt", zurueck.enabled, true);
   pruefe("Hashtags übernommen", zurueck.hashtags, "#Parkour Freerunning");
-  pruefe(
-    "Trend-Pool: zwei brauchbare, ein unbrauchbarer verworfen",
-    Array.isArray(zurueck.trendSounds) ? zurueck.trendSounds.length : -1,
-    2,
-  );
 
   await prisma.postLauf.deleteMany({});
   await prisma.promoVideo.deleteMany({ where: { hookText: { startsWith: MARKE } } });
 
-  console.log("\n6a. Sound-Wahl: die Rangfolge");
+  console.log("\n6a. Sound-Wahl: die feste Vorrangfolge (danach kommt die Sound-Bibliothek)");
   // _music schlaegt alles.
   const musik = waehleSound({
     dateiName: "Skate at Sundown_music.mp4",
     konzeptSound: { audioId: "12345", status: "geprueft" },
-    trendPool: [{ audioId: "trend-1", titel: "T" }],
   });
   pruefe("_music: keine audio_id", musik.audioId, null);
   pruefe("_music: Herkunft", musik.herkunft, "eigenerFilmton");
   pruefe("_music: Filmton laut", musik.hatEigeneMusik, true);
 
-  // Konzept schlaegt Pool.
+  // Geprueftes Konzept-Sound gilt.
   const konzept = waehleSound({
     dateiName: "Der Sprung.mp4",
     konzeptSound: { audioId: "kz-1", status: "geprueft" },
-    trendPool: [{ audioId: "trend-1", titel: "T" }],
   });
   pruefe("Konzept-Sound gewinnt", konzept.audioId, "kz-1");
   pruefe("Herkunft: konzept", konzept.herkunft, "konzept");
 
-  // Ohne Konzept: Pool.
-  const pool = waehleSound({
-    dateiName: "Der Sprung.mp4",
-    konzeptSound: { audioId: null, status: "ohne" },
-    trendPool: [{ audioId: "trend-1", titel: "Unstoppable" }],
-    zufall: () => 0, // deterministisch fürs Testen
-  });
-  pruefe("aus dem Pool gezogen", pool.audioId, "trend-1");
-  pruefe("Herkunft: pool", pool.herkunft, "pool");
-
-  // Konzept-Sound offen, Art unbekannt → gilt als nicht verwendbar → Pool.
-  const offenPool = waehleSound({
+  // Offener Konzept-Sound gilt nicht als verwendbar -> weiter zur Bibliothek.
+  const offen = waehleSound({
     dateiName: "x.mp4",
     konzeptSound: { audioId: "kz-2", status: "offen" },
-    trendPool: [{ audioId: "trend-2", titel: "T" }],
-    zufall: () => 0,
   });
-  pruefe("offener Konzept-Sound fällt auf Pool", offenPool.audioId, "trend-2");
+  pruefe("offener Konzept-Sound: weiter zur Bibliothek", offen.herkunft, "keinSound");
 
   // Nichts verfügbar: verweigert.
   const nichts = waehleSound({
     dateiName: "x.mp4",
     konzeptSound: { audioId: null, status: "ohne" },
-    trendPool: [],
   });
   pruefe("ohne alles: nicht postbar", nichts.audioId, null);
   pruefe("Grund gemeldet", nichts.grund, "kein Sound verfügbar");

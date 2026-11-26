@@ -17,14 +17,9 @@ import { prisma, mitDbWiederholung } from "./db";
 import type { Track } from "./trackClient";
 import { trackBeschreibung, erlaubteTrackKeys } from "./trackClient";
 import { istVerwendbar } from "./sound";
-import { normalisiereTagKeys, passtZuSparte } from "./soundTags";
 import { igZugang, posteReel } from "./instagram";
 import { logActivity } from "./activity";
-import {
-  waehleAusBibliothek,
-  videoBeschreibung,
-  zuletztVerwendeteSounds,
-} from "./soundBibliothek";
+import { waehleAusBibliothek, videoBeschreibung } from "./soundBibliothek";
 import {
   bucketFromServeUrl,
   deletePostCopy,
@@ -33,16 +28,6 @@ import {
 import { env } from "./env";
 import { chFormatUhrzeit, chFormatZeitstempel } from "./zeit";
 
-
-/** Ein Eintrag im Trend-Sound-Pool. */
-export interface TrendSound {
-  audioId: string;
-  titel: string;
-  /** Stimmungs-/Genre-Tags dieses Sounds (Schlüssel aus dem SoundTag-Katalog).
-   *  Fehlt/leer, solange der Sound nicht eingeordnet wurde. Aus getPostZeitplan
-   *  ist es immer gesetzt (normalisierePool). */
-  tags?: string[];
-}
 
 export interface PostZeitplanStand {
   /**
@@ -56,20 +41,12 @@ export interface PostZeitplanStand {
   alsTrialReel: boolean;
   /** Freitext-Hashtags fürs Reel - werden hinter die Caption gehängt. */
   hashtags: string;
-  /** Trend-Sound-Pool: einer davon wird gewählt, wenn kein eigener Sound am
-   *  Video hängt. Beschränkt auf die zur Sparte passenden (siehe soundTags). */
-  trendSounds: TrendSound[];
-  /** Die für diese Sparte gewählten Stimmungs-/Genre-Tags (Katalog-Schlüssel).
-   *  Leer = keine Einschränkung, der ganze Pool zählt. */
-  soundTags: string[];
 }
 
 export const STANDARD_ZEITPLAN: PostZeitplanStand = {
   enabled: false,
   alsTrialReel: true,
   hashtags: "",
-  trendSounds: [],
-  soundTags: [],
 };
 
 // ---------------------------------------------------------------------------
@@ -83,8 +60,6 @@ export async function getPostZeitplan(track: Track): Promise<PostZeitplanStand> 
     enabled: z.enabled,
     alsTrialReel: z.alsTrialReel,
     hashtags: z.hashtags,
-    trendSounds: normalisierePool(z.trendSounds),
-    soundTags: normalisiereTagKeys(z.soundTags),
   };
 }
 
@@ -99,24 +74,6 @@ export async function postenAktiv(track: Track): Promise<boolean> {
   return (await getPostZeitplan(track)).enabled;
 }
 
-/**
- * Der Pool kommt aus Prisma als "unknown JSON" - hier waschen wir ihn zu einer
- * Liste vernuenftig aufgebauter Eintraege. Alles, was fehlt oder falsch aussieht,
- * fliegt raus - lieber ein leerer Pool als eine leere Runde ohne Grund.
- */
-function normalisierePool(rohes: unknown): TrendSound[] {
-  if (!Array.isArray(rohes)) return [];
-  const ergebnis: TrendSound[] = [];
-  for (const e of rohes) {
-    if (!e || typeof e !== "object") continue;
-    const audioId = String((e as { audioId?: unknown }).audioId ?? "").trim();
-    const titel = String((e as { titel?: unknown }).titel ?? "").trim();
-    const tags = normalisiereTagKeys((e as { tags?: unknown }).tags);
-    if (audioId) ergebnis.push({ audioId, titel, tags });
-  }
-  return ergebnis;
-}
-
 // ---------------------------------------------------------------------------
 // Sound- und Hashtag-Wahl
 //
@@ -124,7 +81,7 @@ function normalisierePool(rohes: unknown): TrendSound[] {
 // laesst, ohne Instagram anzufassen.
 // ---------------------------------------------------------------------------
 
-export type SoundHerkunft = "konzept" | "bibliothek" | "pool" | "eigenerFilmton" | "keinSound";
+export type SoundHerkunft = "konzept" | "bibliothek" | "eigenerFilmton" | "keinSound";
 
 export interface SoundWahl {
   audioId: string | null;
@@ -143,36 +100,17 @@ export interface SoundWahl {
 export interface SoundEingabe {
   dateiName: string;
   konzeptSound: { audioId: string | null; status: string };
-  trendPool: TrendSound[];
-  /** Die für die Sparte gewählten Stimmungs-/Genre-Tags. Leer = keine
-   *  Einschränkung. Beschränkt den Pool auf passende Sounds. */
-  spartenTags?: string[];
-  /** Fuer den Test einsetzbar; sonst Math.random. */
-  zufall?: () => number;
 }
 
 /**
- * Die zur Sparten-Auswahl passenden Sounds aus dem Pool.
- *
- * Passt kein einziger Sound zur gewählten Stimmung (etwa weil der Pool noch
- * nicht eingeordnet ist oder die Auswahl zu eng ist), gilt bewusst der ganze
- * Pool: ein passender Sound wäre schöner, aber ein stummes Reel oder gar kein
- * Post ist die schlechtere Wahl. Die Stimmung ist eine Vorliebe, kein Verbot.
- */
-export function passendeSounds(pool: TrendSound[], spartenTags: string[] = []): TrendSound[] {
-  if (spartenTags.length === 0) return pool;
-  const passend = pool.filter((s) => passtZuSparte(s.tags ?? [], spartenTags));
-  return passend.length > 0 ? passend : pool;
-}
-
-/**
- * Die Rangfolge:
+ * Die feste Vorrangfolge, bevor die Sound-Bibliothek ins Spiel kommt:
  *
  *   1. Dateiname enthaelt "_music" → Video hat schon eigene Musik. Kein
  *      angehaengter Sound. Der Filmton spielt in voller Lautstaerke.
  *   2. Konzept hat einen geprueften Sound → den verwenden.
- *   3. Der Trend-Sound-Pool der Sparte ist gefuellt → zufaellig einer daraus.
- *   4. Nichts davon → NICHT posten. Der Nutzer will kein stummes Reel.
+ *   3. Nichts davon → "keinSound"; dann waehlt waehleSoundFuerVideo aus der
+ *      Sound-Bibliothek, und ohne passenden Sound wird NICHT gepostet (der
+ *      Nutzer will kein stummes Reel).
  */
 export function waehleSound(eingabe: SoundEingabe): SoundWahl {
   if (/_music\b/i.test(eingabe.dateiName)) {
@@ -194,20 +132,6 @@ export function waehleSound(eingabe: SoundEingabe): SoundWahl {
     };
   }
 
-  // Nur die zur gewählten Stimmung passenden Sounds; ist keiner dabei, der
-  // ganze Pool (siehe passendeSounds - lieber irgendein Sound als keiner).
-  const kandidaten = passendeSounds(eingabe.trendPool, eingabe.spartenTags ?? []);
-  if (kandidaten.length > 0) {
-    const zufall = eingabe.zufall ?? Math.random;
-    const gewaehlt = kandidaten[Math.floor(zufall() * kandidaten.length)];
-    return {
-      audioId: gewaehlt.audioId,
-      hatEigeneMusik: false,
-      herkunft: "pool",
-      titel: gewaehlt.titel || undefined,
-    };
-  }
-
   return {
     audioId: null,
     hatEigeneMusik: false,
@@ -216,25 +140,19 @@ export function waehleSound(eingabe: SoundEingabe): SoundWahl {
   };
 }
 
-
 /**
  * Die Sound-Wahl fuer ein konkretes Video.
  *
  * Gleiche Rangfolge wie waehleSound - eigene Musik (_music) und ein geprueftes
- * Konzept-Sound gehen vor. Statt eines Zufalls-Picks aus dem Pool kommt dann
- * aber die Sound-Bibliothek: aggressive, frische Sounds, die nicht in der
- * Wartezeit liegen und zum Video passen. Der handgepflegte Pool ist nur noch
- * die letzte Rueckfallebene (ebenfalls mit Wartezeit).
+ * Konzept-Sound gehen vor. Danach kommt die Sound-Bibliothek: aggressive,
+ * bekannte Sounds, die nicht in der Wartezeit liegen und zum Video passen.
+ * Gibt es keinen, wird nicht gepostet.
  */
-export async function waehleSoundFuerVideo(
-  track: Track,
-  video: PromoVideo,
-  zeitplan: PostZeitplanStand,
-): Promise<SoundWahl> {
+export async function waehleSoundFuerVideo(track: Track, video: PromoVideo): Promise<SoundWahl> {
   const dateiName = video.driveFileName ?? video.fileTitle ?? "";
   const konzeptSound = { audioId: video.soundAudioId, status: video.soundStatus ?? "offen" };
 
-  const festgelegt = waehleSound({ dateiName, konzeptSound, trendPool: [] });
+  const festgelegt = waehleSound({ dateiName, konzeptSound });
   if (festgelegt.herkunft !== "keinSound") return festgelegt;
 
   try {
@@ -273,20 +191,13 @@ export async function waehleSoundFuerVideo(
   } catch (err) {
     await logActivity(
       `Sound-Bibliothek nicht nutzbar (${err instanceof Error ? err.message : String(err)}) - ` +
-        "es gilt der Trend-Sound-Pool.",
+        "das Video wird nicht gepostet.",
       { level: "error", track, videoId: video.id },
     );
   }
 
-  // Rueckfall: der Pool der Sparte, ohne die zuletzt verwendeten.
-  const verwendet = new Set(await zuletztVerwendeteSounds(track).catch(() => [] as string[]));
-  const frei = zeitplan.trendSounds.filter((t) => !verwendet.has(t.audioId));
-  return waehleSound({
-    dateiName,
-    konzeptSound,
-    trendPool: frei.length > 0 ? frei : zeitplan.trendSounds,
-    spartenTags: zeitplan.soundTags,
-  });
+  // Nichts Passendes in der Bibliothek: nicht posten (kein stummes Reel).
+  return festgelegt;
 }
 
 /**
@@ -423,13 +334,13 @@ async function posteKandidat(
   }
 
   // Der Sound wird nach fester Rangfolge gewaehlt - siehe waehleSoundFuerVideo.
-  const sound = await waehleSoundFuerVideo(track, kandidat, zeitplan);
+  const sound = await waehleSoundFuerVideo(track, kandidat);
 
   if (sound.grund === "kein Sound verfügbar") {
     await logActivity(
       `Posten übersprungen: "${kandidat.fileTitle || kandidat.hookText}" - kein eigener ` +
-        "Sound, kein _music im Dateinamen und kein Trend-Sound-Pool eingerichtet. " +
-        "Trag im Dashboard mindestens einen Trend-Sound ein.",
+        "Sound, kein _music im Dateinamen und die Sound-Bibliothek hat keinen passenden Sound. " +
+        "Drück im Dashboard unter „Sounds in der Bibliothek\" auf „Sounds jetzt holen\".",
       { level: "error", track, videoId: kandidat.id },
     );
     return abschluss(track, jetzt, { gepostet: false, grund: "kein Sound verfügbar" }, kandidatTitel);
@@ -517,8 +428,6 @@ async function posteKandidat(
         ? `Konzept-Sound ${sound.audioId}`
         : sound.herkunft === "bibliothek"
           ? `Bibliotheks-Sound "${sound.titel ?? sound.audioId}"${sound.passung ? ` (${sound.passung})` : ""}`
-          : sound.herkunft === "pool"
-            ? `Pool-Sound "${sound.titel ?? sound.audioId}"`
             : "kein Sound";
   await logActivity(
     `Gepostet um ${chFormatUhrzeit(jetzt)} CH: "${caption.split("\n")[0]}" ` +
@@ -764,7 +673,7 @@ async function posteVideoJetztOhneSperre(videoId: string, jetzt: Date): Promise<
   // anhängen - ohne die "geprueft"-Hürde der Automatik. Wer hier auf Posten
   // drückt, will genau diesen Sound testen. Nur wenn gar kein eigener Sound
   // gesetzt ist (oder er als unauffindbar markiert wurde), gilt die übliche
-  // Rangfolge (Filmton bei _music, sonst Trend-Pool).
+  // Rangfolge (Filmton bei _music, sonst Sound-Bibliothek).
   //
   // Hinweis zum Startversatz: Instagram hängt jeden Sound bei 0:00 an. Ein
   // vollständiger Song liefe hier also im Intro - beim Direktanhängen liegt das
@@ -783,18 +692,18 @@ async function posteVideoJetztOhneSperre(videoId: string, jetzt: Date): Promise<
     audioId = video.soundAudioId;
     soundText = `hinterlegter Sound ${video.soundTitle ?? video.soundAudioId} (direkt angehängt)`;
   } else {
-    const sound = await waehleSoundFuerVideo(track, video, zeitplan);
+    const sound = await waehleSoundFuerVideo(track, video);
     // Kein Sound verfügbar: NICHT posten. Es darf kein Reel ohne Sound
-    // rausgehen - dann lieber ein klarer Hinweis, einen Trend-Sound-Pool
-    // einzurichten (oder am Konzept einen Sound zu setzen).
+    // rausgehen - dann lieber ein klarer Hinweis, die Sound-Bibliothek zu fuellen
+    // (oder am Konzept einen Sound zu setzen).
     if (sound.grund === "kein Sound verfügbar") {
       return {
         ok: false,
         grund:
           "Kein Sound: das Video hat keinen eigenen Sound, kein _music im Dateinamen und " +
-          "es ist kein Trend-Sound-Pool eingerichtet. Damit würde das Reel ohne Musik posten - " +
-          "das ist nicht erlaubt. Trag im Dashboard unter „Posten nach dem Erstellen\" mindestens einen " +
-          "Trend-Sound ein oder setz am Konzept einen Sound.",
+          "die Sound-Bibliothek hat keinen passenden Sound. Damit würde das Reel ohne Musik posten - " +
+          "das ist nicht erlaubt. Drück im Dashboard unter „Sounds in der Bibliothek\" auf " +
+          "„Sounds jetzt holen\" oder setz am Konzept einen Sound.",
       };
     }
     audioId = sound.audioId;
@@ -806,8 +715,6 @@ async function posteVideoJetztOhneSperre(videoId: string, jetzt: Date): Promise<
         ? "Filmton (Video mit _music)"
         : sound.herkunft === "bibliothek"
           ? `Bibliotheks-Sound "${sound.titel ?? sound.audioId}"${sound.passung ? ` (${sound.passung})` : ""}`
-          : sound.herkunft === "pool"
-            ? `Pool-Sound "${sound.titel ?? sound.audioId}"`
             : "kein Sound";
   }
 
