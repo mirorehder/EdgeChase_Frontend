@@ -31,6 +31,36 @@ const prozent = (v: number | null) => (v == null ? "–" : `${Math.round(v * 100
 export function SoundBibliothekListe({ sounds }: { sounds: SoundZeile[] }) {
   const [offen, setOffen] = useState(false);
   const router = useRouter();
+  const [holt, setHolt] = useState(false);
+  const [meldung, setMeldung] = useState<string | null>(null);
+
+  // Holt die trendenden Sounds von Instagram und laesst neue bewerten. Dauert bis
+  // zu einigen Minuten (jeder Sound wird von Gemini angehoert).
+  async function jetztHolen() {
+    setHolt(true);
+    setMeldung(null);
+    try {
+      const res = await fetch("/api/sounds/refresh", { method: "POST" });
+      const daten = (await res.json()) as {
+        error?: string;
+        erhalten?: number;
+        neu?: number;
+        bewertet?: number;
+        fehler?: string[];
+      };
+      setMeldung(
+        res.ok
+          ? `${daten.erhalten} Sounds geholt, ${daten.neu} neu, ${daten.bewertet} bewertet` +
+              (daten.fehler?.length ? `, ${daten.fehler.length} Fehler (siehe Protokoll)` : "")
+          : `Fehlgeschlagen: ${daten.error ?? res.status}`,
+      );
+      router.refresh();
+    } catch {
+      setMeldung("Keine Antwort - das Holen kann trotzdem noch laufen. Lade die Seite in einer Minute neu.");
+    } finally {
+      setHolt(false);
+    }
+  }
 
   // Ein Tipp = ein Urteil; nochmal tippen nimmt es zurueck.
   async function urteilen(s: SoundZeile, urteil: "gut" | "schlecht") {
@@ -54,6 +84,12 @@ export function SoundBibliothekListe({ sounds }: { sounds: SoundZeile[] }) {
         Sounds in der Bibliothek
         <span className="ordner-zahl">{sounds.length}</span>
       </button>
+      <p className="empty-state small">
+        <button type="button" onClick={jetztHolen} disabled={holt}>
+          {holt ? "Holt Sounds ... (bis zu 2 Minuten)" : "Sounds jetzt holen"}
+        </button>{" "}
+        {meldung}
+      </p>
       {offen &&
         (sounds.length === 0 ? (
           <p className="empty-state">Noch keine Sounds - der tägliche Zufluss startet mit dem nächsten Tageslauf.</p>
