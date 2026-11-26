@@ -4,12 +4,8 @@ import { igZugang } from "@/lib/instagram";
 import { erlaubteTrackKeys } from "@/lib/trackClient";
 import { logActivity } from "@/lib/activity";
 import { bibliotheksStand, nimmSoundsAuf } from "@/lib/soundBibliothek";
-import {
-  holeTrendSounds,
-  holeViraleLieder,
-  sucheOriginalSounds,
-  NOTFALL_LIEDER,
-} from "@/lib/soundQuelle";
+import { holeTrendSounds, sucheOriginalSounds } from "@/lib/soundQuelle";
+import { FESTE_LIEDER } from "@/lib/soundListe";
 
 // Herunterladen und Hoeren (Gemini) der neuen Sounds.
 export const maxDuration = 300;
@@ -28,11 +24,6 @@ async function auffuellen(request: NextRequest) {
     return NextResponse.json({ error: "Nicht berechtigt." }, { status: 401 });
   }
 
-  // Nur die Liederliste pruefen (schnell, ohne etwas aufzunehmen): ?nur=lieder
-  if (new URL(request.url).searchParams.get("nur") === "lieder") {
-    return NextResponse.json(await holeViraleLieder());
-  }
-
   // Ein Konto genuegt: die erste Sparte dieser App mit Zugangsdaten.
   const track = erlaubteTrackKeys().find((t) => igZugang(t));
   if (!track) {
@@ -48,34 +39,20 @@ async function auffuellen(request: NextRequest) {
 
   const ergebnis = await nimmSoundsAuf(sounds, "trend", 10);
 
-  // Zweiter Zufluss: Original-Sounds zu aktuell viralen Liedern. Scheitert er,
-  // bleibt der Trend-Zufluss trotzdem erhalten.
+  // Zweiter Zufluss: zu jedem Lied der festen Liste die passenden Original-Sounds.
+  // Scheitert er, bleibt der Trend-Zufluss trotzdem erhalten.
   let viral: { lieder: number; gefunden: number; neu: number; bewertet: number; hinweis?: string } | null = null;
   try {
-    const { lieder: gefunden, fehler: liederFehler } = await holeViraleLieder();
-    const lieder = gefunden.length > 0 ? gefunden : NOTFALL_LIEDER;
-    if (liederFehler) {
-      await logActivity(`Virale Lieder: Websuche lieferte nichts (${liederFehler}), Notfall-Liste im Einsatz.`, {
-        level: "error",
-        track,
-      });
-    }
     const treffer = [];
-    for (const lied of lieder.slice(0, 8)) {
+    for (const lied of FESTE_LIEDER) {
       treffer.push(...(await sucheOriginalSounds(track, lied)));
     }
-    const v = await nimmSoundsAuf(treffer.slice(0, 24), "viral", 8);
-    viral = {
-      lieder: lieder.length,
-      gefunden: treffer.length,
-      neu: v.neu,
-      bewertet: v.bewertet,
-      hinweis: liederFehler ? `Notfall-Lieder, weil: ${liederFehler}` : undefined,
-    };
+    const v = await nimmSoundsAuf(treffer, "viral", 12);
+    viral = { lieder: FESTE_LIEDER.length, gefunden: treffer.length, neu: v.neu, bewertet: v.bewertet };
   } catch (err) {
     const grund = err instanceof Error ? err.message : String(err);
-    viral = { lieder: 0, gefunden: 0, neu: 0, bewertet: 0, hinweis: grund };
-    await logActivity(`Sound-Zufluss ueber virale Lieder fehlgeschlagen: ${grund}`, { level: "error", track });
+    viral = { lieder: FESTE_LIEDER.length, gefunden: 0, neu: 0, bewertet: 0, hinweis: grund };
+    await logActivity(`Sound-Zufluss ueber die feste Liste fehlgeschlagen: ${grund}`, { level: "error", track });
   }
 
   return NextResponse.json({ ...ergebnis, viral, stand: await bibliotheksStand() });

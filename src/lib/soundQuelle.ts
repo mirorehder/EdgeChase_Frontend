@@ -131,7 +131,11 @@ export async function sucheOriginalSounds(
         const ms = Number(a.duration_in_ms) || 0;
         if (!a.audio_id || gesehen.has(a.audio_id)) return false;
         gesehen.add(a.audio_id);
-        return ms >= 8000 && ms <= 60_000 && passtZumLied(a.title ?? "", lied.titel);
+        return (
+          ms >= 8000 &&
+          ms <= 60_000 &&
+          passtZumLied(a.title ?? "", lied.titel, lied.kuenstler, a.ig_username)
+        );
       })
       .sort((a, b) => Number(!!b.download_url) - Number(!!a.download_url))
       .slice(0, max)

@@ -104,13 +104,28 @@ export function normalisiereTitel(t: string): string {
 
 /**
  * Gehoert ein Katalog-Sound zu diesem Lied? Der Titel des Lieds muss (wortweise)
- * im Titel des Sounds vorkommen. Zu kurze Liedtitel (unter 4 Zeichen) passen
- * nie - zu viele Zufallstreffer.
+ * im Titel des Sounds vorkommen. Zu kurze Liedtitel (unter 4 Zeichen) passen nie.
+ * Bei kurzen oder allgemeinen Titeln (unter 10 Zeichen) muss zusaetzlich der
+ * Kuenstler (ein Wort davon) im Sound-Titel oder im Creator-Namen vorkommen -
+ * sonst gaebe es zu viele Zufallstreffer ("Aces", "Divine").
  */
-export function passtZumLied(soundTitel: string, liedTitel: string): boolean {
+export function passtZumLied(
+  soundTitel: string,
+  liedTitel: string,
+  kuenstler?: string,
+  creator?: string,
+): boolean {
   const lied = normalisiereTitel(liedTitel);
   if (lied.length < 4) return false;
-  return ` ${normalisiereTitel(soundTitel)} `.includes(` ${lied} `);
+  const titel = normalisiereTitel(soundTitel);
+  if (!` ${titel} `.includes(` ${lied} `)) return false;
+  if (lied.length >= 10 || !kuenstler) return true;
+  const woerter = normalisiereTitel(kuenstler)
+    .split(" ")
+    .filter((w) => w.length >= 3);
+  if (woerter.length === 0) return true;
+  const feld = ` ${titel} ${normalisiereTitel(creator ?? "")} `;
+  return woerter.some((w) => feld.includes(w));
 }
 
 /**

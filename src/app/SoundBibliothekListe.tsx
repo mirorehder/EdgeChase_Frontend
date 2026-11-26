@@ -55,7 +55,7 @@ export function SoundBibliothekListe({ sounds }: { sounds: SoundZeile[] }) {
           ? `${daten.erhalten} Trend-Sounds geholt, ${daten.neu} neu, ${daten.bewertet} bewertet` +
               (daten.fehler?.length ? `, ${daten.fehler.length} Fehler (siehe Protokoll)` : "") +
               (daten.viral
-                ? `. Virale Lieder: ${daten.viral.lieder} geprüft, ${daten.viral.gefunden} passende Sounds, ${daten.viral.neu} neu, ${daten.viral.bewertet} bewertet` +
+                ? `. Feste Liste: ${daten.viral.lieder} Lieder geprüft, ${daten.viral.gefunden} passende Sounds, ${daten.viral.neu} neu, ${daten.viral.bewertet} bewertet` +
                   (daten.viral.hinweis ? ` (${daten.viral.hinweis})` : "")
                 : "")
           : `Fehlgeschlagen: ${daten.error ?? res.status}`,
@@ -137,7 +137,7 @@ export function SoundBibliothekListe({ sounds }: { sounds: SoundZeile[] }) {
                   <span className="historie-details">
                     {s.sekunden} s
                     {s.viralLied
-                      ? ` · zum viralen Lied: ${s.viralLied}`
+                      ? ` · zum Lied: ${s.viralLied}`
                       : s.trendRang != null
                         ? ` · Trend-Platz ${s.trendRang}`
                         : " · nicht in der Trend-Liste"}
