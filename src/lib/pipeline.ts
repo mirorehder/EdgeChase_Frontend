@@ -23,6 +23,11 @@ import {
   type ViralCandidate,
 } from "./gemini";
 import { renderPromoVideo } from "./render";
+
+/** Die EdgeChase-Sparten setzen den Text klein und dezent; Doc Meiro bleibt wie bisher. */
+export function textGroesseFuer(track: string | null | undefined): "normal" | "klein" {
+  return track === "promo" || track === "sports" || track === "clothing" ? "klein" : "normal";
+}
 import {
   bucketFromServeUrl,
   isRenderStorageConfigured,
@@ -1748,6 +1753,8 @@ export async function processJob(jobId: string): Promise<void> {
         (job.textStyle as "banner" | "reference" | null) ?? undefined,
         job.videoVolume,
         (job.textPhases as unknown as ComposedTextPhase[] | null) ?? undefined,
+        // EdgeChase-Sparten (Promo, Sports, Clothing): kleiner, dezenter Text.
+        textGroesseFuer(job.track),
       );
 
       await logActivity(

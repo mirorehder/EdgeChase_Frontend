@@ -122,6 +122,7 @@ export async function renderPromoVideo(
   textStyle?: "banner" | "reference",
   videoVolume?: number,
   textPhases?: { text: string; startMs: number; durationMs: number }[],
+  textGroesse?: "normal" | "klein",
 ): Promise<Buffer> {
   const bucket = bucketFromServeUrl(env.remotionServeUrl);
 
@@ -131,6 +132,7 @@ export async function renderPromoVideo(
     textStyle,
     videoVolume,
     textPhases: textPhases?.length ? textPhases : undefined,
+    textGroesse,
   };
 
   for (const scene of scenes) {
