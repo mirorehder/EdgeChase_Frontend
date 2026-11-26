@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { istBerechtigt } from "@/lib/ingestAuth";
+import { prisma } from "@/lib/db";
 import { bibliotheksStand, nimmSoundsAuf, type KatalogSound } from "@/lib/soundBibliothek";
 
 // Zeit fuer das Herunterladen und Hoeren (Gemini) der neuen Sounds.
@@ -45,6 +46,29 @@ export async function POST(request: NextRequest) {
 export async function GET(request: NextRequest) {
   if (!istBerechtigt(request)) {
     return NextResponse.json({ error: "Nicht berechtigt." }, { status: 401 });
+  }
+  if (new URL(request.url).searchParams.get("liste")) {
+    // Kurzer Ueberblick: die Sounds mit Bewertung, beste zuerst.
+    const zeilen = await prisma.soundBibliothek.findMany({
+      orderBy: [{ druck: { sort: "desc", nulls: "last" } }],
+      take: 60,
+    });
+    return NextResponse.json(
+      zeilen.map((z) => ({
+        id: z.audioId,
+        titel: z.titel,
+        von: z.kuenstler,
+        s: Math.round(z.dauerMs / 1000),
+        alter: z.alterTage,
+        rang: z.trendRang,
+        druck: z.druck,
+        start: z.startStaerke,
+        tauglich: z.tauglich,
+        saisonal: z.saisonal,
+        tags: z.vibeTags,
+        text: z.vibeBeschreibung,
+      })),
+    );
   }
   const data = new URL(request.url).searchParams.get("data");
   if (data) {

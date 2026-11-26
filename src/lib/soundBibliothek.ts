@@ -224,7 +224,19 @@ async function bewerteUndSpeichere(
   try {
     const audio = await ladeAudio(url);
     if (!audio) return false;
-    const b = await bewerteSound(audio, info, geschmack);
+    // Gemini im Gratis-Tarif erlaubt 15 Anfragen pro Minute: Abstand halten und
+    // bei einer Ablehnung (429) einmal nach der genannten Wartezeit wiederholen.
+    await new Promise((r) => setTimeout(r, 4500));
+    let b;
+    try {
+      b = await bewerteSound(audio, info, geschmack);
+    } catch (err) {
+      const text = err instanceof Error ? err.message : String(err);
+      if (!/429|RESOURCE_EXHAUSTED/.test(text)) throw err;
+      const sek = Number(/retry in ([\d.]+)s/i.exec(text)?.[1] ?? 15);
+      await new Promise((r) => setTimeout(r, Math.min(30, Math.ceil(sek) + 2) * 1000));
+      b = await bewerteSound(audio, info, geschmack);
+    }
     await prisma.soundBibliothek.update({
       where: { audioId },
       data: {
