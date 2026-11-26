@@ -36,10 +36,27 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({ ...ergebnis, stand: await bibliotheksStand() });
 }
 
-/** Zustand der Bibliothek - fuer die Anzeige und fuer die taegliche Routine. */
+/**
+ * Ohne Parameter: Zustand der Bibliothek (fuer Anzeige und Routine).
+ * Mit ?data=<base64url-JSON im Format des POST-Bodys>: nimmt Sounds auf - fuer
+ * Aufrufer, die nur GET koennen. Nur wenige Sounds je Aufruf (URL-Laenge).
+ */
 export async function GET(request: NextRequest) {
   if (!istBerechtigt(request)) {
     return NextResponse.json({ error: "Nicht berechtigt." }, { status: 401 });
+  }
+  const data = new URL(request.url).searchParams.get("data");
+  if (data) {
+    try {
+      const body = JSON.parse(Buffer.from(data, "base64url").toString("utf8")) as { sounds?: KatalogSound[] };
+      if (!Array.isArray(body.sounds) || body.sounds.length === 0 || body.sounds.length > 20) {
+        return NextResponse.json({ error: "1 bis 20 Sounds erwartet." }, { status: 400 });
+      }
+      const ergebnis = await nimmSoundsAuf(body.sounds);
+      return NextResponse.json({ ...ergebnis, stand: await bibliotheksStand() });
+    } catch {
+      return NextResponse.json({ error: "data ist kein gueltiges base64url-JSON." }, { status: 400 });
+    }
   }
   return NextResponse.json(await bibliotheksStand());
 }
