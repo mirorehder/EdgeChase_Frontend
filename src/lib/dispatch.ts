@@ -32,7 +32,7 @@ const ANSTOSS_MS = 1500;
  * setzt Vercel selbst), geht er mit, damit der Deployment-Schutz den
  * Selbstaufruf nicht abfängt.
  */
-async function anstossen(url: string, videoId: string): Promise<void> {
+async function anstossen(url: string, videoId?: string): Promise<void> {
   const headers: Record<string, string> = { "x-api-key": env.cronSecret };
   const bypass = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
   if (bypass) headers["x-vercel-protection-bypass"] = bypass;
@@ -57,6 +57,11 @@ async function anstossen(url: string, videoId: string): Promise<void> {
     });
 
   await Promise.race([anfrage, new Promise((r) => setTimeout(r, ANSTOSS_MS))]);
+}
+
+/** Stoesst die taegliche Auffuellung der Sound-Bibliothek in eigener Ausfuehrung an. */
+export async function dispatchSoundRefresh(baseUrl: string): Promise<void> {
+  await anstossen(`${baseUrl}/api/sounds/refresh`);
 }
 
 export async function dispatchJob(jobId: string, baseUrl: string): Promise<void> {

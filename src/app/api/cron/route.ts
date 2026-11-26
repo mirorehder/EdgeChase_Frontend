@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { env } from "@/lib/env";
 import { planDailyJob, planViralRun } from "@/lib/pipeline";
-import { baseUrlFromRequest, starteWartende, weckeWartende } from "@/lib/dispatch";
+import { baseUrlFromRequest, dispatchSoundRefresh, starteWartende, weckeWartende } from "@/lib/dispatch";
 import { logActivity } from "@/lib/activity";
 import { ZEITPLAN_SPARTEN } from "@/lib/viralSchedule";
 import { erlaubteTrackKeys } from "@/lib/trackClient";
@@ -55,9 +55,8 @@ export async function GET(request: NextRequest) {
     ),
   );
 
-  // Die Sound-Bibliothek wird von aussen taeglich aufgefuellt (/api/sounds/ingest).
-  // Hier nur der Waechter: bleibt der Zufluss aus, steht es im Protokoll, bevor
-  // die Posts wieder bei den immer gleichen Sounds landen.
+  // Der Waechter: bleibt der Zufluss aus, steht es im Protokoll, bevor die
+  // Posts wieder bei den immer gleichen Sounds landen.
   await bibliotheksStand()
     .then(async (stand) => {
       const tageAlt = stand.letzteAufnahme
@@ -66,13 +65,16 @@ export async function GET(request: NextRequest) {
       if (stand.brauchbar < 5 || tageAlt > 3) {
         await logActivity(
           `Sound-Bibliothek schwach: ${stand.brauchbar} brauchbare Sounds, letzter Zufluss ` +
-            `${Number.isFinite(tageAlt) ? `vor ${Math.round(tageAlt)} Tagen` : "noch nie"}. ` +
-            "Die taegliche Sound-Routine laeuft offenbar nicht.",
+            `${Number.isFinite(tageAlt) ? `vor ${Math.round(tageAlt)} Tagen` : "noch nie"}.`,
           { level: "error" },
         );
       }
     })
     .catch(() => null);
+
+  // Die Sound-Bibliothek wird taeglich aufgefuellt: die frischen Trend-Sounds
+  // werden in einer eigenen Ausfuehrung geholt und bewertet (eigene 300 s).
+  await dispatchSoundRefresh(baseUrl).catch(() => null);
 
   let jobId: string | null = null;
   let promoFehler: string | null = null;
