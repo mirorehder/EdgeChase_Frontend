@@ -198,7 +198,7 @@ export default async function DashboardPage() {
   ]);
   const soundRows = await prisma.soundBibliothek
     .findMany({
-      orderBy: [{ status: "asc" }, { druck: "desc" }],
+      orderBy: [{ status: "asc" }, { urteil: "asc" }, { druck: "desc" }],
       take: 60,
     })
     .catch(() => []);
@@ -229,6 +229,8 @@ export default async function DashboardPage() {
     tags: r.vibeTags,
     beschreibung: r.vibeBeschreibung,
     zuletztGepostet: zuletzt.get(r.audioId) ?? null,
+    trendRang: r.trendRang,
+    urteil: r.urteil,
   }));
   const daten = Object.fromEntries(
     spartenListe.map((s, i) => [s.key, sparten[i]]),

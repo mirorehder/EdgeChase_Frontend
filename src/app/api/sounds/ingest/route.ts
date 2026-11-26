@@ -11,7 +11,8 @@ export const dynamic = "force-dynamic";
  *
  * Body: { "sounds": [ { audio_id, title, display_artist?, ig_username?,
  * duration_in_ms, audio_type, download_url? }, ... ] } - also genau das, was
- * die Suche im Audio-Katalog liefert. Neue Sounds werden von Gemini angehoert
+ * die Suche im Audio-Katalog liefert; "quelle": "trend" (Standard, die Reihenfolge
+ * ist der Platz in der Trend-Liste) oder "suche". Neue Sounds werden von Gemini angehoert
  * und bewertet (aggressiv? starker Einstieg? saisonal?).
  *
  * Geschuetzt mit dem gleichen Schluessel wie die uebrigen Aufrufe von aussen.
@@ -20,9 +21,9 @@ export async function POST(request: NextRequest) {
   if (!istBerechtigt(request)) {
     return NextResponse.json({ error: "Nicht berechtigt." }, { status: 401 });
   }
-  let body: { sounds?: KatalogSound[] };
+  let body: { sounds?: KatalogSound[]; quelle?: string };
   try {
-    body = (await request.json()) as { sounds?: KatalogSound[] };
+    body = (await request.json()) as { sounds?: KatalogSound[]; quelle?: string };
   } catch {
     return NextResponse.json({ error: "Kein gueltiges JSON." }, { status: 400 });
   }
@@ -32,7 +33,7 @@ export async function POST(request: NextRequest) {
   if (body.sounds.length > 200) {
     return NextResponse.json({ error: "Hoechstens 200 Sounds pro Aufruf." }, { status: 400 });
   }
-  const ergebnis = await nimmSoundsAuf(body.sounds);
+  const ergebnis = await nimmSoundsAuf(body.sounds, body.quelle === "suche" ? "suche" : "trend");
   return NextResponse.json({ ...ergebnis, stand: await bibliotheksStand() });
 }
 
@@ -48,11 +49,11 @@ export async function GET(request: NextRequest) {
   const data = new URL(request.url).searchParams.get("data");
   if (data) {
     try {
-      const body = JSON.parse(Buffer.from(data, "base64url").toString("utf8")) as { sounds?: KatalogSound[] };
+      const body = JSON.parse(Buffer.from(data, "base64url").toString("utf8")) as { sounds?: KatalogSound[]; quelle?: string };
       if (!Array.isArray(body.sounds) || body.sounds.length === 0 || body.sounds.length > 20) {
         return NextResponse.json({ error: "1 bis 20 Sounds erwartet." }, { status: 400 });
       }
-      const ergebnis = await nimmSoundsAuf(body.sounds);
+      const ergebnis = await nimmSoundsAuf(body.sounds, body.quelle === "suche" ? "suche" : "trend");
       return NextResponse.json({ ...ergebnis, stand: await bibliotheksStand() });
     } catch {
       return NextResponse.json({ error: "data ist kein gueltiges base64url-JSON." }, { status: 400 });

@@ -817,5 +817,14 @@ model SoundBibliothek {
   vibeTags         String[]
   vibeBeschreibung String?
 
+  /// Platz in der Trend-Liste beim letzten Zufluss (1 = ganz vorne). null =
+  /// kam nicht aus der Trend-Liste (z. B. Stichwortsuche) und gilt als wenig bekannt.
+  trendRang Int?
+
+  /// Dein Urteil: "gut" (bevorzugt, dient Gemini als Vorbild), "schlecht"
+  /// (wird nie mehr verwendet, dient Gemini als Gegenbeispiel) oder null.
+  urteil   String?
+  urteilAt DateTime?
+
   @@index([status, zuletztGesehenAt])
 }
