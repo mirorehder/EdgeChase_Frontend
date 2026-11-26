@@ -6,6 +6,7 @@ import { logActivity } from "@/lib/activity";
 import { ZEITPLAN_SPARTEN } from "@/lib/viralSchedule";
 import { erlaubteTrackKeys } from "@/lib/trackClient";
 import { holeRueckstandNach } from "@/lib/postAuto";
+import { bibliotheksStand } from "@/lib/soundBibliothek";
 
 // Abgleich, Analyse und Zusammenstellung brauchen mehr als den Vercel-
 // Standardwert von 10 Sekunden. Gerendert wird hier nicht mehr.
@@ -53,6 +54,25 @@ export async function GET(request: NextRequest) {
       { level: "error" },
     ),
   );
+
+  // Die Sound-Bibliothek wird von aussen taeglich aufgefuellt (/api/sounds/ingest).
+  // Hier nur der Waechter: bleibt der Zufluss aus, steht es im Protokoll, bevor
+  // die Posts wieder bei den immer gleichen Sounds landen.
+  await bibliotheksStand()
+    .then(async (stand) => {
+      const tageAlt = stand.letzteAufnahme
+        ? (Date.now() - stand.letzteAufnahme.getTime()) / 86_400_000
+        : Infinity;
+      if (stand.brauchbar < 5 || tageAlt > 3) {
+        await logActivity(
+          `Sound-Bibliothek schwach: ${stand.brauchbar} brauchbare Sounds, letzter Zufluss ` +
+            `${Number.isFinite(tageAlt) ? `vor ${Math.round(tageAlt)} Tagen` : "noch nie"}. ` +
+            "Die taegliche Sound-Routine laeuft offenbar nicht.",
+          { level: "error" },
+        );
+      }
+    })
+    .catch(() => null);
 
   let jobId: string | null = null;
   let promoFehler: string | null = null;

@@ -265,6 +265,14 @@ model PromoVideo {
   postedMediaId String?
   postedAt      DateTime?
 
+  /// Der Sound, der WIRKLICH am Reel hängt (egal ob vom Konzept, aus der
+  /// Sound-Bibliothek oder aus dem Pool). Grundlage der Wartezeit: ein Sound
+  /// kommt in derselben Sparte nicht gleich wieder dran. Früher wurde der
+  /// gewählte Sound nirgends festgehalten.
+  postSoundAudioId  String?
+  postSoundTitle    String?
+  postSoundHerkunft String?
+
   /// Öffentlich ladbarer Link zum fertigen Video im Remotion-Bucket.
   ///
   /// Instagram muss das Video von einer öffentlichen Adresse holen können; die
@@ -770,4 +778,44 @@ model PostLauf {
 
   @@index([at])
   @@index([track, at])
+}
+
+/// Die Sound-Bibliothek: frische, bewertete Kandidaten aus Instagrams
+/// Audio-Katalog. Sie wird täglich automatisch aufgefüllt; die Posting-
+/// Automatik wählt daraus den Sound, der am besten zum Video passt.
+model SoundBibliothek {
+  audioId String @id
+
+  titel     String
+  kuenstler String?
+  dauerMs   Int
+  /// "original_sound" (Reels-tauglich, beginnt am Hook) oder "music".
+  typ       String  @default("original_sound")
+  /// Alter des Sounds in Tagen (aus der Katalog-Adresse gelesen), falls bekannt.
+  alterTage Int?
+
+  ersterFundAt     DateTime @default(now())
+  /// Zuletzt im Katalog gesehen. Lange nicht mehr gesehen = kein Trend mehr.
+  zuletztGesehenAt DateTime @default(now())
+
+  /// "aktiv", "gesperrt" (bei Instagram nicht verwendbar) oder "veraltet".
+  status     String  @default("aktiv")
+  sperrGrund String?
+  /// Wie oft die Prüfung vor dem Posten für diesen Sound scheiterte.
+  fehlversuche Int   @default(0)
+
+  /// Bewertung durch Gemini aus dem Audio selbst.
+  bewertetAt       DateTime?
+  /// 0..1: wie aggressiv / pushend / treibend.
+  druck            Float?
+  /// 0..1: wie stark der Sound ab Sekunde 0 einsetzt (kein ruhiges Intro).
+  startStaerke     Float?
+  /// Weihnachten, Sommerhit-Saison etc. - nicht ganzjährig einsetzbar.
+  saisonal         Boolean  @default(false)
+  /// false = ungeeignet (Gesang mit Text über dem Video, Podcast, Geräusch ...).
+  tauglich         Boolean?
+  vibeTags         String[]
+  vibeBeschreibung String?
+
+  @@index([status, zuletztGesehenAt])
 }
