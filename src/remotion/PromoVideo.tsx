@@ -61,6 +61,13 @@ export const promoVideoSchema = z.object({
   videoVolume: z.number().min(0).max(4).optional(),
   /** Leer bedeutet: hookText steht über der ganzen Länge. */
   textPhases: z.array(textPhaseSchema).optional(),
+  /**
+   * Grösse des Textes. "klein" setzt den Text so, wie man ihn von Instagram-
+   * Reels kennt: dezent (laengste Zeile rund die Haelfte der Bildbreite), dünne Kontur, schmaler
+   * Satzspiegel, knapp oberhalb der Bildmitte. Ohne Angabe bleibt der
+   * bisherige, grosse Text.
+   */
+  textGroesse: z.enum(["normal", "klein"]).optional(),
 });
 
 export type PromoVideoProps = z.infer<typeof promoVideoSchema>;
@@ -180,6 +187,28 @@ const TEXT_STYLES: Record<z.infer<typeof textStyleSchema>, TextStyleSpec> = {
     fontSource: { family: "Fredoka", weight: "600", data: FREDOKA_600 },
   },
 };
+
+/**
+ * Der kleine, dezente Text: aus jedem Stil wird durch Deckelung der Groesse,
+ * duenne Kontur und schmalen Satzspiegel der Instagram-Look. Die Schrift des
+ * Stils bleibt erhalten.
+ */
+const KLEIN_MAX_PX = 44; // wie im Instagram-Vorbild: laengste Zeile rund 55 % der Breite
+const KLEIN_MIN_PX = 30;
+
+function kleinerText(spec: TextStyleSpec): TextStyleSpec {
+  return {
+    ...spec,
+    fontSizeMax: Math.min(spec.fontSizeMax, KLEIN_MAX_PX),
+    fontSizeMin: Math.min(spec.fontSizeMin, KLEIN_MIN_PX),
+    maxWidthRatio: Math.min(spec.maxWidthRatio, 0.7),
+    strokePx: Math.min(spec.strokePx, 2),
+    lineHeight: Math.min(spec.lineHeight, 1.18),
+    // Auch bei den Stilen, die sonst oben sitzen: knapp oberhalb der Mitte.
+    centerYRatio: 0.45,
+    paddingTopRatio: undefined,
+  };
+}
 
 /** Bettet die Schrift ein und haelt den Render an, bis sie geladen ist -
  *  sonst wird das erste Bild mit der Ersatzschrift gezeichnet. */
@@ -352,10 +381,12 @@ export const PromoVideo: React.FC<PromoVideoProps> = ({
   textStyle,
   videoVolume,
   textPhases,
+  textGroesse,
 }) => {
   const { fps } = useVideoConfig();
   const volume = videoVolume ?? 1;
-  const spec = TEXT_STYLES[textStyle ?? "banner"];
+  const basis = TEXT_STYLES[textStyle ?? "banner"];
+  const spec = textGroesse === "klein" ? kleinerText(basis) : basis;
   // Der alte Referenz-Stil bringt seine Schrift noch ueber den frueheren Weg
   // mit; die neuen tragen ihre Quelle selbst.
   useEmbeddedFont(
