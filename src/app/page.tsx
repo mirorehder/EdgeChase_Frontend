@@ -30,6 +30,7 @@ import {
 import { getSoundTagKatalog } from "@/lib/soundTagStore";
 import { SoundTagKatalog } from "./SoundTagKatalog";
 import { SoundBibliothekStatus } from "./SoundBibliothekStatus";
+import { SoundBibliothekListe, type SoundZeile } from "./SoundBibliothekListe";
 import { bibliotheksStand } from "@/lib/soundBibliothek";
 import { chFormatZeitstempel } from "@/lib/zeit";
 
@@ -195,6 +196,40 @@ export default async function DashboardPage() {
     getSoundTagKatalog(),
     bibliotheksStand().catch(() => null),
   ]);
+  const soundRows = await prisma.soundBibliothek
+    .findMany({
+      orderBy: [{ status: "asc" }, { druck: "desc" }],
+      take: 60,
+    })
+    .catch(() => []);
+  const verwendet = await prisma.promoVideo
+    .findMany({
+      where: { postedAt: { not: null }, postSoundAudioId: { in: soundRows.map((r) => r.audioId) } },
+      orderBy: { postedAt: "desc" },
+      select: { postSoundAudioId: true, postedAt: true },
+    })
+    .catch(() => []);
+  const zuletzt = new Map<string, string>();
+  for (const v of verwendet) {
+    if (v.postSoundAudioId && v.postedAt && !zuletzt.has(v.postSoundAudioId)) {
+      zuletzt.set(v.postSoundAudioId, chFormatZeitstempel(v.postedAt));
+    }
+  }
+  const soundZeilen: SoundZeile[] = soundRows.map((r) => ({
+    audioId: r.audioId,
+    titel: r.titel,
+    kuenstler: r.kuenstler,
+    sekunden: Math.round(r.dauerMs / 1000),
+    alterTage: r.alterTage,
+    status: r.status,
+    druck: r.druck,
+    startStaerke: r.startStaerke,
+    tauglich: r.tauglich,
+    saisonal: r.saisonal,
+    tags: r.vibeTags,
+    beschreibung: r.vibeBeschreibung,
+    zuletztGepostet: zuletzt.get(r.audioId) ?? null,
+  }));
   const daten = Object.fromEntries(
     spartenListe.map((s, i) => [s.key, sparten[i]]),
   ) as Record<Track, TrackData>;
@@ -271,6 +306,7 @@ export default async function DashboardPage() {
       </p>
 
       {soundStand && <SoundBibliothekStatus stand={soundStand} />}
+      <SoundBibliothekListe sounds={soundZeilen} />
       <SoundTagKatalog katalog={soundTagKatalog} />
 
       <Sparten inhalte={inhalte} tracks={spartenListe} />
