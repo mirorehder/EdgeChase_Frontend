@@ -21,6 +21,37 @@ export interface SoundBewertung {
   vibeBeschreibung: string;
 }
 
+/**
+ * Dein Geschmack als Maßstab. Zu Beginn steht hier, was du bisher gesagt hast;
+ * sobald du in der Bibliothek Daumen vergibst, kommen deren Sounds dazu.
+ */
+export interface Geschmack {
+  gut: string[];
+  schlecht: string[];
+}
+
+export const START_GESCHMACK: Geschmack = {
+  gut: [
+    "Lala Miyagi - Chief Keef x M.IA mix (harter, treibender Rap-Beat)",
+    "DROP IT LIKE ITS HOT x STAYIN ALIVE (ALTÉGO MIX) (wuchtiger, tanzbarer Mashup-Remix)",
+  ],
+  schlecht: [
+    "Sparks by Evan Jacobson (viel zu chillig, gemütlich)",
+    "unbekannte Phonk-Sounds von Kleinst-Creatorn (müllig, nicht bekannt)",
+  ],
+};
+
+function geschmackText(g: Geschmack): string {
+  const gut = g.gut.map((t) => `- ${t}`).join("\n");
+  const schlecht = g.schlecht.map((t) => `- ${t}`).join("\n");
+  return `Der Geschmack des Auftraggebers - daran misst du:
+So soll es klingen (gut):
+${gut || "- (noch keine Angabe)"}
+So nicht (schlecht):
+${schlecht || "- (noch keine Angabe)"}
+Bewerte streng nach diesem Maßstab: ein Sound, der eher wie die guten klingt, bekommt hohe Werte; was eher wie die schlechten klingt (zu weich, zu verträumt, beliebig), bekommt niedrige.`;
+}
+
 const zahl01 = (v: unknown, standard: number) => {
   const n = Number(v);
   return Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : standard;
@@ -29,6 +60,7 @@ const zahl01 = (v: unknown, standard: number) => {
 export async function bewerteSound(
   audio: Buffer,
   info: { titel: string; kuenstler: string | null; dauerMs: number },
+  geschmack: Geschmack = START_GESCHMACK,
 ): Promise<SoundBewertung> {
   const ai = client();
   const response = await ai.models.generateContent({
@@ -51,7 +83,7 @@ Höre genau hin und bewerte:
 - vibeTags: 2 bis 5 kurze englische Stichworte zur Stimmung, z. B. "aggressive", "dark", "phonk", "hype", "motivational", "bass-heavy", "cinematic", "chill", "emotional".
 - vibeBeschreibung: ein Satz auf Deutsch, was der Sound auslöst und zu welchen Bildern er passt.
 
-Sei streng bei druck und startStaerke - die meisten Sounds sind nicht hart.`,
+${geschmackText(geschmack)}\n\nSei streng bei druck und startStaerke - die meisten Sounds sind nicht hart.`,
           },
         ],
       },
@@ -104,6 +136,7 @@ export interface VideoBeschreibung {
 export async function waehleBestenSound(
   video: VideoBeschreibung,
   kandidaten: SoundKandidat[],
+  geschmack: Geschmack = START_GESCHMACK,
 ): Promise<{ audioId: string; grund: string } | null> {
   if (kandidaten.length === 0) return null;
   if (kandidaten.length === 1) {
@@ -136,6 +169,8 @@ Eingeblendeter Text: ${video.hookText.replace(/\n/g, " ") || "-"}
 ${video.thema ? `Thema/Regie: ${video.thema}\n` : ""}${momente ? `Gezeigte Momente:\n${momente}\n` : ""}
 Kandidaten:
 ${liste}
+
+${geschmackText(geschmack)}
 
 Wähle den EINEN besten. Achte darauf, dass die Stimmung des Sounds zum Inhalt passt (z. B. hartes Training und krasse Tricks brauchen harten Druck, eine ironische Serie darf verspielter sein). Antworte mit der Nummer und einem kurzen Grund.`,
             },

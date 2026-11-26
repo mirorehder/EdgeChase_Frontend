@@ -2,7 +2,13 @@ import { prisma } from "./db";
 import { logActivity } from "./activity";
 import { igZugang, pruefeAudioId } from "./instagram";
 import type { Track } from "./trackClient";
-import { bewerteSound, waehleBestenSound, type VideoBeschreibung } from "./soundKi";
+import {
+  bewerteSound,
+  waehleBestenSound,
+  START_GESCHMACK,
+  type Geschmack,
+  type VideoBeschreibung,
+} from "./soundKi";
 import {
   alterAusDownloadUrl,
   rangliste,
@@ -44,7 +50,39 @@ function alsKandidat(r: SoundBibliothek): SoundKandidat {
     vibeTags: r.vibeTags,
     vibeBeschreibung: r.vibeBeschreibung,
     bewertet: r.bewertetAt != null,
+    trendRang: r.trendRang,
+    urteil: r.urteil,
   };
+}
+
+/**
+ * Dein Geschmack für Gemini: die Startangaben plus alles, was du in der
+ * Bibliothek mit Daumen bewertet hast (mit der Beschreibung, wie der Sound klingt).
+ */
+export async function ladeGeschmack(): Promise<Geschmack> {
+  const zeilen = await prisma.soundBibliothek
+    .findMany({
+      where: { urteil: { in: ["gut", "schlecht"] } },
+      orderBy: { urteilAt: "desc" },
+      take: 16,
+      select: { titel: true, kuenstler: true, urteil: true, vibeBeschreibung: true },
+    })
+    .catch(() => []);
+  const text = (z: (typeof zeilen)[number]) =>
+    `${z.titel}${z.kuenstler ? ` (${z.kuenstler})` : ""}${z.vibeBeschreibung ? ` - ${z.vibeBeschreibung}` : ""}`;
+  return {
+    gut: [...START_GESCHMACK.gut, ...zeilen.filter((z) => z.urteil === "gut").map(text)],
+    schlecht: [...START_GESCHMACK.schlecht, ...zeilen.filter((z) => z.urteil === "schlecht").map(text)],
+  };
+}
+
+/** Dein Daumen: "gut", "schlecht" oder null (Urteil zurücknehmen). */
+export async function setzeUrteil(audioId: string, urteil: "gut" | "schlecht" | null): Promise<boolean> {
+  const r = await prisma.soundBibliothek.updateMany({
+    where: { audioId },
+    data: { urteil, urteilAt: urteil ? new Date() : null },
+  });
+  return r.count > 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -77,7 +115,12 @@ async function ladeAudio(url: string): Promise<Buffer | null> {
  * "gerade gesehen" markiert; neue werden (wenn ihre Audiodatei erreichbar ist)
  * von Gemini gehört und bewertet.
  */
-export async function nimmSoundsAuf(rohe: KatalogSound[]): Promise<AufnahmeErgebnis> {
+export async function nimmSoundsAuf(
+  rohe: KatalogSound[],
+  /** "trend" = Liste der trendenden Sounds (Reihenfolge = Platz); "suche" = Stichwortsuche. */
+  quelle: "trend" | "suche" = "trend",
+): Promise<AufnahmeErgebnis> {
+  const geschmack = await ladeGeschmack();
   const ergebnis: AufnahmeErgebnis = {
     erhalten: rohe.length,
     neu: 0,
@@ -101,7 +144,10 @@ export async function nimmSoundsAuf(rohe: KatalogSound[]): Promise<AufnahmeErgeb
 
   const jetzt = new Date();
   let neuBewertet = 0;
+  let platz = 0;
   for (const s of nachId.values()) {
+    platz++;
+    const trendRang = quelle === "trend" ? platz : null;
     const dauerMs = Math.round(Number(s.duration_in_ms) || 0);
     if (dauerMs < 3000) {
       ergebnis.uebersprungen++;
@@ -117,6 +163,8 @@ export async function nimmSoundsAuf(rohe: KatalogSound[]): Promise<AufnahmeErgeb
         where: { audioId: s.audio_id },
         data: {
           zuletztGesehenAt: jetzt,
+          // Der Platz in der Trend-Liste gilt immer fuer den letzten Zufluss.
+          ...(quelle === "trend" ? { trendRang } : {}),
           ...(alterTage != null && vorhanden.alterTage == null ? { alterTage } : {}),
           // Ein "veralteter" Sound, der wieder im Katalog auftaucht, ist wieder im Trend.
           ...(vorhanden.status === "veraltet" ? { status: "aktiv" } : {}),
@@ -125,7 +173,7 @@ export async function nimmSoundsAuf(rohe: KatalogSound[]): Promise<AufnahmeErgeb
       // Bisher unbewertet, jetzt mit Audio erreichbar: nachholen.
       if (vorhanden.bewertetAt == null && s.download_url && neuBewertet < MAX_NEU_BEWERTEN) {
         neuBewertet++;
-        if (await bewerteUndSpeichere(s.audio_id, s.download_url, { titel, kuenstler, dauerMs }, ergebnis))
+        if (await bewerteUndSpeichere(s.audio_id, s.download_url, { titel, kuenstler, dauerMs }, ergebnis, geschmack))
           ergebnis.bewertet++;
       }
       ergebnis.aktualisiert++;
@@ -141,13 +189,14 @@ export async function nimmSoundsAuf(rohe: KatalogSound[]): Promise<AufnahmeErgeb
         typ: s.audio_type === "music" ? "music" : "original_sound",
         alterTage,
         zuletztGesehenAt: jetzt,
+        trendRang,
         vibeTags: [],
       },
     });
     ergebnis.neu++;
     if (s.download_url && neuBewertet < MAX_NEU_BEWERTEN) {
       neuBewertet++;
-      if (await bewerteUndSpeichere(s.audio_id, s.download_url, { titel, kuenstler, dauerMs }, ergebnis))
+      if (await bewerteUndSpeichere(s.audio_id, s.download_url, { titel, kuenstler, dauerMs }, ergebnis, geschmack))
         ergebnis.bewertet++;
     }
   }
@@ -170,11 +219,12 @@ async function bewerteUndSpeichere(
   url: string,
   info: { titel: string; kuenstler: string | null; dauerMs: number },
   ergebnis: AufnahmeErgebnis,
+  geschmack: Geschmack,
 ): Promise<boolean> {
   try {
     const audio = await ladeAudio(url);
     if (!audio) return false;
-    const b = await bewerteSound(audio, info);
+    const b = await bewerteSound(audio, info, geschmack);
     await prisma.soundBibliothek.update({
       where: { audioId },
       data: {
@@ -261,12 +311,13 @@ export async function waehleAusBibliothek(
   if (zeilen.length === 0) return null;
 
   const verwendet = await zuletztVerwendeteSounds(track);
+  const geschmack = await ladeGeschmack();
   let rang = rangliste(zeilen.map(alsKandidat), video.sekunden * 1000, verwendet, opt.zufall);
   const zugang = igZugang(track);
 
   for (let versuch = 0; versuch < 5 && rang.length > 0; versuch++) {
     const spitze = rang.slice(0, 6);
-    const ki = await waehleBestenSound(video, spitze);
+    const ki = await waehleBestenSound(video, spitze, geschmack);
     const gewaehlt = spitze.find((k) => k.audioId === ki?.audioId) ?? spitze[0];
 
     // Ohne Zugangsdaten (Trockenlauf) gibt es nichts zu prüfen.

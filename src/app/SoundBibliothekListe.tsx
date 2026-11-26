@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 
 /**
  * Die Sounds der Bibliothek mit Bewertung und einem Link zur Hörprobe in
@@ -21,12 +22,31 @@ export interface SoundZeile {
   tags: string[];
   beschreibung: string | null;
   zuletztGepostet: string | null;
+  trendRang: number | null;
+  urteil: string | null;
 }
 
 const prozent = (v: number | null) => (v == null ? "–" : `${Math.round(v * 100)}`);
 
 export function SoundBibliothekListe({ sounds }: { sounds: SoundZeile[] }) {
   const [offen, setOffen] = useState(false);
+  const router = useRouter();
+
+  // Ein Tipp = ein Urteil; nochmal tippen nimmt es zurueck.
+  async function urteilen(s: SoundZeile, urteil: "gut" | "schlecht") {
+    const neu = s.urteil === urteil ? null : urteil;
+    try {
+      await fetch("/api/sounds/urteil", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ audioId: s.audioId, urteil: neu }),
+      });
+      router.refresh();
+    } catch {
+      /* naechster Tipp versucht es erneut */
+    }
+  }
+
   return (
     <section className="post-historie">
       <button className="abschnitt-titel" onClick={() => setOffen(!offen)} aria-expanded={offen}>
@@ -43,6 +63,23 @@ export function SoundBibliothekListe({ sounds }: { sounds: SoundZeile[] }) {
               <li key={s.audioId} className="historie-zeile">
                 <span className="historie-zeit">
                   Druck {prozent(s.druck)} · Start {prozent(s.startStaerke)}
+                  <br />
+                  <button
+                    type="button"
+                    onClick={() => urteilen(s, "gut")}
+                    aria-pressed={s.urteil === "gut"}
+                    title="Gut - bevorzugen"
+                  >
+                    {s.urteil === "gut" ? "👍✔" : "👍"}
+                  </button>{" "}
+                  <button
+                    type="button"
+                    onClick={() => urteilen(s, "schlecht")}
+                    aria-pressed={s.urteil === "schlecht"}
+                    title="Schlecht - nie mehr verwenden"
+                  >
+                    {s.urteil === "schlecht" ? "👎✔" : "👎"}
+                  </button>
                 </span>
                 <span className="historie-mitte">
                   <span className="historie-titel">
@@ -57,6 +94,7 @@ export function SoundBibliothekListe({ sounds }: { sounds: SoundZeile[] }) {
                   </span>
                   <span className="historie-details">
                     {s.sekunden} s
+                    {s.trendRang != null ? ` · Trend-Platz ${s.trendRang}` : " · nicht in der Trend-Liste"}
                     {s.alterTage != null ? ` · ${s.alterTage} Tage alt` : ""}
                     {s.status !== "aktiv" ? ` · ${s.status}` : ""}
                     {s.tauglich === false ? " · untauglich" : ""}

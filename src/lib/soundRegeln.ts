@@ -19,6 +19,10 @@ export interface SoundKandidat {
   vibeTags: string[];
   vibeBeschreibung: string | null;
   bewertet: boolean;
+  /** Platz in der Trend-Liste (1 = vorne); null = nicht aus der Trend-Liste. */
+  trendRang: number | null;
+  /** Dein Urteil: "gut", "schlecht" oder null. */
+  urteil: string | null;
 }
 
 /** Ein Sound länger als das hier ist für Reels unhandlich. */
@@ -64,6 +68,7 @@ export function frischeWert(alterTage: number | null): number {
  * und der Rest läuft stumm.
  */
 export function istGeeignet(k: SoundKandidat, videoMs: number): boolean {
+  if (k.urteil === "schlecht") return false;
   if (k.tauglich === false) return false;
   if (k.saisonal) return false;
   if (k.dauerMs > MAX_SOUND_MS) return false;
@@ -72,14 +77,29 @@ export function istGeeignet(k: SoundKandidat, videoMs: number): boolean {
 }
 
 /**
+ * Wie bekannt ein Sound wirkt: vorne in der Trend-Liste = bekannt. Sounds, die
+ * nicht aus der Trend-Liste stammen, gelten als kaum bekannt.
+ */
+export function bekanntWert(trendRang: number | null): number {
+  if (trendRang == null) return 0.15;
+  return Math.max(0.2, 1 - (trendRang - 1) / 30);
+}
+
+/**
  * Grundwert eines Kandidaten (0..1) ohne Rücksicht auf das einzelne Video:
- * treibend, stark am Anfang, frisch. Der Zufall verhindert, dass immer
- * derselbe Sound oben steht.
+ * treibend, stark am Anfang, bekannt, frisch - und dein "gut" zählt extra.
+ * Der Zufall verhindert, dass immer derselbe Sound oben steht.
  */
 export function grundWert(k: SoundKandidat, zufall: number): number {
   const druck = k.druck ?? 0.35;
   const start = k.startStaerke ?? 0.35;
-  return druck * 0.45 + start * 0.2 + frischeWert(k.alterTage) * 0.2 + zufall * 0.15;
+  const wert =
+    druck * 0.35 +
+    start * 0.15 +
+    bekanntWert(k.trendRang) * 0.2 +
+    frischeWert(k.alterTage) * 0.15 +
+    zufall * 0.1;
+  return k.urteil === "gut" ? wert + 0.3 : wert;
 }
 
 /**
