@@ -34,10 +34,15 @@ export const START_GESCHMACK: Geschmack = {
   gut: [
     "Lala Miyagi - Chief Keef x M.IA mix (harter, treibender Rap-Beat)",
     "DROP IT LIKE ITS HOT x STAYIN ALIVE (ALTÉGO MIX) (wuchtiger, tanzbarer Mashup-Remix)",
+    "Dunkler Phonk, Trap und Drill, oft slowed oder sped-up, mit schwerem Bass und düsterer Stimmung: " +
+      "Portofino (Malditho.wav), Legacy slowed (backfromparadise), crypt. (bbygirl), Conquer super slowed " +
+      "(Prod.synergy), Make A Move sped-up (RAIIN), Roncona hyper slowed (Nobdy), Raging Wolf (ASCEND), " +
+      "Hallucinations (BACCO), Igor's Theme (Tyler, The Creator), On Your Own (Lil Tecca)",
   ],
   schlecht: [
     "Sparks by Evan Jacobson (viel zu chillig, gemütlich)",
     "unbekannte Phonk-Sounds von Kleinst-Creatorn (müllig, nicht bekannt)",
+    "akustisch, verträumt, romantisch, Lo-Fi-Chill oder cineastisch-ruhig (M83 Outro, Still Dre)",
   ],
 };
 
@@ -76,7 +81,7 @@ export async function bewerteSound(
 Titel: "${info.titel}"${info.kuenstler ? ` von ${info.kuenstler}` : ""}, Länge ${Math.round(info.dauerMs / 1000)} s.
 
 Höre genau hin und bewerte:
-- druck (0 bis 1): wie aggressiv, pushend und treibend. 1 = harter Beat, Bass, Energie, Adrenalin (Phonk, Drill, harter Techno, wuchtige Trap-Drops). 0 = sanft, ruhig, verträumt, romantisch.
+- druck (0 bis 1): wie aggressiv, pushend und treibend. 1 = harter Beat, Bass, Energie, Adrenalin (Phonk, Drill, harter Techno, wuchtige Trap-Drops). Auch dunkle, schwere, langsamere Bässe (slowed Phonk, Dark Trap, Drill) gelten als druckvoll: Druck heißt Wucht und Dunkelheit, nicht nur Tempo. 0 = sanft, ruhig, verträumt, romantisch.
 - startStaerke (0 bis 1): wie stark der Sound sofort ab Sekunde 0 einsetzt. 1 = Beat/Drop/Hook von der ersten Sekunde an. 0 = langes ruhiges Intro, leises Aufbauen.
 - saisonal: true bei Weihnachten, Silvester, Halloween oder klarem Sommerhit-Charakter - also nicht das ganze Jahr nutzbar.
 - tauglich: false, wenn der Sound unter einem Sportvideo nicht funktioniert: gesprochener Text/Podcast/Rede, reine Geräusche, Gesang mit klar erkennbarem Text, der vom Video ablenkt und zu keinem Thema passt, schlechte Tonqualität. Instrumentale oder stark bearbeitete Beats sind tauglich.
