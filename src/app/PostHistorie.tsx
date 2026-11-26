@@ -5,16 +5,16 @@ import type { Track } from "@/lib/trackClient";
 
 /**
  * Die Posting-Übersicht einer Sparte: was automatisch gepostet wurde und was
- * die Automatik zuletzt geprüft hat.
+ * die Automatik zuletzt versucht hat.
  *
  * Zwei Blöcke, weil es zwei Fragen sind:
  *
  *  - "Wann wurde was gepostet?" - die tatsächlichen Posts, mit Schweizer
  *    Uhrzeit, Sound und Media-ID. Das ist die dauerhafte Historie.
  *  - "Warum ist gerade nichts rausgegangen?" - der Ausgang der letzten
- *    Pinger-Prüfungen. Ohne diesen Block hinterliess ein Lauf, der nichts zu
- *    posten fand, keine Spur; "um 10:00 wurde nichts gepostet" war damit von
- *    aussen nicht zu erklären. Jetzt steht der Grund hier.
+ *    Post-Versuche. Ohne diesen Block hinterliess ein übersprungener oder
+ *    gescheiterter Post keine Spur (kein Sound, keine öffentliche Kopie ...).
+ *    Jetzt steht der Grund hier.
  *
  * Reine Anzeige - die Zeiten sind schon serverseitig in CH-Zeit formatiert.
  */
@@ -92,12 +92,12 @@ export function PostHistorie({
             </ul>
           )}
 
-          <h3 className="historie-unter">Letzte Automatik-Prüfungen</h3>
+          <h3 className="historie-unter">Letzte Post-Versuche</h3>
           {laeufe.length === 0 ? (
             <p className="empty-state small">
-              Noch keine Prüfung protokolliert. Der externe Wecker ruft die
-              Posting-Route auf; jeder Aufruf wird hier festgehalten - auch wenn
-              nichts zu posten war.
+              Noch kein Post-Versuch protokolliert. Jeder Versuch nach dem
+              Erstellen eines Videos wird hier festgehalten - auch wenn er
+              gescheitert ist oder übersprungen wurde.
             </p>
           ) : (
             <ul className="lauf-liste">

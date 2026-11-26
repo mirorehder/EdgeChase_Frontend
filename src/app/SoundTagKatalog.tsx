@@ -10,7 +10,7 @@ import { STANDARD_SOUND_TAGS, type SoundTagDef, type TagArt } from "@/lib/soundT
  * Bewusst genau einmal im Dashboard, nicht je Sparte: die Liste ist gemeinsam.
  * Wird hier ein Tag hinzugefügt oder entfernt, ändert sich damit die Auswahl in
  * allen vier Sparten. Welche dieser Tags eine Sparte dann tatsächlich nutzt,
- * stellt man weiter unten bei der jeweiligen Posting-Automatik ein.
+ * stellt man weiter unten bei der jeweiligen Sparte unter „Posten nach dem Erstellen" ein.
  */
 export function SoundTagKatalog({ katalog }: { katalog: SoundTagDef[] }) {
   const router = useRouter();
@@ -99,7 +99,7 @@ export function SoundTagKatalog({ katalog }: { katalog: SoundTagDef[] }) {
           <span className="clip-meta">
             Diese Tags beschreiben, wie ein Sound klingt. Sie sind für alle vier Sparten gemeinsam -
             was du hier hinzufügst oder entfernst, erscheint oder verschwindet überall. Pro Sparte
-            wählst du unten bei „Automatisch posten" die passenden Tags aus.
+            wählst du unten bei „Posten nach dem Erstellen" die passenden Tags aus.
           </span>
 
           <TagGruppe titel="Stimmung / Energie" tags={stimmungen} alle={tags} onEntfernen={entfernen} />

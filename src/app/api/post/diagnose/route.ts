@@ -3,7 +3,7 @@ import { env } from "@/lib/env";
 import { prisma } from "@/lib/db";
 import { TRACK_LISTE, bewertungsart, type Track } from "@/lib/trackClient";
 import { igZugang, pruefeZugang, pruefeTrialFaehig } from "@/lib/instagram";
-import { getPostZeitplan, naechstesVideo, letzteLaeufe, bestandDerSparte, ortstagFuer } from "@/lib/postAuto";
+import { getPostZeitplan, postenAktiv, letzteLaeufe, bestandDerSparte, ortstagFuer } from "@/lib/postAuto";
 import { getViralSchedule } from "@/lib/viralSchedule";
 import { MIN_USABLE_ANALYSIS_VERSION } from "@/lib/pipeline";
 import { formatUhrzeit, chFormatZeitstempel } from "@/lib/zeit";
@@ -71,7 +71,7 @@ export async function GET(request: NextRequest) {
       const varToken = `IG_TOKEN_${suffix}`;
       const varUserId = `IG_USER_ID_${suffix}`;
       const zeitplan = await getPostZeitplan(b.key);
-      const kandidat = zeitplan.enabled ? await naechstesVideo(b.key, zeitplan.quelle) : null;
+      const direktPosten = await postenAktiv(b.key);
       const zugang = igZugang(b.key);
       const laeufe = await letzteLaeufe(b.key, 1);
       const letzterLauf = laeufe[0] ?? null;
@@ -108,25 +108,14 @@ export async function GET(request: NextRequest) {
         trialFaehig: trial ? trial.faehig : null,
         follower: trial ? trial.followers : null,
         trialHinweis: trial && !trial.faehig ? trial.grund : null,
-        zeitplan: {
-          an: zeitplan.enabled,
-          // Welche Betriebsart greift - genau das war bei "10:00 hat nicht
-          // gepostet" die Frage: feste Uhrzeiten oder das alte Fenster?
-          modus: zeitplan.postingTimes.length > 0 ? "uhrzeiten" : "fenster",
-          uhrzeiten: zeitplan.postingTimes.map(formatUhrzeit),
-          postsProTag: zeitplan.postsPerDay,
-          fensterVon: zeitplan.fensterVonMin,
-          fensterBis: zeitplan.fensterBisMin,
-          abstandMin: zeitplan.minAbstandMin,
-          quelle: zeitplan.quelle,
+        // Erstellen und Posten sind ein Ablauf: "direktPosten" heisst, dass der
+        // Tageslauf seine Videos gleich nach dem Render veroeffentlicht.
+        posten: {
+          direktPosten,
+          alsTrialReel: zeitplan.alsTrialReel,
+          hatSoundPool: zeitplan.trendSounds.length > 0,
+          hatHashtags: !!zeitplan.hashtags.trim(),
         },
-        naechsterKandidat: kandidat
-          ? {
-              id: kandidat.id,
-              titel: kandidat.fileTitle ?? kandidat.hookText.slice(0, 60),
-              hatOeffentlicheKopie: !!kandidat.publicUrl,
-            }
-          : null,
         // Bestandsaufnahme: wie viele Videos in welchem Zustand, und welche
         // fertigen noch offen sind. Zeigt, warum "ich habe X generiert" und
         // "Y sind postbar" auseinanderfallen.
@@ -134,7 +123,7 @@ export async function GET(request: NextRequest) {
         // Warum (nichts) generiert wird: Zeitplan an? Konzepte? taugliche Clips?
         generierung,
         // Der letzte protokollierte Ausgang der Automatik - beweist, ob der
-        // Pinger überhaupt läuft, und nennt den Grund fürs Nichtstun.
+        // Posting überhaupt läuft, und nennt den Grund fürs Nichtstun.
         letzterLauf: letzterLauf
           ? {
               wann: chFormatZeitstempel(letzterLauf.at),

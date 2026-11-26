@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { nextQueuedJobId, processJob } from "@/lib/pipeline";
 import { RENDER_LEBT_MS, baseUrlFromRequest, dispatchJob, dispatchPost } from "@/lib/dispatch";
-import { isTrack, trackBeschreibung } from "@/lib/trackClient";
 import { istBerechtigt } from "@/lib/ingestAuth";
 
 // Rendern und Hochladen - der lange Teil.
@@ -34,14 +33,10 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
 
     const updated = await prisma.promoVideo.findUnique({ where: { id: params.id } });
 
-    // Serien: ein Ablauf von der Erzeugung bis zur Veröffentlichung. Sobald das
-    // Video fertig ist, geht das Posten in einer eigenen Ausführung los.
-    if (
-      updated?.status === "done" &&
-      !updated.postedAt &&
-      isTrack(updated.track) &&
-      trackBeschreibung(updated.track).sofortPosten
-    ) {
+    // Erstellen und Posten sind ein Ablauf: ist das Video zum Posten
+    // vorgesehen, geht das Posten jetzt in einer eigenen Ausführung los.
+    // Altbestand und schon Gepostetes bleiben ausgenommen.
+    if (updated?.status === "done" && updated.autoPost && !updated.altbestand && !updated.postedAt) {
       await dispatchPost(params.id, baseUrlFromRequest(request));
     }
 

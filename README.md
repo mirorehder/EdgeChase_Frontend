@@ -18,8 +18,27 @@ Vercel Cron (1x/Tag)
 /api/jobs/<id>/process - eine Ausführung je Video, eigene 300 Sekunden
   -> Rendern über Remotion Lambda (AWS)
   -> Fertiges Video nach Google Drive hochladen (mit Retry + Duplikatschutz)
+  -> Posten anstossen, wenn das Video autoPost trägt (eigene Ausführung)
   -> nächsten wartenden Auftrag anstossen (Kette, über beide Sparten hinweg)
+
+/api/jobs/<id>/auto-post - eigene Ausführung: Video auf Instagram posten
+  -> reserviert das Video atomar (nie zweimal), höchstens 3 Versuche
 ```
+
+**Erstellen und Posten sind ein Ablauf.** Es gibt keinen Zeitplan fürs Posten und
+keinen externen Wecker mehr. Ein Video geht raus, sobald es fertig gerendert ist:
+
+- Der Tageslauf legt sein Video mit `autoPost` an, wenn der Schalter "Direkt
+  posten" der Sparte an ist (Serien posten immer). Je Sparte entsteht ein Video
+  pro Tag.
+- Handversuche (Knopf, Dialog, Konzept) tragen die Wahl des Nutzers: "Direkt nach
+  dem Erstellen posten" oder nur erstellen.
+- Was beim Posten scheitert, holt der nächste Tageslauf nach
+  (`holeRueckstandNach`, höchstens 3 Versuche je Video).
+- Videos, die vor dieser Umstellung entstanden und nicht gepostet waren, tragen
+  `altbestand`. Die Automatik fasst sie nicht an; gepostet wird nur von Hand.
+- `/api/post/run` bleibt als Nachhol-Route bestehen, damit ein noch eingerichteter
+  Wecker nicht ins Leere läuft. Gebraucht wird er nicht mehr.
 
 Warum das Planen vom Rendern getrennt ist: Vercel bricht jede Ausführung nach
 300 Sekunden ab. Solange der Zeitplan das Werbevideo noch selbst rendete, war

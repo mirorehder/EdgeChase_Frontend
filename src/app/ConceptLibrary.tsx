@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { bewertungsart, trackBeschreibung, type Track } from "@/lib/trackClient";
 import { soundBeschriftung, soundEingabePruefen, istVerwendbar } from "@/lib/sound";
+import { PostWahl } from "./PostWahl";
 
 interface TextPhase {
   text: string;
@@ -66,6 +67,9 @@ export function ConceptLibrary({ track }: { track: Track }) {
   const [note, setNote] = useState<string | null>(null);
   const [fehler, setFehler] = useState(false);
   const [auf, setAuf] = useState(false);
+  // Handversuch: nach dem Erstellen gleich posten? Serien posten sonst immer, dort
+  // ist "ja" die Voreinstellung.
+  const [posten, setPosten] = useState(trackBeschreibung(track).sofortPosten);
   const [offenId, setOffenId] = useState<string | null>(null);
   const [entwurf, setEntwurf] = useState<{
     title: string;
@@ -250,7 +254,9 @@ export function ConceptLibrary({ track }: { track: Track }) {
     setFehler(false);
     setNote(serie ? `Tagesvideo „${concept.title}" wird angelegt …` : `Erzeuge Video nach „${concept.title}" …`);
     try {
-      const res = await fetch(`/api/concepts/${concept.id}/use`, { method: "POST" });
+      const res = await fetch(`/api/concepts/${concept.id}/use${posten ? "?posten=1" : ""}`, {
+        method: "POST",
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
 
@@ -262,8 +268,13 @@ export function ConceptLibrary({ track }: { track: Track }) {
       setNote(
         renderData.status === "done"
           ? serie
-            ? `Tag ${data.zahl} fertig - das Video wird jetzt gepostet. Das Ergebnis steht unter „Post-Historie".`
-            : "Fertig - das Video steht unten in der Liste."
+            ? `Tag ${data.zahl} fertig` +
+              (posten
+                ? " - das Video wird jetzt gepostet. Das Ergebnis steht unter „Automatisch gepostet“."
+                : " - es wurde nur erstellt.")
+            : posten
+              ? "Fertig - das Video wird jetzt gepostet. Das Ergebnis steht unter „Automatisch gepostet“."
+              : "Fertig - das Video steht unten in der Liste."
           : `Render fehlgeschlagen: ${renderData.lastError ?? renderData.error}`,
       );
       router.refresh();
@@ -695,9 +706,10 @@ export function ConceptLibrary({ track }: { track: Track }) {
                 </span>
 
                 <div className="actions" style={{ marginTop: 8, marginBottom: 0 }}>
+                  <PostWahl wert={posten} setzen={setPosten} disabled={busy !== null} />
                   <button onClick={() => verwenden(concept)} disabled={busy !== null}>
                     {serie
-                      ? "Heutiges Video jetzt erzeugen & posten"
+                      ? "Heutiges Video jetzt erzeugen"
                       : trackBeschreibung(track).nachKonzept
                         ? "Edit nach diesem Konzept"
                         : "Video nach diesem Konzept"}

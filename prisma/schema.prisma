@@ -281,6 +281,30 @@ model PromoVideo {
   /// beim Posten dem KI-Titel vorgezogen. Leer = wie bisher (KI-Titel/Hook).
   postCaption String?
 
+  /// Wird dieses Video gleich nach dem Render gepostet?
+  ///
+  /// Erstellen und Posten sind ein einziger Ablauf. Der Wert wird beim Anlegen
+  /// festgehalten, nicht erst beim Posten nachgeschlagen: der Tageslauf setzt
+  /// ihn nach dem Schalter "Direkt posten" der Sparte, ein Handversuch nach
+  /// der Wahl des Nutzers. Ändert sich die Einstellung zwischen Anlegen und
+  /// Render, soll dieses Video trotzdem tun, was beim Anlegen galt.
+  autoPost Boolean @default(false)
+
+  /// Vor der Umstellung auf "Erstellen und Posten in einem Ablauf" entstanden
+  /// und noch nicht gepostet. Die Migration kennzeichnet sie einmalig; die
+  /// Automatik fasst sie nicht an. Gepostet werden sie nur von Hand.
+  altbestand Boolean @default(false)
+
+  /// Reservierung fürs Posten: gesetzt, solange ein Post läuft. Ein zweiter
+  /// Aufruf (Wiederholung, Doppelklick) sieht sie und lässt das Video in Ruhe,
+  /// sonst ginge es zweimal raus. Verfällt nach einigen Minuten, falls die
+  /// Ausführung abgebrochen wurde.
+  postClaimedAt DateTime?
+
+  /// Wie oft die Automatik dieses Video schon zu posten versucht hat. Nach drei
+  /// Fehlversuchen gibt sie auf, statt es jeden Tag erneut zu versuchen.
+  postAttempts Int @default(0)
+
   createdAt DateTime @default(now())
 
   @@index([status])

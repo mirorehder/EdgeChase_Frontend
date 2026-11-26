@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { trackBeschreibung, type Track } from "@/lib/trackClient";
+import { PostWahl } from "./PostWahl";
 
 interface Settings {
   enabled: boolean;
@@ -21,13 +22,22 @@ interface Konzept {
   totalSeconds: number;
 }
 
-export function ViralSchedule({ track }: { track: Track }) {
+export function ViralSchedule({
+  track,
+  postEinstellungen,
+}: {
+  track: Track;
+  /** Die Posting-Einstellungen der Sparte - ein Teil dieses Abschnitts. */
+  postEinstellungen?: ReactNode;
+}) {
   const router = useRouter();
   const [settings, setSettings] = useState<Settings | null>(null);
   const [konzepte, setKonzepte] = useState<Konzept[]>([]);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState<{ text: string; error: boolean } | null>(null);
+  // Handversuch "Lauf jetzt ausführen": gleich posten oder nur erstellen?
+  const [posten, setPosten] = useState(trackBeschreibung(track).sofortPosten);
 
   useEffect(() => {
     fetch(`/api/viral-schedule?track=${track}`, { cache: "no-store" })
@@ -66,9 +76,10 @@ export function ViralSchedule({ track }: { track: Track }) {
     setBusy(nurWartende ? "wartende" : "jetzt");
     setNote(null);
     try {
-      const res = await fetch(`/api/viral/run?track=${track}${nurWartende ? "&nurWartende=1" : ""}`, {
-        method: "POST",
-      });
+      const res = await fetch(
+        `/api/viral/run?track=${track}${nurWartende ? "&nurWartende=1" : posten ? "&posten=1" : ""}`,
+        { method: "POST" },
+      );
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
 
@@ -110,7 +121,7 @@ export function ViralSchedule({ track }: { track: Track }) {
   const zusammenfassung = settings.enabled
     ? serie
       ? `täglich ${settings.zeitpunkt} · eine Zahl je Serie`
-      : `${settings.zeitpunkt} · ${settings.videosPerDay}/Tag · ${aktiveKonzepte} Konzept(e)`
+      : `${settings.zeitpunkt} · 1 Video/Tag · ${aktiveKonzepte} Konzept(e)`
     : "aus";
 
   return (
@@ -131,7 +142,7 @@ export function ViralSchedule({ track }: { track: Track }) {
                 ? `Täglich um ${settings.zeitpunkt}: für jede laufende Serie ein neues Video mit der nächsten Zahl - es wird gerendert und sofort gepostet.`
                 : "Abgeschaltet - es entstehen keine Tagesvideos von selbst. Jede Serie lässt sich unten auch einzeln pausieren."
               : settings.enabled
-              ? `Täglich um ${settings.zeitpunkt}: ${settings.videosPerDay} Edit(s), ` +
+              ? `Täglich um ${settings.zeitpunkt}: 1 Edit, ` +
                 (settings.conceptMode === "fixed"
                   ? `feste Auswahl aus ${aktiveKonzepte} Konzept(en), der Reihe nach.`
                   : `reihum aus allen ${aktiveKonzepte} Konzepten.`)
@@ -149,18 +160,10 @@ export function ViralSchedule({ track }: { track: Track }) {
 
           {!serie && (
           <div className="field-row">
-            <label>
-              Videos pro Tag
-              <input
-                type="number"
-                min={1}
-                max={5}
-                value={settings.videosPerDay}
-                onChange={(e) =>
-                  setSettings({ ...settings, videosPerDay: Number(e.target.value) })
-                }
-              />
-            </label>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              <span className="video-label">Videos pro Tag</span>
+              <span className="clip-meta">1 - jede Sparte erstellt täglich ein Video</span>
+            </div>
             <label>
               Konzeptauswahl
               <select
@@ -242,6 +245,7 @@ export function ViralSchedule({ track }: { track: Track }) {
             <button onClick={save} disabled={busy !== null}>
               {busy === "save" ? "Speichert …" : "Speichern"}
             </button>
+            <PostWahl wert={posten} setzen={setPosten} disabled={busy !== null} />
             <button
               className="secondary"
               onClick={() => ausloesen(false)}
@@ -261,6 +265,7 @@ export function ViralSchedule({ track }: { track: Track }) {
           {note && (
             <p className={note.error ? "action-message error" : "action-message"}>{note.text}</p>
           )}
+          {postEinstellungen}
         </>
       )}
     </section>

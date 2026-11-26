@@ -19,7 +19,10 @@ export const dynamic = "force-dynamic";
  */
 export async function POST(request: NextRequest) {
   try {
-    const jobId = await planDailyJob();
+    // Handversuch: der Nutzer wählt, ob das Video nach dem Render gleich gepostet
+    // wird (?posten=1) oder nur erstellt. Ohne Angabe: nur erstellen.
+    const posten = new URL(request.url).searchParams.get("posten") === "1";
+    const jobId = await planDailyJob(posten);
     if (!jobId) {
       return NextResponse.json({ jobId: null, hinweis: "Tageslauf ist abgeschaltet." });
     }

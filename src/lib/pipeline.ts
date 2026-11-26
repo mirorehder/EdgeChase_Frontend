@@ -34,8 +34,14 @@ import { hookTextToFileName } from "./filename";
 import { logActivity } from "./activity";
 import { beilageBauen, beilagenName } from "./sound";
 import { getDailySettings, merkeRotation, waehleRotierend } from "./dailyConfig";
-import { getViralSchedule, viralOutputFolderId, viralTextStyle } from "./viralSchedule";
+import {
+  MAX_VIDEOS_PER_DAY,
+  getViralSchedule,
+  viralOutputFolderId,
+  viralTextStyle,
+} from "./viralSchedule";
 import { bewertungsart, trackBeschreibung } from "./trackClient";
+import { postenAktiv } from "./postAuto";
 import { trackFromValue } from "./trackParam";
 import { artAusHerkunft, ausgabeOrdnerId } from "./ausgabeOrdner";
 import {
@@ -1898,6 +1904,22 @@ export async function processJob(jobId: string): Promise<void> {
 }
 
 /**
+ * Soll ein Video gleich nach dem Render gepostet werden?
+ *
+ * Eine ausdrückliche Wahl gilt immer (Handversuch: "direkt posten" oder "nur
+ * erstellen"). Ohne Wahl folgt der Tageslauf dem Schalter "Direkt posten" der
+ * Sparte, ein Handversuch postet nicht.
+ */
+async function autoPostFuer(
+  track: Track,
+  origin: "manual" | "scheduled" | undefined,
+  posten: boolean | undefined,
+): Promise<boolean> {
+  if (posten !== undefined) return posten;
+  return origin === "scheduled" ? postenAktiv(track) : false;
+}
+
+/**
  * Legt einen Auftrag aus einer im Dialog erarbeiteten Videobeschreibung an.
  * Gerendert wird er nicht hier - das übernimmt processJob in einem eigenen
  * Aufruf, damit die Antwort an den Nutzer nicht minutenlang aussteht.
@@ -1906,6 +1928,8 @@ export async function createJobFromSpec(
   track: Track,
   spec: VideoSpec,
   requestedVia: string,
+  /** Handversuch: direkt nach dem Render posten (true) oder nur erstellen (false). */
+  posten = false,
 ): Promise<string> {
   const composed = await composeVideo(track, {
     clipCount: spec.clipCount,
@@ -1931,10 +1955,14 @@ export async function createJobFromSpec(
       // Der im Dashboard gewählte Ausgabeordner für Handversuche; null lässt
       // den bisherigen Standard gelten.
       driveFolderId: await ausgabeOrdnerId(track, "manual"),
+      autoPost: posten,
     },
   });
 
-  await logActivity(`Auftrag aus Anweisung angelegt: "${requestedVia}"`, { videoId: job.id });
+  await logActivity(
+    `Auftrag aus Anweisung angelegt: "${requestedVia}"` + (posten ? " - wird nach dem Render gepostet" : ""),
+    { videoId: job.id },
+  );
   return job.id;
 }
 
@@ -2077,6 +2105,8 @@ export async function createViralJobFromSpec(
   track: Track,
   spec: { hookText: string; clipCount: number; totalSeconds: number; themeHint?: string },
   requestedVia: string,
+  /** Handversuch: direkt nach dem Render posten (true) oder nur erstellen (false). */
+  posten = false,
 ): Promise<string> {
   const composed = await composeViralVideo(track, {
     hookText: spec.hookText,
@@ -2106,12 +2136,14 @@ export async function createViralJobFromSpec(
       // beurteilt hat. Wer das anders will, trägt hier bewusst einen anderen
       // Ordner ein.
       driveFolderId: await ausgabeOrdnerId(track, "manual"),
+      autoPost: posten,
     },
   });
 
   await logActivity(
     `Edit aus Anweisung angelegt: "${requestedVia}"` +
-      (spec.themeHint ? ` (gesucht: ${spec.themeHint})` : ""),
+      (spec.themeHint ? ` (gesucht: ${spec.themeHint})` : "") +
+      (posten ? " - wird nach dem Render gepostet" : ""),
     { videoId: job.id, track },
   );
   return job.id;
@@ -2167,10 +2199,15 @@ export interface ViralRunResult {
  * Plant den Tageslauf einer nach Konzepten arbeitenden Sparte: legt die
  * Auftraege an, rendert aber noch nichts.
  */
-export async function planViralRun(track: Track, force = false): Promise<ViralRunResult> {
+export async function planViralRun(
+  track: Track,
+  force = false,
+  /** Handversuch: ausdrückliche Wahl, ob gepostet wird. Ohne Angabe gilt der Schalter der Sparte. */
+  posten?: boolean,
+): Promise<ViralRunResult> {
   // Serien mit Tageszähler haben eine eigene Planung: ein Video je laufender
   // Serie und Tag, mit hochgezählter Zahl.
-  if (trackBeschreibung(track).zaehler) return planSerieRun(track, force);
+  if (trackBeschreibung(track).zaehler) return planSerieRun(track, force, posten);
 
   const plan = await getViralSchedule(track);
 
@@ -2178,7 +2215,7 @@ export async function planViralRun(track: Track, force = false): Promise<ViralRu
     return { jobIds: [], hinweis: "Zeitplan ist abgeschaltet." };
   }
 
-  const konzepte = await konzepteFuerLauf(track, plan.videosPerDay);
+  const konzepte = await konzepteFuerLauf(track, Math.min(plan.videosPerDay, MAX_VIDEOS_PER_DAY));
   if (!konzepte.length) {
     const hinweis =
       plan.conceptMode === "fixed"
@@ -2207,6 +2244,7 @@ export async function planViralRun(track: Track, force = false): Promise<ViralRu
         // die bisherige Liste "noch zu posten".
         driveFolderId: (await ausgabeOrdnerId(track, "scheduled")) ?? viralOutputFolderId(track),
         origin: "scheduled",
+        autoPost: posten,
       });
       jobIds.push(jobId);
 
@@ -2259,7 +2297,12 @@ export class SerieHeuteSchonErzeugt extends Error {
  */
 export async function erzeugeSerienVideo(
   conceptId: string,
-  options: { excludeClipIds?: string[]; origin?: "manual" | "scheduled" } = {},
+  options: {
+    excludeClipIds?: string[];
+    origin?: "manual" | "scheduled";
+    /** Ausdrückliche Wahl, ob gepostet wird; ohne Angabe gilt der Schalter der Sparte. */
+    posten?: boolean;
+  } = {},
 ): Promise<{ jobId: string; zahl: number }> {
   const concept = await prisma.concept.findUnique({ where: { id: conceptId } });
   if (!concept || concept.counterNext === null) {
@@ -2289,6 +2332,7 @@ export async function erzeugeSerienVideo(
       driveFolderId: (await ausgabeOrdnerId(track, "scheduled")) ?? viralOutputFolderId(track),
       origin: options.origin ?? "manual",
       zaehler: zahl,
+      autoPost: options.posten,
     });
     await logActivity(`Serie "${concept.title}": Tag ${zahl} angelegt.`, { track, videoId: jobId });
     return { jobId, zahl };
@@ -2302,7 +2346,11 @@ export async function erzeugeSerienVideo(
 }
 
 /** Der Tageslauf einer Serien-Sparte: ein Video je laufender Serie. */
-export async function planSerieRun(track: Track, force = false): Promise<ViralRunResult> {
+export async function planSerieRun(
+  track: Track,
+  force = false,
+  posten?: boolean,
+): Promise<ViralRunResult> {
   const plan = await getViralSchedule(track);
   if (!plan.enabled && !force) {
     return { jobIds: [], hinweis: "Zeitplan ist abgeschaltet." };
@@ -2333,6 +2381,7 @@ export async function planSerieRun(track: Track, force = false): Promise<ViralRu
       const { jobId } = await erzeugeSerienVideo(serie.id, {
         excludeClipIds: verbrauchteClips,
         origin: "scheduled",
+        posten,
       });
       jobIds.push(jobId);
       const job = await prisma.promoVideo.findUnique({ where: { id: jobId } });
@@ -2384,6 +2433,8 @@ export async function createViralJobFromConcept(
     origin?: "manual" | "scheduled";
     /** Nur Serien: die Zahl, die für {n} eingesetzt wird. */
     zaehler?: number;
+    /** Ausdrückliche Wahl, ob gepostet wird; ohne Angabe: Tageslauf nach Schalter, Handversuch nein. */
+    autoPost?: boolean;
   } = {},
 ): Promise<string> {
   const concept = await prisma.concept.findUnique({ where: { id: conceptId } });
@@ -2456,6 +2507,7 @@ export async function createViralJobFromConcept(
         `Konzept: ${concept.title}` +
         (options.zaehler !== undefined ? ` (Tag ${options.zaehler})` : ""),
       conceptId: concept.id,
+      autoPost: await autoPostFuer(track, options.origin, options.autoPost),
       // Der Sound wird weitergereicht, nicht bewertet. Ob er brauchbar ist,
       // kann diese Anwendung nicht entscheiden - sie hat keinen
       // Instagram-Zugang und weiss deshalb nicht einmal, ob hinter der ID ein
@@ -2508,7 +2560,10 @@ const DAILY_ANALYZE_LIMIT = 2;
  * und würde im Zeitplan das ganze Zeitfenster verbrauchen, bevor die virale
  * Sparte überhaupt an die Reihe kommt.
  */
-export async function planDailyJob(): Promise<string | null> {
+export async function planDailyJob(
+  /** Handversuch (Knopf): ausdrückliche Wahl, ob gepostet wird. Ohne Angabe gilt der Schalter der Sparte. */
+  posten?: boolean,
+): Promise<string | null> {
   const settings = await getDailySettings();
 
   if (!settings.enabled) {
@@ -2577,6 +2632,7 @@ export async function planDailyJob(): Promise<string | null> {
       // Der im Dashboard gewählte Ordner für den Tageslauf; null lässt den
       // bisherigen Standard gelten.
       driveFolderId: await ausgabeOrdnerId("promo", "scheduled"),
+      autoPost: await autoPostFuer("promo", "scheduled", posten),
     },
   });
 
@@ -2595,8 +2651,8 @@ export async function planDailyJob(): Promise<string | null> {
  * Das ist der Weg für den Knopf im Dashboard: dort wartet jemand auf das
  * Ergebnis und soll es am Ende derselben Anfrage sehen.
  */
-export async function runDailyJob(): Promise<string | null> {
-  const jobId = await planDailyJob();
+export async function runDailyJob(posten?: boolean): Promise<string | null> {
+  const jobId = await planDailyJob(posten);
   if (jobId) await processJob(jobId);
   return jobId;
 }

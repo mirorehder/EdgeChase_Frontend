@@ -1,22 +1,24 @@
 /**
- * Die Posting-Automatik: wann welches fertige Video an die Reihe kommt.
+ * Die Posting-Automatik: Erstellen und Posten sind ein einziger Ablauf.
  *
- * Der schwierige Teil ist bewusst rein gehalten - ohne Datenbank, ohne Netz -,
- * damit sich die Taktung nachrechnen lässt: wie oft heute schon gepostet wurde,
- * ob der Mindestabstand eingehalten ist, ob die Uhrzeit im erlaubten Fenster
- * liegt. Erst darüber liegt die Schicht, die die Datenbank fragt und den Post
- * anstösst.
+ * Ein Video wird gerendert und, sobald es fertig ist, gleich veröffentlicht -
+ * es gibt keinen zweiten Zeitplan mehr, den man daneben überwachen müsste. Der
+ * Tageslauf legt das Video mit autoPost an, die Process-Route stösst nach dem
+ * Render das Posten an (posteFertigesVideo), und was dabei scheitert, holt der
+ * nächste Lauf nach (holeRueckstandNach).
  *
  * Quelle der Wahrheit für "was ist noch offen" sind die eigenen PromoVideo-
- * Zeilen (fertig, aber ohne postedAt) - nicht ein Scan des Drive-Ordners. Die
- * Anwendung kennt ihre eigenen Videos, und daran hängt schon der Zustand.
+ * Zeilen (fertig, zum Posten vorgesehen, aber ohne postedAt) - nicht ein Scan
+ * des Drive-Ordners. Vor der Umstellung entstandene Videos tragen altbestand
+ * und werden von der Automatik nicht angefasst.
  */
+import type { PromoVideo } from "@prisma/client";
 import { prisma, mitDbWiederholung } from "./db";
 import type { Track } from "./trackClient";
-import { TRACKS, trackBeschreibung, erlaubteTrackKeys } from "./trackClient";
+import { trackBeschreibung, erlaubteTrackKeys } from "./trackClient";
 import { istVerwendbar } from "./sound";
 import { normalisiereTagKeys, passtZuSparte } from "./soundTags";
-import { posteReel } from "./instagram";
+import { igZugang, posteReel } from "./instagram";
 import { logActivity } from "./activity";
 import {
   bucketFromServeUrl,
@@ -24,17 +26,8 @@ import {
   isRenderStorageConfigured,
 } from "./renderStage";
 import { env } from "./env";
-import {
-  chGleicherTag,
-  chMinutenImTag,
-  chTagesBeginn,
-  chFormatUhrzeit,
-  chFormatZeitstempel,
-  formatUhrzeit,
-  parseUhrzeit,
-} from "./zeit";
+import { chFormatUhrzeit, chFormatZeitstempel } from "./zeit";
 
-export type PostQuelle = "scheduled" | "manual" | "beliebig";
 
 /** Ein Eintrag im Trend-Sound-Pool. */
 export interface TrendSound {
@@ -47,19 +40,15 @@ export interface TrendSound {
 }
 
 export interface PostZeitplanStand {
-  enabled: boolean;
-  postsPerDay: number;
   /**
-   * Frueheste/spaeteste Post-Uhrzeit, in MINUTEN SEIT MITTERNACHT DER
-   * SCHWEIZER ZEIT. Unter der alten Semantik waren das UTC-Minuten - die neue
-   * Semantik ist Schweizer Zeit. Der Nutzer soll seine bestehenden Werte
-   * einmal ueberpruefen; im Log wird darauf hingewiesen.
+   * "Direkt nach dem Erstellen posten" - der Schalter der Sparte. An: der
+   * Tageslauf legt seine Videos mit autoPost an, sie gehen nach dem Render
+   * raus. Aus: das Video entsteht nur, gepostet wird von Hand. (Der Name
+   * stammt aus der Zeit des Posting-Zeitplans; Fenster, Uhrzeiten und
+   * Mindestabstand gibt es nicht mehr.)
    */
-  fensterVonMin: number;
-  fensterBisMin: number;
-  minAbstandMin: number;
+  enabled: boolean;
   alsTrialReel: boolean;
-  quelle: PostQuelle;
   /** Freitext-Hashtags fürs Reel - werden hinter die Caption gehängt. */
   hashtags: string;
   /** Trend-Sound-Pool: einer davon wird gewählt, wenn kein eigener Sound am
@@ -68,148 +57,18 @@ export interface PostZeitplanStand {
   /** Die für diese Sparte gewählten Stimmungs-/Genre-Tags (Katalog-Schlüssel).
    *  Leer = keine Einschränkung, der ganze Pool zählt. */
   soundTags: string[];
-  /**
-   * Feste Uhrzeiten in Schweizer Zeit, zu denen gepostet wird.
-   *
-   * Ist die Liste nicht leer, gilt diese Regel AUSSCHLIESSLICH - Fenster und
-   * Mindestabstand werden ignoriert. Die Werte stehen als Minuten seit
-   * Mitternacht der Schweizer Zeit (z.B. 17:00 CH = 1020).
-   */
-  postingTimes: number[];
 }
 
 export const STANDARD_ZEITPLAN: PostZeitplanStand = {
   enabled: false,
-  postsPerDay: 1,
-  // Standard-Fenster: 8 bis 21 Uhr Schweizer Zeit.
-  fensterVonMin: 8 * 60,
-  fensterBisMin: 21 * 60,
-  minAbstandMin: 120,
   alsTrialReel: true,
-  quelle: "scheduled",
   hashtags: "",
   trendSounds: [],
   soundTags: [],
-  postingTimes: [],
 };
 
-/**
- * Die reine Frage: darf jetzt gepostet werden, und wenn nein, warum nicht?
- *
- * Bekommt alles als Werte herein, nichts wird hier geladen. "jetzt" und die
- * bisherigen Post-Zeitpunkte des Tages kommen von aussen - so lässt sich jeder
- * Grenzfall durchspielen, ohne die Uhr zu stellen.
- */
-export interface FaelligkeitsFrage {
-  zeitplan: PostZeitplanStand;
-  /** Aktueller Zeitpunkt. */
-  jetzt: Date;
-  /** postedAt aller heute (in dieser Zeitzone) bereits geposteten Videos. */
-  heuteGepostet: Date[];
-  /** Ob überhaupt ein postbares Video bereitliegt. */
-  hatKandidat: boolean;
-}
-
-export interface FaelligkeitsUrteil {
-  faellig: boolean;
-  /** Kurzbegründung fürs Protokoll, wenn nicht fällig. */
-  grund?: string;
-}
-
-export function istFaellig(frage: FaelligkeitsFrage): FaelligkeitsUrteil {
-  const { zeitplan, jetzt, heuteGepostet, hatKandidat } = frage;
-
-  if (!zeitplan.enabled) return { faellig: false, grund: "Automatik aus" };
-  if (!hatKandidat) return { faellig: false, grund: "kein postbares Video" };
-
-  // Zwei Betriebsarten. Feste Uhrzeiten schlagen alles - sie sind ausdruecklich
-  // dazu da, sich nicht mit Fenster und Abstand auseinandersetzen zu muessen.
-  if (zeitplan.postingTimes.length > 0) {
-    return istFaelligNachUhrzeit(zeitplan.postingTimes, jetzt, heuteGepostet);
-  }
-  return istFaelligNachFenster(zeitplan, jetzt, heuteGepostet);
-}
-
-/**
- * Klassisch: Fenster in CH-Zeit, Tageslimit, Mindestabstand.
- */
-function istFaelligNachFenster(
-  zeitplan: PostZeitplanStand,
-  jetzt: Date,
-  heuteGepostet: Date[],
-): FaelligkeitsUrteil {
-  const jetztMin = chMinutenImTag(jetzt);
-  if (jetztMin < zeitplan.fensterVonMin || jetztMin > zeitplan.fensterBisMin) {
-    return {
-      faellig: false,
-      grund: `ausserhalb des Zeitfensters (${formatUhrzeit(zeitplan.fensterVonMin)}–${formatUhrzeit(zeitplan.fensterBisMin)} CH)`,
-    };
-  }
-
-  const heute = heuteGepostet.filter((d) => chGleicherTag(d, jetzt));
-  if (heute.length >= zeitplan.postsPerDay) {
-    return { faellig: false, grund: `Tageslimit erreicht (${zeitplan.postsPerDay})` };
-  }
-
-  const letzter = heute.concat(heuteGepostet).sort((a, b) => b.getTime() - a.getTime())[0];
-  if (letzter) {
-    const abstandMin = (jetzt.getTime() - letzter.getTime()) / 60000;
-    if (abstandMin < zeitplan.minAbstandMin) {
-      return {
-        faellig: false,
-        grund: `Mindestabstand nicht erreicht (${Math.round(abstandMin)}/${zeitplan.minAbstandMin} min)`,
-      };
-    }
-  }
-
-  return { faellig: true };
-}
-
-/**
- * Feste Uhrzeiten in CH-Zeit.
- *
- * Faellig ist, sobald eine geplante Uhrzeit bereits erreicht ist und seit
- * dieser Uhrzeit noch kein Post rausging. Kommt der Pinger 15 Minuten nach
- * 17:00, wird jetzt gepostet; kommt er um 16:55, noch nicht. Nach dem Post
- * ist die 17:00-Slot fuer heute weg, und die Regel greift erst wieder bei
- * der naechsten geplanten Uhrzeit (z.B. 20:00).
- */
-function istFaelligNachUhrzeit(
-  zeitenMin: number[],
-  jetzt: Date,
-  heuteGepostet: Date[],
-): FaelligkeitsUrteil {
-  const jetztMin = chMinutenImTag(jetzt);
-  const sortiert = [...zeitenMin].sort((a, b) => a - b);
-
-  // Der letzte Post heute - relevant, damit ein Slot nicht doppelt greift.
-  const heuteSortiert = heuteGepostet
-    .filter((d) => chGleicherTag(d, jetzt))
-    .sort((a, b) => b.getTime() - a.getTime());
-  const letzterHeute = heuteSortiert[0] ?? null;
-  const letzterMin = letzterHeute ? chMinutenImTag(letzterHeute) : -1;
-
-  // Der spaeteste geplante Slot, der bereits erreicht ist und noch nach dem
-  // letzten Post liegt.
-  const faelligerSlot = sortiert
-    .filter((slot) => slot <= jetztMin && slot > letzterMin)
-    .slice(-1)[0];
-
-  if (faelligerSlot === undefined) {
-    const naechster = sortiert.find((slot) => slot > jetztMin);
-    return {
-      faellig: false,
-      grund: naechster !== undefined
-        ? `naechster Slot ${formatUhrzeit(naechster)} CH`
-        : "keine offenen Slots mehr heute",
-    };
-  }
-
-  return { faellig: true };
-}
-
 // ---------------------------------------------------------------------------
-// Die Schicht darüber: Datenbank fragen, Kandidat wählen
+// Die Schicht darüber: Datenbank fragen
 // ---------------------------------------------------------------------------
 
 export async function getPostZeitplan(track: Track): Promise<PostZeitplanStand> {
@@ -217,33 +76,22 @@ export async function getPostZeitplan(track: Track): Promise<PostZeitplanStand> 
   if (!z) return { ...STANDARD_ZEITPLAN };
   return {
     enabled: z.enabled,
-    postsPerDay: z.postsPerDay,
-    fensterVonMin: z.fensterVonMin,
-    fensterBisMin: z.fensterBisMin,
-    minAbstandMin: z.minAbstandMin,
     alsTrialReel: z.alsTrialReel,
-    quelle: z.quelle as PostQuelle,
     hashtags: z.hashtags,
     trendSounds: normalisierePool(z.trendSounds),
     soundTags: normalisiereTagKeys(z.soundTags),
-    postingTimes: parsePostingTimes(z.postingTimes),
   };
 }
 
 /**
- * Wandelt die gespeicherte Zeichenkette (z.B. "17:00,20:00") in eine
- * aufsteigend sortierte, entduplizierte Minutenliste. Ungueltige Eintraege
- * werden still verworfen - der Grund fuer eine Zeile, die es nicht war, ist
- * schon beim Speichern gemeldet worden.
+ * Wird ein Video dieser Sparte nach dem Render gepostet?
+ *
+ * Serien posten immer (kein Schalter), alle anderen Sparten nach dem Schalter
+ * "Direkt posten" im Täglichen Lauf.
  */
-export function parsePostingTimes(text: string | null | undefined): number[] {
-  if (!text) return [];
-  const eindeutig = new Set<number>();
-  for (const teil of text.split(/[,;\s]+/)) {
-    const min = parseUhrzeit(teil);
-    if (min !== null) eindeutig.add(min);
-  }
-  return [...eindeutig].sort((a, b) => a - b);
+export async function postenAktiv(track: Track): Promise<boolean> {
+  if (trackBeschreibung(track).sofortPosten) return true;
+  return (await getPostZeitplan(track)).enabled;
 }
 
 /**
@@ -262,74 +110,6 @@ function normalisierePool(rohes: unknown): TrendSound[] {
     if (audioId) ergebnis.push({ audioId, titel, tags });
   }
   return ergebnis;
-}
-
-/**
- * Die postedAt-Zeitpunkte einer Sparte ab einem Stichtag - Grundlage der
- * Taktung. Nur so viele, wie die Rechnung braucht (heute plus der letzte davor).
- */
-export async function letzteGepostet(track: Track, seit: Date): Promise<Date[]> {
-  const zeilen = await prisma.promoVideo.findMany({
-    where: { track, postedAt: { gte: seit } },
-    select: { postedAt: true },
-    orderBy: { postedAt: "desc" },
-    take: 50,
-  });
-  return zeilen.map((z) => z.postedAt!).filter(Boolean);
-}
-
-/**
- * Das nächste zu postende Video einer Sparte - oder null.
- *
- * Fertig gerendert, noch nicht gepostet, in Drive vorhanden, MIT öffentlicher
- * Kopie, und zur eingestellten Quelle passend. Das älteste zuerst: was am
- * längsten bereitliegt, soll nicht liegen bleiben.
- *
- * Warum publicUrl hier zur Bedingung gehört und nicht erst später geprüft
- * wird: sonst wählt die Auswahl das älteste Video auch dann, wenn es keine
- * öffentliche Kopie hat - und der Lauf bricht daran ab, OHNE zum nächsten,
- * postbaren Video zu springen. Ein einziges altes Video ohne Kopie ganz vorn
- * blockiert so alle jüngeren dahinter für immer. Nur wirklich postbare Videos
- * sind Kandidaten; die ohne Kopie zeigt die Bestandsaufnahme (ohneKopie), und
- * die Nachrüst-Route legt sie an.
- */
-export async function naechstesVideo(track: Track, quelle: PostQuelle) {
-  return prisma.promoVideo.findFirst({
-    where: {
-      track,
-      status: "done",
-      postedAt: null,
-      driveUrl: { not: null },
-      publicUrl: { not: null },
-      ...(quelle === "beliebig" ? {} : { origin: quelle }),
-    },
-    orderBy: { createdAt: "asc" },
-  });
-}
-
-/**
- * Der Beginn des heutigen Tages in Schweizer Zeit - Stichtag für die Taktung.
- *
- * Muss zur Zeitzone der Faelligkeitslogik passen: gepostet wird zu CH-Zeit,
- * also muss auch das "heute" in CH gerechnet werden. Sonst zaehlten Posts,
- * die abends kurz vor Mitternacht (CH) rausgingen, in UTC noch zum selben Tag
- * und schluckten den morgigen ersten Slot.
- */
-export function tagesBeginn(jetzt: Date): Date {
-  return chTagesBeginn(jetzt);
-}
-
-/** Alle Sparten mit eingeschalteter Automatik. */
-export async function spartenMitAutomatik(): Promise<Track[]> {
-  const zeilen = await prisma.postZeitplan.findMany({ where: { enabled: true } });
-  const an = new Set(zeilen.map((z) => z.id));
-  // Nur die Sparten dieses Deployments (GENERATOR_TRACKS): sonst würden zwei
-  // getrennte Apps dieselbe Sparte posten.
-  const erlaubt = new Set(erlaubteTrackKeys());
-  // Serien posten sofort nach dem Rendern, nicht nach Zeitplan.
-  return TRACKS.filter(
-    (t) => an.has(t) && erlaubt.has(t) && !trackBeschreibung(t).sofortPosten,
-  );
 }
 
 // ---------------------------------------------------------------------------
@@ -535,31 +315,7 @@ async function abschluss(
   return { track, ...ergebnis };
 }
 
-/**
- * Prüft eine Sparte und postet höchstens EIN fälliges Video.
- *
- * Bewusst nur eines pro Aufruf: der Mindestabstand soll greifen, und ein
- * Pinger, der oft anklopft, darf nicht die ganze Warteschlange auf einmal
- * rauswerfen. Beim nächsten Anklopfen kommt das nächste dran.
- */
-export async function posteFaelliges(track: Track, jetzt = new Date()): Promise<PostLaufErgebnis> {
-  const zeitplan = await getPostZeitplan(track);
-  const kandidat = zeitplan.enabled ? await naechstesVideo(track, zeitplan.quelle) : null;
-
-  const urteil = istFaellig({
-    zeitplan,
-    jetzt,
-    heuteGepostet: await letzteGepostet(track, tagesBeginn(jetzt)),
-    hatKandidat: !!kandidat,
-  });
-  if (!urteil.faellig || !kandidat) {
-    return abschluss(track, jetzt, { gepostet: false, grund: urteil.grund });
-  }
-
-  return posteKandidat(track, zeitplan, kandidat, jetzt);
-}
-
-type PostKandidat = NonNullable<Awaited<ReturnType<typeof naechstesVideo>>>;
+type PostKandidat = PromoVideo;
 
 /**
  * Postet genau dieses fertige Video: Sound, Caption und Ortstag wählen, an
@@ -617,6 +373,16 @@ async function posteKandidat(
   // wie bisher ohne Tag. Fehlt die Umgebungsvariable, wird stillschweigend
   // uebersprungen - der Post selbst laeuft unveraendert weiter.
   const locationId = ortstagFuer(track);
+
+  // Erst jetzt zählt es als Versuch: Konfigurationsfragen (kein Sound, keine
+  // öffentliche Kopie, keine Zugangsdaten) sollen die drei Versuche nicht
+  // aufbrauchen, bevor überhaupt etwas an Instagram ging.
+  if (igZugang(track)) {
+    await prisma.promoVideo.update({
+      where: { id: kandidat.id },
+      data: { postAttempts: { increment: 1 } },
+    });
+  }
 
   const ergebnis = await posteReel(track, {
     videoUrl: kandidat.publicUrl,
@@ -691,19 +457,66 @@ async function posteKandidat(
   );
 }
 
+// ---------------------------------------------------------------------------
+// Reservierung: ein Video geht nie zweimal raus
+// ---------------------------------------------------------------------------
+
+/** So lange gilt eine Reservierung. Ein Post wartet bis zu 150 s auf Instagram. */
+const RESERVIERUNG_MS = 10 * 60 * 1000;
+
+/** Wie oft die Automatik ein Video zu posten versucht, bevor sie aufgibt. */
+export const MAX_POST_VERSUCHE = 3;
+
 /**
- * Postet das frisch gerenderte Video einer Serie sofort - ein einziger Ablauf
- * von der Erzeugung bis zur Veröffentlichung, ohne Zeitfenster, Tageslimit
- * oder Mindestabstand. Sound-Pool, Hashtags und Trial-Schalter kommen aus den
- * Einstellungen der Sparte ("Automatisch posten").
+ * Belegt das Video fürs Posten - atomar, in einer einzigen Update-Anweisung.
  *
- * Schon gepostete Videos werden nicht ein zweites Mal veröffentlicht.
+ * Ohne das ginge ein Video zweimal raus, wenn sich zwei Aufrufe überschneiden
+ * (Wiederholung des Anstosses, Doppelklick, Handpost während die Automatik
+ * läuft): beide läsen postedAt = null, und beide posteten.
  */
-export async function posteSerienVideo(videoId: string, jetzt = new Date()): Promise<PostLaufErgebnis> {
+export async function reserviereFuerPost(videoId: string, mitVersuchsgrenze: boolean): Promise<boolean> {
+  const r = await prisma.promoVideo.updateMany({
+    where: {
+      id: videoId,
+      status: "done",
+      postedAt: null,
+      OR: [
+        { postClaimedAt: null },
+        { postClaimedAt: { lt: new Date(Date.now() - RESERVIERUNG_MS) } },
+      ],
+      ...(mitVersuchsgrenze ? { postAttempts: { lt: MAX_POST_VERSUCHE } } : {}),
+    },
+    data: { postClaimedAt: new Date() },
+  });
+  return r.count === 1;
+}
+
+/** Gibt die Reservierung wieder frei, damit ein späterer Versuch möglich ist. */
+async function gibPostFrei(videoId: string): Promise<void> {
+  await prisma.promoVideo
+    .updateMany({ where: { id: videoId, postedAt: null }, data: { postClaimedAt: null } })
+    .catch(() => {});
+}
+
+/**
+ * Postet das fertig gerenderte Video - der zweite Schritt des einen Ablaufs.
+ *
+ * Wird von der Process-Route direkt nach dem Render angestossen (in einer
+ * eigenen Ausführung mit eigenen 300 Sekunden) und vom Rückstands-Lauf, wenn
+ * ein früherer Versuch gescheitert ist. Posten tut nur, was autoPost trägt und
+ * kein Altbestand ist; schon Gepostetes oder gerade Reserviertes bleibt
+ * liegen. Sound, Hashtags, Trial-Schalter und Ortstag kommen aus den
+ * Einstellungen der Sparte.
+ */
+export async function posteFertigesVideo(videoId: string, jetzt = new Date()): Promise<PostLaufErgebnis> {
   const video = await prisma.promoVideo.findUnique({ where: { id: videoId } });
-  const track = ((video?.track as Track) ?? "serie") as Track;
-  if (!video || !trackBeschreibung(track).sofortPosten) {
-    return { track, gepostet: false, grund: "Video nicht gefunden oder keine Serien-Sparte" };
+  const track = ((video?.track as Track) ?? "promo") as Track;
+  if (!video) return { track, gepostet: false, grund: "Video nicht gefunden" };
+  if (video.altbestand) {
+    return { track, gepostet: false, grund: "Altbestand - wird nicht automatisch gepostet" };
+  }
+  if (!video.autoPost) {
+    return { track, gepostet: false, grund: "nicht zum direkten Posten vorgesehen" };
   }
   if (video.status !== "done") return { track, gepostet: false, grund: "noch nicht fertig gerendert" };
   if (video.postedAt) return { track, gepostet: false, grund: "schon gepostet" };
@@ -718,25 +531,80 @@ export async function posteSerienVideo(videoId: string, jetzt = new Date()): Pro
     return abschluss(track, jetzt, { gepostet: false, grund: "keine öffentliche Kopie" }, titel);
   }
 
-  const zeitplan = await getPostZeitplan(track);
-  return posteKandidat(track, zeitplan, video as PostKandidat, jetzt);
+  if (!(await reserviereFuerPost(videoId, true))) {
+    return {
+      track,
+      gepostet: false,
+      grund:
+        video.postAttempts >= MAX_POST_VERSUCHE
+          ? `${MAX_POST_VERSUCHE} Versuche gescheitert - nicht mehr automatisch, nur noch von Hand`
+          : "ein Post läuft gerade",
+    };
+  }
+
+  try {
+    const ergebnis = await posteKandidat(track, await getPostZeitplan(track), video, jetzt);
+    if (!ergebnis.gepostet) await gibPostFrei(videoId);
+    return ergebnis;
+  } catch (err) {
+    await gibPostFrei(videoId);
+    throw err;
+  }
 }
 
-/** Fertige Serien-Videos, die noch nicht gepostet sind (Rückstand nach einem Fehler). */
-export async function ungepostetSerienVideos(track: Track, tage = 3): Promise<string[]> {
+/**
+ * Fertige, zum Posten vorgesehene Videos der letzten Tage, die nicht draussen
+ * sind - der Rückstand nach einem Fehler. Altbestand ist nie dabei.
+ */
+export async function ungepostetAutoVideos(
+  track: Track,
+  tage = 3,
+): Promise<{ id: string; origin: string }[]> {
   // Nicht die ganz frischen: deren Post läuft womöglich gerade.
   const vor = new Date(Date.now() - 30 * 60 * 1000);
-  const zeilen = await prisma.promoVideo.findMany({
+  return prisma.promoVideo.findMany({
     where: {
       track,
       status: "done",
+      autoPost: true,
+      altbestand: false,
       postedAt: null,
+      postAttempts: { lt: MAX_POST_VERSUCHE },
       createdAt: { gt: new Date(Date.now() - tage * 24 * 3600 * 1000), lt: vor },
     },
     orderBy: { createdAt: "asc" },
-    select: { id: true },
+    select: { id: true, origin: true },
   });
-  return zeilen.map((z) => z.id);
+}
+
+/**
+ * Holt Videos nach, deren Post gescheitert ist - für alle Sparten dieses
+ * Deployments. Läuft mit dem Tageslauf; der Normalfall postet längst direkt
+ * nach dem Render, das hier ist nur das Netz darunter.
+ *
+ * Videos des Tageslaufs nur, solange "Direkt posten" der Sparte an ist: wer
+ * das ausschaltet, will, dass nichts mehr von selbst rausgeht. Handversuche mit
+ * ausdrücklicher Wahl "direkt posten" gelten weiter.
+ */
+export async function holeRueckstandNach(): Promise<PostLaufErgebnis[]> {
+  const ergebnisse: PostLaufErgebnis[] = [];
+  for (const track of erlaubteTrackKeys()) {
+    // Die erste Abfrage weckt bei Bedarf den schlafenden Neon-Knoten
+    // (siehe mitDbWiederholung).
+    const kandidaten = await mitDbWiederholung(() => ungepostetAutoVideos(track));
+    if (!kandidaten.length) continue;
+    const aktiv = await postenAktiv(track);
+    for (const k of kandidaten.filter((v) => aktiv || v.origin === "manual").slice(0, 3)) {
+      ergebnisse.push(
+        await posteFertigesVideo(k.id).catch((err) => ({
+          track,
+          gepostet: false,
+          grund: err instanceof Error ? err.message : String(err),
+        })),
+      );
+    }
+  }
+  return ergebnisse;
 }
 
 export interface SofortPostErgebnis {
@@ -759,6 +627,33 @@ export interface SofortPostErgebnis {
  * zweites Mal veröffentlicht.
  */
 export async function posteVideoJetzt(videoId: string, jetzt = new Date()): Promise<SofortPostErgebnis> {
+  // Reserviert wie die Automatik: läuft für dieses Video schon ein Post (etwa
+  // direkt nach dem Render), geht der Handpost nicht gleichzeitig noch einmal raus.
+  if (!(await reserviereFuerPost(videoId, false))) {
+    const vorhanden = await prisma.promoVideo.findUnique({
+      where: { id: videoId },
+      select: { postedAt: true, status: true },
+    });
+    if (!vorhanden) return { ok: false, grund: "Video nicht gefunden." };
+    if (vorhanden.postedAt) {
+      return { ok: false, grund: `Schon gepostet am ${chFormatZeitstempel(vorhanden.postedAt)} CH.` };
+    }
+    if (vorhanden.status !== "done") {
+      return { ok: false, grund: "Das Video ist noch nicht fertig gerendert." };
+    }
+    return { ok: false, grund: "Für dieses Video läuft gerade ein Post - gleich noch einmal nachsehen." };
+  }
+  try {
+    const ergebnis = await posteVideoJetztOhneSperre(videoId, jetzt);
+    if (!ergebnis.ok) await gibPostFrei(videoId);
+    return ergebnis;
+  } catch (err) {
+    await gibPostFrei(videoId);
+    throw err;
+  }
+}
+
+async function posteVideoJetztOhneSperre(videoId: string, jetzt: Date): Promise<SofortPostErgebnis> {
   const video = await prisma.promoVideo.findUnique({ where: { id: videoId } });
   if (!video) return { ok: false, grund: "Video nicht gefunden." };
 
@@ -819,7 +714,7 @@ export async function posteVideoJetzt(videoId: string, jetzt = new Date()): Prom
         grund:
           "Kein Sound: das Video hat keinen eigenen Sound, kein _music im Dateinamen und " +
           "es ist kein Trend-Sound-Pool eingerichtet. Damit würde das Reel ohne Musik posten - " +
-          "das ist nicht erlaubt. Trag im Dashboard unter „Automatisch posten\" mindestens einen " +
+          "das ist nicht erlaubt. Trag im Dashboard unter „Posten nach dem Erstellen\" mindestens einen " +
           "Trend-Sound ein oder setz am Konzept einen Sound.",
       };
     }
@@ -987,6 +882,7 @@ export async function bestandDerSparte(track: Track) {
     offen: zahl("queued") + zahl("rendering"),
     fehlgeschlagen: zahl("failed"),
     gepostet,
+    altbestand: await prisma.promoVideo.count({ where: { track, altbestand: true } }),
     doneUnpostet: doneUnpostet.length,
     ohneKopie: doneUnpostet.filter((v) => !v.publicUrl).length,
     mitKopie: doneUnpostet.filter((v) => !!v.publicUrl).length,
@@ -1001,19 +897,3 @@ export async function bestandDerSparte(track: Track) {
   };
 }
 
-/** Geht alle Sparten mit Automatik durch - der Einstieg für den Pinger. */
-export async function posteAlleFaelligen(jetzt = new Date()): Promise<PostLaufErgebnis[]> {
-  // Die erste Abfrage weckt bei Bedarf den schlafenden Neon-Knoten; scheitert sie
-  // am Verbindungsaufbau, wird sie wiederholt, statt den Pinger mit 500 zu
-  // beantworten (siehe mitDbWiederholung).
-  const sparten = await mitDbWiederholung(() => spartenMitAutomatik());
-  const ergebnisse: PostLaufErgebnis[] = [];
-  for (const track of sparten) {
-    ergebnisse.push(await posteFaelliges(track, jetzt).catch((err) => ({
-      track,
-      gepostet: false,
-      grund: err instanceof Error ? err.message : String(err),
-    })));
-  }
-  return ergebnisse;
-}

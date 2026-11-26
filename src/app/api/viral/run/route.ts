@@ -24,9 +24,12 @@ export async function POST(request: NextRequest) {
 
   const track = trackFromRequest(request);
   const nurWartende = new URL(request.url).searchParams.get("nurWartende") === "1";
+  // Handversuch: ausdrückliche Wahl, ob die Videos nach dem Render gepostet
+  // werden. Ohne Angabe: nur erstellen.
+  const posten = new URL(request.url).searchParams.get("posten") === "1";
 
   try {
-    const geplant = nurWartende ? { jobIds: [] as string[], hinweis: undefined } : await planViralRun(track, true);
+    const geplant = nurWartende ? { jobIds: [] as string[], hinweis: undefined } : await planViralRun(track, true, posten);
 
     // Angestossen wird der älteste wartende Auftrag - und nur, wenn gerade
     // nichts rendert. Läuft schon einer, holt dessen Kette den Rest nach.
