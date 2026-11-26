@@ -27,8 +27,6 @@ import {
   type PostHistorieEintrag,
   type PostLaufEintrag,
 } from "./PostHistorie";
-import { getSoundTagKatalog } from "@/lib/soundTagStore";
-import { SoundTagKatalog } from "./SoundTagKatalog";
 import { SoundBibliothekStatus } from "./SoundBibliothekStatus";
 import { SoundBibliothekListe, type SoundZeile } from "./SoundBibliothekListe";
 import { bibliotheksStand } from "@/lib/soundBibliothek";
@@ -191,9 +189,8 @@ export default async function DashboardPage() {
   // Nur die Sparten dieses Deployments (GENERATOR_TRACKS) - so ist dieselbe
   // Code-Basis z.B. als eigene Doc-Meiro-App betreibbar.
   const spartenListe = erlaubteTrackListe();
-  const [sparten, soundTagKatalog, soundStand] = await Promise.all([
+  const [sparten, soundStand] = await Promise.all([
     Promise.all(spartenListe.map((s) => ladeSparte(s.key))),
-    getSoundTagKatalog(),
     bibliotheksStand().catch(() => null),
   ]);
   const soundRows = await prisma.soundBibliothek
@@ -237,26 +234,10 @@ export default async function DashboardPage() {
     spartenListe.map((s, i) => [s.key, sparten[i]]),
   ) as Record<Track, TrackData>;
 
-  // Tags, die es (noch) im Katalog gibt. Aus dem Katalog entfernte Tags sollen
-  // in jeder Sparte und an jedem Sound verschwinden - deshalb hier für die
-  // Anzeige herausfiltern. Beim nächsten Speichern fällt der Rest weg.
-  const erlaubteTags = new Set(soundTagKatalog.map((t) => t.key));
-  const nurErlaubt = (keys: string[] | undefined) =>
-    (keys ?? []).filter((k) => erlaubteTags.has(k));
-
   const inhalte = Object.fromEntries(
     spartenListe.map((sparte) => {
       const track = sparte.key;
       const data = daten[track];
-      const postZeitplan = {
-        ...data.postZeitplan,
-        soundTags: nurErlaubt(data.postZeitplan.soundTags),
-        trendSounds: data.postZeitplan.trendSounds.map((s) => ({
-          ...s,
-          tags: nurErlaubt(s.tags),
-        })),
-      };
-
       return [
         track,
         <>
@@ -269,14 +250,14 @@ export default async function DashboardPage() {
           {track === "promo" ? (
             <DailySettings
               postEinstellungen={
-                <PostAutomatik track={track} stand={postZeitplan} katalog={soundTagKatalog} />
+                <PostAutomatik track={track} stand={data.postZeitplan} />
               }
             />
           ) : (
             <ViralSchedule
               track={track}
               postEinstellungen={
-                <PostAutomatik track={track} stand={postZeitplan} katalog={soundTagKatalog} />
+                <PostAutomatik track={track} stand={data.postZeitplan} />
               }
             />
           )}
@@ -310,7 +291,6 @@ export default async function DashboardPage() {
 
       {soundStand && <SoundBibliothekStatus stand={soundStand} />}
       <SoundBibliothekListe sounds={soundZeilen} />
-      <SoundTagKatalog katalog={soundTagKatalog} />
 
       <Sparten inhalte={inhalte} tracks={spartenListe} />
     </main>
