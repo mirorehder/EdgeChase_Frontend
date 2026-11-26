@@ -4,7 +4,12 @@ import { igZugang } from "@/lib/instagram";
 import { erlaubteTrackKeys } from "@/lib/trackClient";
 import { logActivity } from "@/lib/activity";
 import { bibliotheksStand, nimmSoundsAuf } from "@/lib/soundBibliothek";
-import { holeTrendSounds } from "@/lib/soundQuelle";
+import {
+  holeTrendSounds,
+  holeViraleLieder,
+  sucheOriginalSounds,
+  NOTFALL_LIEDER,
+} from "@/lib/soundQuelle";
 
 // Herunterladen und Hoeren (Gemini) der neuen Sounds.
 export const maxDuration = 300;
@@ -36,8 +41,33 @@ async function auffuellen(request: NextRequest) {
     return NextResponse.json({ error: grund }, { status: 502 });
   }
 
-  const ergebnis = await nimmSoundsAuf(sounds, "trend");
-  return NextResponse.json({ ...ergebnis, stand: await bibliotheksStand() });
+  const ergebnis = await nimmSoundsAuf(sounds, "trend", 10);
+
+  // Zweiter Zufluss: Original-Sounds zu aktuell viralen Liedern. Scheitert er,
+  // bleibt der Trend-Zufluss trotzdem erhalten.
+  let viral: { lieder: number; gefunden: number; neu: number; bewertet: number; hinweis?: string } | null = null;
+  try {
+    const { lieder: gefunden, fehler: liederFehler } = await holeViraleLieder();
+    const lieder = gefunden.length > 0 ? gefunden : NOTFALL_LIEDER;
+    const treffer = [];
+    for (const lied of lieder.slice(0, 8)) {
+      treffer.push(...(await sucheOriginalSounds(track, lied)));
+    }
+    const v = await nimmSoundsAuf(treffer.slice(0, 24), "viral", 8);
+    viral = {
+      lieder: lieder.length,
+      gefunden: treffer.length,
+      neu: v.neu,
+      bewertet: v.bewertet,
+      hinweis: liederFehler ? `Notfall-Lieder, weil: ${liederFehler}` : undefined,
+    };
+  } catch (err) {
+    const grund = err instanceof Error ? err.message : String(err);
+    viral = { lieder: 0, gefunden: 0, neu: 0, bewertet: 0, hinweis: grund };
+    await logActivity(`Sound-Zufluss ueber virale Lieder fehlgeschlagen: ${grund}`, { level: "error", track });
+  }
+
+  return NextResponse.json({ ...ergebnis, viral, stand: await bibliotheksStand() });
 }
 
 export const GET = auffuellen;

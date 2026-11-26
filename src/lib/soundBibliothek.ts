@@ -27,6 +27,8 @@ export interface KatalogSound {
   duration_in_ms?: number;
   audio_type?: string;
   download_url?: string;
+  /** Nur beim Zufluss ueber virale Lieder: "Titel - Kuenstler". */
+  viral_lied?: string;
 }
 
 /** So lange gilt ein Sound als "im Trend", ohne erneut im Katalog zu erscheinen. */
@@ -52,6 +54,7 @@ function alsKandidat(r: SoundBibliothek): SoundKandidat {
     bewertet: r.bewertetAt != null,
     trendRang: r.trendRang,
     urteil: r.urteil,
+    viralLied: r.viralLied,
   };
 }
 
@@ -117,8 +120,13 @@ async function ladeAudio(url: string): Promise<Buffer | null> {
  */
 export async function nimmSoundsAuf(
   rohe: KatalogSound[],
-  /** "trend" = Liste der trendenden Sounds (Reihenfolge = Platz); "suche" = Stichwortsuche. */
-  quelle: "trend" | "suche" = "trend",
+  /**
+   * "trend" = Liste der trendenden Sounds (Reihenfolge = Platz); "viral" = Treffer
+   * zu aktuell viralen Liedern; "suche" = Stichwortsuche.
+   */
+  quelle: "trend" | "suche" | "viral" = "trend",
+  /** Hoechstens so viele neue Sounds in diesem Aufruf bewerten (Zeit und Gemini-Limit). */
+  maxBewerten: number = MAX_NEU_BEWERTEN,
 ): Promise<AufnahmeErgebnis> {
   const geschmack = await ladeGeschmack();
   const ergebnis: AufnahmeErgebnis = {
@@ -165,13 +173,14 @@ export async function nimmSoundsAuf(
           zuletztGesehenAt: jetzt,
           // Der Platz in der Trend-Liste gilt immer fuer den letzten Zufluss.
           ...(quelle === "trend" ? { trendRang } : {}),
+          ...(s.viral_lied ? { viralLied: s.viral_lied } : {}),
           ...(alterTage != null && vorhanden.alterTage == null ? { alterTage } : {}),
           // Ein "veralteter" Sound, der wieder im Katalog auftaucht, ist wieder im Trend.
           ...(vorhanden.status === "veraltet" ? { status: "aktiv" } : {}),
         },
       });
       // Bisher unbewertet, jetzt mit Audio erreichbar: nachholen.
-      if (vorhanden.bewertetAt == null && s.download_url && neuBewertet < MAX_NEU_BEWERTEN) {
+      if (vorhanden.bewertetAt == null && s.download_url && neuBewertet < maxBewerten) {
         neuBewertet++;
         if (await bewerteUndSpeichere(s.audio_id, s.download_url, { titel, kuenstler, dauerMs }, ergebnis, geschmack))
           ergebnis.bewertet++;
@@ -190,11 +199,12 @@ export async function nimmSoundsAuf(
         alterTage,
         zuletztGesehenAt: jetzt,
         trendRang,
+        viralLied: s.viral_lied ?? null,
         vibeTags: [],
       },
     });
     ergebnis.neu++;
-    if (s.download_url && neuBewertet < MAX_NEU_BEWERTEN) {
+    if (s.download_url && neuBewertet < maxBewerten) {
       neuBewertet++;
       if (await bewerteUndSpeichere(s.audio_id, s.download_url, { titel, kuenstler, dauerMs }, ergebnis, geschmack))
         ergebnis.bewertet++;

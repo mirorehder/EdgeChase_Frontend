@@ -817,6 +817,10 @@ model SoundBibliothek {
   vibeTags         String[]
   vibeBeschreibung String?
 
+  /// Zu welchem viralen Lied der Sound gehoert ("Titel - Kuenstler"), wenn er
+  /// ueber die Suche nach einem aktuell viralen Lied gefunden wurde.
+  viralLied String?
+
   /// Platz in der Trend-Liste beim letzten Zufluss (1 = ganz vorne). null =
   /// kam nicht aus der Trend-Liste (z. B. Stichwortsuche) und gilt als wenig bekannt.
   trendRang Int?
