@@ -28,6 +28,10 @@ export interface SoundKandidat {
 /** Ein Sound länger als das hier ist für Reels unhandlich. */
 export const MAX_SOUND_MS = 75_000;
 
+/** Mindesthaerte: darunter ist ein Sound zu weich fuer die Reels dieser Generatoren. */
+export const MIN_DRUCK = 0.6;
+export const MIN_START = 0.5;
+
 /** Wie viele der letzten Posts einer Sparte ihren Sound nicht wiederholen dürfen. */
 export const WARTE_POSTS = 10;
 /** ... und mindestens so viele Tage. Es gilt das Strengere von beiden. */
@@ -118,7 +122,13 @@ export function rangliste(
   // Unbewertete Sounds nur, wenn es keine bewerteten gibt: ohne Bewertung
   // wissen wir nicht, ob sie aggressiv genug sind oder überhaupt etwas taugen.
   const bewertet = geeignet.filter((k) => k.bewertet);
-  const basis = bewertet.length > 0 ? bewertet : geeignet;
+  // Nur harte Sounds. Gibt es (noch) keinen, bleibt es bei den bewerteten - aber
+  // ein chilliger Sound kommt nie vor einem harten dran, auch nicht wegen der
+  // Wartezeit: dann wiederholt sich lieber ein harter.
+  const stark = bewertet.filter(
+    (k) => (k.druck ?? 0) >= MIN_DRUCK && (k.startStaerke ?? 0) >= MIN_START,
+  );
+  const basis = stark.length > 0 ? stark : bewertet.length > 0 ? bewertet : geeignet;
 
   const gesperrt = new Set(zuletztVerwendet);
   let frei = basis.filter((k) => !gesperrt.has(k.audioId));
