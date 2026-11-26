@@ -21,6 +21,11 @@ import { normalisiereTagKeys, passtZuSparte } from "./soundTags";
 import { igZugang, posteReel } from "./instagram";
 import { logActivity } from "./activity";
 import {
+  waehleAusBibliothek,
+  videoBeschreibung,
+  zuletztVerwendeteSounds,
+} from "./soundBibliothek";
+import {
   bucketFromServeUrl,
   deletePostCopy,
   isRenderStorageConfigured,
@@ -119,7 +124,7 @@ function normalisierePool(rohes: unknown): TrendSound[] {
 // laesst, ohne Instagram anzufassen.
 // ---------------------------------------------------------------------------
 
-export type SoundHerkunft = "konzept" | "pool" | "eigenerFilmton" | "keinSound";
+export type SoundHerkunft = "konzept" | "bibliothek" | "pool" | "eigenerFilmton" | "keinSound";
 
 export interface SoundWahl {
   audioId: string | null;
@@ -131,6 +136,8 @@ export interface SoundWahl {
   titel?: string;
   /** Wenn keine Wahl moeglich ist. */
   grund?: string;
+  /** Warum dieser Sound zum Video passt (nur bei der Bibliothek). */
+  passung?: string;
 }
 
 export interface SoundEingabe {
@@ -207,6 +214,79 @@ export function waehleSound(eingabe: SoundEingabe): SoundWahl {
     herkunft: "keinSound",
     grund: "kein Sound verfügbar",
   };
+}
+
+
+/**
+ * Die Sound-Wahl fuer ein konkretes Video.
+ *
+ * Gleiche Rangfolge wie waehleSound - eigene Musik (_music) und ein geprueftes
+ * Konzept-Sound gehen vor. Statt eines Zufalls-Picks aus dem Pool kommt dann
+ * aber die Sound-Bibliothek: aggressive, frische Sounds, die nicht in der
+ * Wartezeit liegen und zum Video passen. Der handgepflegte Pool ist nur noch
+ * die letzte Rueckfallebene (ebenfalls mit Wartezeit).
+ */
+export async function waehleSoundFuerVideo(
+  track: Track,
+  video: PromoVideo,
+  zeitplan: PostZeitplanStand,
+): Promise<SoundWahl> {
+  const dateiName = video.driveFileName ?? video.fileTitle ?? "";
+  const konzeptSound = { audioId: video.soundAudioId, status: video.soundStatus ?? "offen" };
+
+  const festgelegt = waehleSound({ dateiName, konzeptSound, trendPool: [] });
+  if (festgelegt.herkunft !== "keinSound") return festgelegt;
+
+  try {
+    const [konzept, clips] = await Promise.all([
+      video.conceptId
+        ? prisma.concept.findUnique({ where: { id: video.conceptId }, select: { theme: true } })
+        : null,
+      prisma.clip.findMany({
+        where: {
+          id: {
+            in: (Array.isArray(video.scenes) ? (video.scenes as { clipId?: string }[]) : [])
+              .map((sz) => sz.clipId ?? "")
+              .filter(Boolean),
+          },
+        },
+        select: { momentDescription: true, description: true },
+      }),
+    ]);
+    const momente = clips
+      .map((c) => (c.momentDescription || c.description || "").trim())
+      .filter(Boolean)
+      .map((t) => t.slice(0, 160));
+    const wahl = await waehleAusBibliothek(
+      track,
+      videoBeschreibung(track, video, konzept?.theme ?? null, momente),
+    );
+    if (wahl) {
+      return {
+        audioId: wahl.audioId,
+        hatEigeneMusik: false,
+        herkunft: "bibliothek",
+        titel: wahl.titel,
+        passung: wahl.grund,
+      };
+    }
+  } catch (err) {
+    await logActivity(
+      `Sound-Bibliothek nicht nutzbar (${err instanceof Error ? err.message : String(err)}) - ` +
+        "es gilt der Trend-Sound-Pool.",
+      { level: "error", track, videoId: video.id },
+    );
+  }
+
+  // Rueckfall: der Pool der Sparte, ohne die zuletzt verwendeten.
+  const verwendet = new Set(await zuletztVerwendeteSounds(track).catch(() => [] as string[]));
+  const frei = zeitplan.trendSounds.filter((t) => !verwendet.has(t.audioId));
+  return waehleSound({
+    dateiName,
+    konzeptSound,
+    trendPool: frei.length > 0 ? frei : zeitplan.trendSounds,
+    spartenTags: zeitplan.soundTags,
+  });
 }
 
 /**
@@ -342,17 +422,8 @@ async function posteKandidat(
     return abschluss(track, jetzt, { gepostet: false, grund: "keine öffentliche Kopie" }, kandidatTitel);
   }
 
-  // Der Sound wird nach fester Rangfolge gewaehlt - siehe waehleSound.
-  const dateiName = kandidat.driveFileName ?? kandidat.fileTitle ?? "";
-  const sound = waehleSound({
-    dateiName,
-    konzeptSound: {
-      audioId: kandidat.soundAudioId,
-      status: kandidat.soundStatus ?? "offen",
-    },
-    trendPool: zeitplan.trendSounds,
-    spartenTags: zeitplan.soundTags,
-  });
+  // Der Sound wird nach fester Rangfolge gewaehlt - siehe waehleSoundFuerVideo.
+  const sound = await waehleSoundFuerVideo(track, kandidat, zeitplan);
 
   if (sound.grund === "kein Sound verfügbar") {
     await logActivity(
@@ -428,16 +499,27 @@ async function posteKandidat(
 
   await prisma.promoVideo.update({
     where: { id: kandidat.id },
-    data: { postedMediaId: ergebnis.mediaId, postedAt: jetzt, postError: null },
+    data: {
+      postedMediaId: ergebnis.mediaId,
+      postedAt: jetzt,
+      postError: null,
+      // Festhalten, welcher Sound wirklich am Reel haengt - Grundlage der
+      // Wartezeit und der Historie.
+      postSoundAudioId: sound.audioId,
+      postSoundTitle: sound.titel ?? null,
+      postSoundHerkunft: sound.herkunft,
+    },
   });
   const soundText =
     sound.herkunft === "eigenerFilmton"
       ? "Filmton (Video mit _music)"
       : sound.herkunft === "konzept"
         ? `Konzept-Sound ${sound.audioId}`
-        : sound.herkunft === "pool"
-          ? `Pool-Sound "${sound.titel ?? sound.audioId}"`
-          : "kein Sound";
+        : sound.herkunft === "bibliothek"
+          ? `Bibliotheks-Sound "${sound.titel ?? sound.audioId}"${sound.passung ? ` (${sound.passung})` : ""}`
+          : sound.herkunft === "pool"
+            ? `Pool-Sound "${sound.titel ?? sound.audioId}"`
+            : "kein Sound";
   await logActivity(
     `Gepostet um ${chFormatUhrzeit(jetzt)} CH: "${caption.split("\n")[0]}" ` +
       `(${trackBeschreibung(track).label}), Media-ID ${ergebnis.mediaId}, Sound: ${soundText}.`,
@@ -694,17 +776,14 @@ async function posteVideoJetztOhneSperre(videoId: string, jetzt: Date): Promise<
   let audioId: string | null;
   let hatEigeneMusik = false;
   let soundText: string;
+  let soundTitel: string | null = video.soundTitle;
+  let soundHerkunft = "konzept";
 
   if (eigenerSound) {
     audioId = video.soundAudioId;
     soundText = `hinterlegter Sound ${video.soundTitle ?? video.soundAudioId} (direkt angehängt)`;
   } else {
-    const sound = waehleSound({
-      dateiName,
-      konzeptSound: { audioId: video.soundAudioId, status: video.soundStatus ?? "offen" },
-      trendPool: zeitplan.trendSounds,
-      spartenTags: zeitplan.soundTags,
-    });
+    const sound = await waehleSoundFuerVideo(track, video, zeitplan);
     // Kein Sound verfügbar: NICHT posten. Es darf kein Reel ohne Sound
     // rausgehen - dann lieber ein klarer Hinweis, einen Trend-Sound-Pool
     // einzurichten (oder am Konzept einen Sound zu setzen).
@@ -720,12 +799,16 @@ async function posteVideoJetztOhneSperre(videoId: string, jetzt: Date): Promise<
     }
     audioId = sound.audioId;
     hatEigeneMusik = sound.hatEigeneMusik;
+    soundTitel = sound.titel ?? null;
+    soundHerkunft = sound.herkunft;
     soundText =
       sound.herkunft === "eigenerFilmton"
         ? "Filmton (Video mit _music)"
-        : sound.herkunft === "pool"
-          ? `Pool-Sound "${sound.titel ?? sound.audioId}"`
-          : "kein Sound";
+        : sound.herkunft === "bibliothek"
+          ? `Bibliotheks-Sound "${sound.titel ?? sound.audioId}"${sound.passung ? ` (${sound.passung})` : ""}`
+          : sound.herkunft === "pool"
+            ? `Pool-Sound "${sound.titel ?? sound.audioId}"`
+            : "kein Sound";
   }
 
   const captionRoh = captionRohFuer(track, video);
@@ -771,7 +854,14 @@ async function posteVideoJetztOhneSperre(videoId: string, jetzt: Date): Promise<
   // mehr (naechstesVideo verlangt postedAt = null).
   await prisma.promoVideo.update({
     where: { id: video.id },
-    data: { postedMediaId: ergebnis.mediaId, postedAt: jetzt, postError: null },
+    data: {
+      postedMediaId: ergebnis.mediaId,
+      postedAt: jetzt,
+      postError: null,
+      postSoundAudioId: audioId,
+      postSoundTitle: soundTitel,
+      postSoundHerkunft: audioId ? soundHerkunft : null,
+    },
   });
 
   await logActivity(
@@ -805,6 +895,8 @@ export async function postHistorie(track: Track, anzahl = 20) {
       hookText: true,
       soundTitle: true,
       soundAudioId: true,
+      postSoundTitle: true,
+      postSoundAudioId: true,
       driveUrl: true,
       origin: true,
     },

@@ -29,6 +29,8 @@ import {
 } from "./PostHistorie";
 import { getSoundTagKatalog } from "@/lib/soundTagStore";
 import { SoundTagKatalog } from "./SoundTagKatalog";
+import { SoundBibliothekStatus } from "./SoundBibliothekStatus";
+import { bibliotheksStand } from "@/lib/soundBibliothek";
 import { chFormatZeitstempel } from "@/lib/zeit";
 
 export const dynamic = "force-dynamic";
@@ -107,7 +109,7 @@ async function ladeSparte(track: Track): Promise<TrackData> {
     zeit: p.postedAt ? chFormatZeitstempel(p.postedAt) : "",
     titel: p.fileTitle || p.hookText.split("\n")[0] || "(ohne Titel)",
     mediaId: p.postedMediaId,
-    sound: p.soundTitle || p.soundAudioId || null,
+    sound: p.postSoundTitle || p.postSoundAudioId || p.soundTitle || p.soundAudioId || null,
     herkunft: p.origin,
     driveUrl: p.driveUrl,
   }));
@@ -188,9 +190,10 @@ export default async function DashboardPage() {
   // Nur die Sparten dieses Deployments (GENERATOR_TRACKS) - so ist dieselbe
   // Code-Basis z.B. als eigene Doc-Meiro-App betreibbar.
   const spartenListe = erlaubteTrackListe();
-  const [sparten, soundTagKatalog] = await Promise.all([
+  const [sparten, soundTagKatalog, soundStand] = await Promise.all([
     Promise.all(spartenListe.map((s) => ladeSparte(s.key))),
     getSoundTagKatalog(),
+    bibliotheksStand().catch(() => null),
   ]);
   const daten = Object.fromEntries(
     spartenListe.map((s, i) => [s.key, sparten[i]]),
@@ -267,6 +270,7 @@ export default async function DashboardPage() {
         mit eigenem Zeitplan und eigenen Konzepten.
       </p>
 
+      {soundStand && <SoundBibliothekStatus stand={soundStand} />}
       <SoundTagKatalog katalog={soundTagKatalog} />
 
       <Sparten inhalte={inhalte} tracks={spartenListe} />

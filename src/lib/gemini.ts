@@ -2,7 +2,7 @@ import { FileState, GoogleGenAI, Type, type File as GenAIFile } from "@google/ge
 import { env } from "./env";
 import { bewertungsart, type Track } from "./trackClient";
 
-const MODEL = "gemini-3.1-flash-lite";
+export const MODEL = "gemini-3.1-flash-lite";
 
 // Lehre aus dem Schwesterprojekt: Bei der Standard-Abtastrate (1 Bild/s)
 // werden schnelle Bewegungen unsichtbar und das Modell erfindet dazu
@@ -18,7 +18,7 @@ const MAX_EXCERPT_MS = 4000;
 const FILE_PROCESSING_TIMEOUT_MS = 3 * 60 * 1000;
 const FILE_POLL_INTERVAL_MS = 2000;
 
-function client() {
+export function client() {
   return new GoogleGenAI({ apiKey: env.geminiApiKey });
 }
 
