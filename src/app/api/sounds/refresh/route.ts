@@ -28,6 +28,11 @@ async function auffuellen(request: NextRequest) {
     return NextResponse.json({ error: "Nicht berechtigt." }, { status: 401 });
   }
 
+  // Nur die Liederliste pruefen (schnell, ohne etwas aufzunehmen): ?nur=lieder
+  if (new URL(request.url).searchParams.get("nur") === "lieder") {
+    return NextResponse.json(await holeViraleLieder());
+  }
+
   // Ein Konto genuegt: die erste Sparte dieser App mit Zugangsdaten.
   const track = erlaubteTrackKeys().find((t) => igZugang(t));
   if (!track) {
@@ -49,6 +54,12 @@ async function auffuellen(request: NextRequest) {
   try {
     const { lieder: gefunden, fehler: liederFehler } = await holeViraleLieder();
     const lieder = gefunden.length > 0 ? gefunden : NOTFALL_LIEDER;
+    if (liederFehler) {
+      await logActivity(`Virale Lieder: Websuche lieferte nichts (${liederFehler}), Notfall-Liste im Einsatz.`, {
+        level: "error",
+        track,
+      });
+    }
     const treffer = [];
     for (const lied of lieder.slice(0, 8)) {
       treffer.push(...(await sucheOriginalSounds(track, lied)));
