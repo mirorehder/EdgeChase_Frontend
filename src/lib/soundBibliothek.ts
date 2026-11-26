@@ -11,6 +11,7 @@ import {
 } from "./soundKi";
 import {
   alterAusDownloadUrl,
+  passtZumLied,
   rangliste,
   WARTE_POSTS,
   WARTE_TAGE,
@@ -401,4 +402,27 @@ export async function bibliotheksStand(): Promise<BibliotheksStand> {
     veraltet,
     letzteAufnahme: letzte?.zuletztGesehenAt ?? null,
   };
+}
+
+/**
+ * Raeumt falsche Treffer auf: noch unbewertete Sounds, die ueber ein Lied der
+ * festen Liste gefunden wurden, aber nach den aktuellen Regeln nicht (mehr) zu
+ * diesem Lied passen, werden entfernt.
+ */
+export async function raeumeFalscheTreffer(
+  lieder: { titel: string; kuenstler: string }[],
+): Promise<number> {
+  const bezeichnung = new Map(lieder.map((l) => [`${l.titel} - ${l.kuenstler}`, l]));
+  const zeilen = await prisma.soundBibliothek.findMany({
+    where: { viralLied: { not: null }, bewertetAt: null },
+    select: { audioId: true, titel: true, kuenstler: true, viralLied: true },
+  });
+  const weg = zeilen
+    .filter((z) => {
+      const lied = bezeichnung.get(z.viralLied ?? "");
+      return lied ? !passtZumLied(z.titel, lied.titel, lied.kuenstler, z.kuenstler ?? undefined) : false;
+    })
+    .map((z) => z.audioId);
+  if (weg.length > 0) await prisma.soundBibliothek.deleteMany({ where: { audioId: { in: weg } } });
+  return weg.length;
 }
