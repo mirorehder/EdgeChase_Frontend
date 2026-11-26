@@ -56,7 +56,7 @@ export function SoundBibliothekListe({ sounds }: { sounds: SoundZeile[] }) {
       </button>
       {offen &&
         (sounds.length === 0 ? (
-          <p className="empty-state">Noch keine Sounds - die tägliche Befüllung läuft noch nicht.</p>
+          <p className="empty-state">Noch keine Sounds - der tägliche Zufluss startet mit dem nächsten Tageslauf.</p>
         ) : (
           <ul className="historie-liste">
             {sounds.map((s) => (
