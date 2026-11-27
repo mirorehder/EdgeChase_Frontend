@@ -14,7 +14,7 @@
  * gegen Instagram prüfen. Er ist nach der dokumentierten API gebaut; der erste
  * echte Post gehört an einem Testkonto (Trial-Reel) gegengeprüft.
  */
-import type { Track } from "./trackClient";
+import { erlaubteTrackKeys, type Track } from "./trackClient";
 
 const GRAPH = "https://graph.facebook.com/v21.0";
 
@@ -63,6 +63,9 @@ export async function pruefeZugang(
  * dasselbe Konto posten.
  */
 export function igZugang(track: Track): IgZugang | null {
+  // SICHERHEIT: nur fuer Sparten dieser App. Ohne diese Sperre wuerde eine fremde
+  // Sparte ueber den Rueckfall auf IG_TOKEN auf dem Konto DIESER App landen.
+  if (!erlaubteTrackKeys().includes(track)) return null;
   const suffix = track.toUpperCase();
   // "coaching" und "serie" posten vom Doc-Meiro-Konto, solange keine eigenen Werte da sind.
   const rueckfall = track === "coaching" || track === "serie" ? "VIRAL" : null;
