@@ -3,6 +3,7 @@ import { prisma } from "./db";
 import { env } from "./env";
 import { logActivity } from "./activity";
 import { nextQueuedJobId } from "./pipeline";
+import { erlaubteTrackKeys } from "./trackClient";
 
 /**
  * Stösst die Verarbeitung eines Auftrags in einer eigenen Ausführung an.
@@ -125,8 +126,14 @@ const WIEDERBELEBUNG_BIS_MS = 2 * 60 * 60 * 1000;
 export async function weckeWartende(baseUrl: string): Promise<string | null> {
   const jetzt = Date.now();
 
+  // EdgeChase und Doc Meiro teilen sich eine Datenbank: jede App fasst nur die
+  // Auftraege ihrer eigenen Sparten an. Sonst rendert und - schlimmer - postet
+  // die falsche App ein fremdes Video auf ihr eigenes Konto.
+  const eigene = { in: erlaubteTrackKeys() };
+
   const laeuft = await prisma.promoVideo.findFirst({
     where: {
+      track: eigene,
       status: "rendering",
       claimedAt: { gt: new Date(jetzt - RENDER_LEBT_MS) },
     },
@@ -138,6 +145,7 @@ export async function weckeWartende(baseUrl: string): Promise<string | null> {
   // blockieren im Dashboard die Anzeige mit einem Status, der nicht stimmt.
   const abgebrochen = await prisma.promoVideo.findMany({
     where: {
+      track: eigene,
       status: "rendering",
       OR: [{ claimedAt: null }, { claimedAt: { lt: new Date(jetzt - RENDER_LEBT_MS) } }],
     },
@@ -164,7 +172,7 @@ export async function weckeWartende(baseUrl: string): Promise<string | null> {
   }
 
   const wartend = await prisma.promoVideo.findFirst({
-    where: { status: "queued", createdAt: { lt: new Date(jetzt - VERWAIST_AB_MS) } },
+    where: { track: eigene, status: "queued", createdAt: { lt: new Date(jetzt - VERWAIST_AB_MS) } },
     orderBy: { createdAt: "asc" },
     select: { id: true },
   });
@@ -183,6 +191,7 @@ export async function weckeWartende(baseUrl: string): Promise<string | null> {
 export async function starteWartende(baseUrl: string): Promise<string | null> {
   const laeuft = await prisma.promoVideo.findFirst({
     where: {
+      track: { in: erlaubteTrackKeys() },
       status: "rendering",
       claimedAt: { gt: new Date(Date.now() - RENDER_LEBT_MS) },
     },

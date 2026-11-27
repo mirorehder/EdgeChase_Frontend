@@ -503,6 +503,12 @@ export async function posteFertigesVideo(videoId: string, jetzt = new Date()): P
   const video = await prisma.promoVideo.findUnique({ where: { id: videoId } });
   const track = ((video?.track as Track) ?? "promo") as Track;
   if (!video) return { track, gepostet: false, grund: "Video nicht gefunden" };
+  // SICHERHEIT: nur Videos der eigenen Sparten. EdgeChase und Doc Meiro teilen
+  // sich eine Datenbank, aber nicht das Instagram-Konto - ein fremdes Video
+  // wuerde sonst auf dem falschen Konto landen.
+  if (!erlaubteTrackKeys().includes(track)) {
+    return { track, gepostet: false, grund: `Sparte "${track}" gehört zur anderen App - nicht gepostet` };
+  }
   if (video.altbestand) {
     return { track, gepostet: false, grund: "Altbestand - wird nicht automatisch gepostet" };
   }
@@ -650,6 +656,12 @@ async function posteVideoJetztOhneSperre(videoId: string, jetzt: Date): Promise<
 
   const track = (video.track as Track) ?? "promo";
 
+  if (!erlaubteTrackKeys().includes(track)) {
+    return {
+      ok: false,
+      grund: `Die Sparte "${track}" gehört zur anderen App - hier nicht gepostet, damit es nicht auf dem falschen Konto landet.`,
+    };
+  }
   if (video.status !== "done") {
     return { ok: false, grund: "Das Video ist noch nicht fertig gerendert." };
   }

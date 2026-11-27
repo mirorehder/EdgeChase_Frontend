@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { nextQueuedJobId, processJob } from "@/lib/pipeline";
 import { RENDER_LEBT_MS, baseUrlFromRequest, dispatchJob, dispatchPost } from "@/lib/dispatch";
 import { istBerechtigt } from "@/lib/ingestAuth";
+import { erlaubteTrackKeys } from "@/lib/trackClient";
 
 // Rendern und Hochladen - der lange Teil.
 export const maxDuration = 300;
@@ -17,6 +18,13 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     const job = await prisma.promoVideo.findUnique({ where: { id: params.id } });
     if (!job) {
       return NextResponse.json({ error: "Auftrag nicht gefunden." }, { status: 404 });
+    }
+    // Fremde Sparte (die andere App teilt sich die Datenbank): nicht anfassen.
+    if (!(erlaubteTrackKeys() as string[]).includes(job.track)) {
+      return NextResponse.json(
+        { error: `Die Sparte "${job.track}" gehört zur anderen App - hier nicht bearbeitet.` },
+        { status: 409 },
+      );
     }
     if (job.status === "done") {
       return NextResponse.json({ status: "done", driveUrl: job.driveUrl });
@@ -44,9 +52,9 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     // angestossen. Nacheinander statt gleichzeitig, weil ein einzelner Render
     // das AWS-Kontingent an gleichzeitigen Lambdas fast ausschöpft.
     //
-    // Bewusst über beide Sparten hinweg: der Zeitplan legt erst das Werbevideo
-    // an und danach die Parkour-Edits. Endete die Kette an der Spartengrenze,
-    // bliebe der erste Edit liegen, sobald das Werbevideo fertig ist.
+    // Über alle Sparten DIESER App hinweg (nextQueuedJobId): der Zeitplan legt
+    // erst das Werbevideo an und danach die Edits. Aufträge der anderen App
+    // bleiben ausgenommen - sie gehören zu ihrem eigenen Konto.
     const naechster = await nextQueuedJobId();
     if (naechster && naechster !== params.id) {
       await dispatchJob(naechster, baseUrlFromRequest(request));

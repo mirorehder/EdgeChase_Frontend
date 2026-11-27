@@ -45,7 +45,7 @@ import {
   viralOutputFolderId,
   viralTextStyle,
 } from "./viralSchedule";
-import { bewertungsart, trackBeschreibung } from "./trackClient";
+import { bewertungsart, trackBeschreibung, erlaubteTrackKeys } from "./trackClient";
 import { postenAktiv } from "./postAuto";
 import { trackFromValue } from "./trackParam";
 import { artAusHerkunft, ausgabeOrdnerId } from "./ausgabeOrdner";
@@ -2417,7 +2417,9 @@ export async function planSerieRun(
  */
 export async function nextQueuedJobId(track?: Track): Promise<string | null> {
   const job = await prisma.promoVideo.findFirst({
-    where: { status: "queued", ...(track ? { track } : {}) },
+    // Ohne Angabe nur die Sparten DIESER App: EdgeChase und Doc Meiro teilen sich
+    // eine Datenbank, jede App darf nur ihre eigenen Auftraege anstossen.
+    where: { status: "queued", track: track ?? { in: erlaubteTrackKeys() } },
     orderBy: { createdAt: "asc" },
     select: { id: true },
   });
