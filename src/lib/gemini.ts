@@ -657,6 +657,21 @@ export interface ViralCandidate {
 }
 
 /**
+ * Das eigene Material gehoert immer dem Nutzer als Parkour-Athleten: Spruenge,
+ * Saltos, Flips, Stunts, Fails, verrueckte Aktionen - sonst nichts. Eine
+ * Regieanweisung oder Vorlage nennt aber gern etwas anderes (z. B. "krasse
+ * Kajak-Clips" in einem Referenzvideo). Diese Regel uebersetzt das immer in das
+ * Parkour-Gegenstueck, statt nach einer Sportart zu suchen, die es im eigenen
+ * Material gar nicht gibt.
+ */
+export const EIGENES_MATERIAL_REGEL =
+  "WICHTIG ZUM EIGENEN MATERIAL: Das gesamte eigene Bildmaterial zeigt ausschliesslich den Nutzer als Parkour-Athleten - " +
+  "Spruenge, Saltos, Flips, Stunts, Fails und verrueckte Aktionen. Es gibt KEIN Material zu anderen Sportarten " +
+  "(kein Kajak, Skateboard, Ski, Fussball oder aehnliches). Nennt die Regieanweisung, das Thema oder ein Szenenhinweis eine andere " +
+  "Sportart oder Taetigkeit, ist damit IMMER das Parkour-Gegenstueck gemeint: starke Spruenge, Saltos, Stunts oder Fails mit derselben " +
+  "Wucht und Stimmung. Nenne selbst nie eine andere Sportart.";
+
+/**
  * Wählt und ordnet die Höhepunkte für einen viralen Edit.
  *
  * Anders als in der Promo-Sparte wird hier kein Text formuliert - der kommt
@@ -758,7 +773,9 @@ Jeder gewählte Clip muss dazu passen. Das steht über allem anderen - auch übe
 `
       : "";
 
-  const prompt = `${themenBlock}Du stellst einen schnell geschnittenen Parkour-Edit zusammen. Jede Einstellung zeigt etwa eine Sekunde: genau den Trick, nichts davor, nichts danach.
+  const prompt = `${themenBlock}${EIGENES_MATERIAL_REGEL}
+
+Du stellst einen schnell geschnittenen Parkour-Edit zusammen. Jede Einstellung zeigt etwa eine Sekunde: genau den Trick, nichts davor, nichts danach.
 
 Verfügbare Clips - der Text hinter jedem Eintrag beschreibt genau diese eine Sekunde, nicht den ganzen Clip:
 ${candidateList}
@@ -853,6 +870,8 @@ export async function selectSetupClip(
           parts: [
             {
               text: `Du suchst die Eroeffnungseinstellung fuer einen Parkour-Edit.
+
+${EIGENES_MATERIAL_REGEL}
 
 Ueber dieser Einstellung steht der Text: "${setupText.replace(/\n/g, " ")}"
 
@@ -1393,7 +1412,10 @@ function korrigierePhasen(
         ...(fremd ? { refStartMs: start, refEndMs: ende } : {}),
       };
     })
-    .filter((p) => p.text.length > 0);
+    // Eine Phase ohne Text bleibt erhalten, wenn sie etwas anderes traegt: einen
+    // uebernommenen Ausschnitt oder einen Szenenhinweis. Videos ganz ohne Text
+    // sind erlaubt - dort besteht das Konzept nur aus solchen Phasen.
+    .filter((p) => p.text.length > 0 || p.useReference || p.sceneHint.length > 0);
 
   // Kam gar keine Liste, aber ein Text: als einzige Phase behandeln. So
   // verhalten sich ältere Antworten wie bisher.
@@ -1401,6 +1423,12 @@ function korrigierePhasen(
     phasen = [
       { text: saeubern(hookText), seconds: totalSeconds, role: "plain", sceneHint: "", useReference: false },
     ];
+  }
+
+  // Gar nichts (kein Text, keine Phasen): trotzdem ein gueltiges Konzept - eine
+  // textlose Phase ueber die ganze Laenge, die Clips kommen aus der Regieanweisung.
+  if (!phasen.length) {
+    phasen = [{ text: "", seconds: totalSeconds, role: "plain", sceneHint: "", useReference: false }];
   }
 
   if (phasen.length === 1) phasen[0].role = "plain";
@@ -1628,6 +1656,17 @@ export async function analyzeConcept(
     ? `\n\nWICHTIG - FREMDMATERIAL: Der Nutzer hat bestätigt, dass der ERSTE Teil dieses Videos ein Ausschnitt ist, der 1:1 aus der Vorlage übernommen wird (z.B. ein Meme oder eine bestimmte Aufnahme, die der Text beschreibt). Deine Aufgabe ist NICHT zu entscheiden, ob übernommen wird - das steht fest -, sondern nur, WO dieser erste Teil endet: der Umschlagpunkt, ab dem eigenes Bildmaterial sinnvoll wird (meist der erste Text-/Szenenwechsel). Markiere ALLE Phasen von Videobeginn bis zu diesem Umschlagpunkt mit useReference=true und setze refStartMs (meist 0) und refEndMs auf Anfang und Ende dieses ersten Ausschnitts in Millisekunden. Die Phasen NACH dem Umschlagpunkt bleiben useReference=false (dort kommen eigene Clips). Nenne den Umschlagpunkt zusätzlich im Feld uebernahmeEndeMs (Millisekunden ab Videobeginn). ACHTUNG: Das Video besteht NIE komplett aus Fremdmaterial - nach dem Umschlagpunkt folgt immer ein Teil mit eigenem Material, uebernahmeEndeMs liegt also klar VOR dem Videoende. Bei Vergleichen (z.B. zwei Lebenswege nebeneinander) ist der übernommene Teil nur der einleitende Vergleich, nicht das gesamte Video. Hat das Video nur EINEN durchgehenden Text, teile ihn trotzdem in zwei Phasen: die erste bis zum Umschlagpunkt, die zweite danach.`
     : "";
 
+  // Reels-Sparten (alle ausser Promo und Clothing): theme und sceneHint
+  // beschreiben das EIGENE Material - und das ist immer Parkour.
+  const eigenesMaterial = track !== "promo" && track !== "clothing";
+  const materialRegel = eigenesMaterial
+    ? `\n\n${EIGENES_MATERIAL_REGEL} Fuer dich heisst das: Zeigt die Vorlage etwas anderes (z. B. Kajak-Clips), dann beschreibe in theme und in jedem sceneHint, was NACH der Vorlage aus UNSEREM Material kommen soll - zum Beispiel "krasse Parkour-Spruenge" oder "fette Saltos und Stunts" - und schreibe dort nie die fremde Sportart. Bei einer Phase mit useReference=true schreibe als sceneHint nur "Ausschnitt der Vorlage".`
+    : "";
+
+  // Ein Video ganz ohne eingeblendeten Text ist voellig in Ordnung.
+  const ohneTextRegel =
+    "\n\nKEIN TEXT IM VIDEO IST ERLAUBT: Viele Vorlagen haben gar keinen eingeblendeten Text, zum Beispiel erst ein Clip, danach andere Aufnahmen. Dann lege trotzdem Phasen an - mit leerem text (\"\") und sinnvollen Abschnitten (z. B. erst der Clip der Vorlage, danach der Rest), mit sceneHint, seconds und useReference. Erfinde niemals einen Text, und lass die Liste nicht leer.";
+
   try {
     const response = await ai.models.generateContent({
       model: MODEL,
@@ -1640,7 +1679,7 @@ export async function analyzeConcept(
               videoMetadata: { fps: ANALYSIS_FPS },
             },
             {
-              text: `Du wertest ein fremdes Werbevideo als Gestaltungsvorlage aus. ${textRegel}${uebernahmeRegel}
+              text: `Du wertest ein fremdes Werbevideo als Gestaltungsvorlage aus. ${textRegel}${uebernahmeRegel}${materialRegel}${ohneTextRegel}
 
 title: eine kurze Bezeichnung, an der man das Konzept wiedererkennt (3-6 Woerter).
 
@@ -1651,7 +1690,7 @@ textPhases: die eingeblendeten Texte in ihrer Reihenfolge. WICHTIG: viele dieser
   - sceneHint: was waehrend dieses Textes im Bild zu sehen ist, in wenigen Worten und auf Deutsch - zum Beispiel "ruhig am Wasser stehend, kein Trick" oder "Gesicht spricht in die Kamera" oder "schnelle Montage von Backflips". Das ist wichtig: danach wird spaeter das eigene Bildmaterial ausgesucht.
   - useReference: true NUR, wenn der Bildinhalt dieser Phase zwingend 1:1 aus dem Original uebernommen werden muss, weil der Witz oder Sinn genau an diesen konkreten Aufnahmen haengt und sich nicht durch eigenes Material ersetzen laesst - ein Meme, ein bekannter Filmausschnitt, oder genau die Aufnahme, die der Text beschreibt (etwa "One Ball" ueber Aufnahmen einer bestimmten Ballsportart, waehrend erst danach eigene Clips folgen). Im Normalfall false: eine Phase, deren Aussage sich mit eigenem Material nachstellen laesst, braucht KEIN Fremdmaterial. Sei zurueckhaltend, setze true nur im klaren Fall.
   - refStartMs, refEndMs: nur wenn useReference true ist - Anfang und Ende genau dieses zu uebernehmenden Ausschnitts im Video, in Millisekunden ab Videobeginn. Sonst 0.
-Zeitabschnitte am Ende ohne Text (Abspann, Logo, Handle) gehoeren NICHT in die Liste.
+Zeitabschnitte am Ende ohne Text (Abspann, Logo, Handle) gehoeren NICHT in die Liste - es sei denn, das Video hat insgesamt gar keinen Text (siehe oben).
 
 hookText: der text-Wert der ersten Phase (unveraendert uebernommen).
 

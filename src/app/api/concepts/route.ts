@@ -72,8 +72,10 @@ export async function POST(request: NextRequest) {
     // funktioniert.
     const hookText = (body.hookText ?? "").trim();
     if (body.manual || (hookText && !body.uploadId && !body.key)) {
-      if (!hookText) {
-        return NextResponse.json({ error: "Kein Hook-Text angegeben." }, { status: 400 });
+      // Ein Konzept ohne Text ist erlaubt (Videos ganz ohne eingeblendeten Text);
+      // nur Serien brauchen den Text mit dem Zaehler {n}.
+      if (!hookText && trackBeschreibung(track).zaehler) {
+        return NextResponse.json({ error: "Serien brauchen einen Text mit dem Platzhalter {n}." }, { status: 400 });
       }
       return await manuellesKonzept(
         track,
@@ -226,7 +228,11 @@ async function manuellesKonzept(
   }
   const clipCount = 4;
   const totalSeconds = 12;
-  const title = (titel ?? "").trim() || hookText.split("\n")[0].slice(0, 60) || "Neues Konzept";
+  const title =
+    (titel ?? "").trim() ||
+    hookText.split("\n")[0].slice(0, 60) ||
+    (beschreibung ?? "").trim().slice(0, 60) ||
+    "Neues Konzept";
   const concept = await prisma.concept.create({
     data: {
       title,
