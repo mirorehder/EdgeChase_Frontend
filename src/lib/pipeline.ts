@@ -1765,7 +1765,8 @@ export async function processJob(jobId: string): Promise<void> {
 
       // Jede Sparte hat ihren eigenen Zielordner in Drive - Werbevideos und
       // Parkour-Edits sollen auch dort nicht durcheinandergeraten.
-      const fileName = hookTextToFileName(job.fileTitle || job.hookText);
+      // Ohne Titel und ohne Text (Videos ganz ohne Text): ein eindeutiger Name aus der Auftrags-ID.
+      const fileName = hookTextToFileName(job.fileTitle || job.hookText || `video-${job.id.slice(0, 8)}`);
       await logActivity(`Dateiname: ${fileName}`, { videoId: jobId, track });
       const upload = await uploadToOutputFolderWithRetry(
         fileName,

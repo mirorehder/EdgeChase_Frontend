@@ -142,9 +142,11 @@ export function ConceptLibrary({ track }: { track: Track }) {
 
   async function neuesKonzept() {
     const hookText = neuHook.trim();
-    if (!hookText) {
+    // Ohne Text ist erlaubt (Videos ganz ohne eingeblendeten Text); nur Serien
+    // brauchen ihn wegen des Zaehlers {n}.
+    if (!hookText && serie) {
       setFehler(true);
-      setNote("Bitte einen Hook-Text eingeben.");
+      setNote("Eine Serie braucht einen Text mit dem Platzhalter {n}.");
       return;
     }
     setBusy("neu");
@@ -482,7 +484,9 @@ export function ConceptLibrary({ track }: { track: Track }) {
             />
           </label>
           <label>
-            {serie ? "Hook-Text mit Platzhalter {n} - dort steht jeden Tag die nächste Zahl" : "Hook-Text - der Text, der im Video steht"}
+            {serie
+              ? "Hook-Text mit Platzhalter {n} - dort steht jeden Tag die nächste Zahl"
+              : "Hook-Text - der Text, der im Video steht (leer lassen, wenn im Video gar kein Text steht)"}
             <textarea
               rows={4}
               value={neuHook}
@@ -505,6 +509,9 @@ export function ConceptLibrary({ track }: { track: Track }) {
             <span className="clip-meta">
               Steuert die Clipwahl, steht nicht im Bild. Länge und Anzahl bekommen Vorgaben, die du
               danach am Konzept ändern kannst.
+              {nachKrassheit &&
+                " Gewählt wird immer aus deinem eigenen Material (Parkour, Saltos, Stunts, Fails): " +
+                  "steht hier eine andere Sportart, werden daraus automatisch Parkour-Clips."}
             </span>
           </label>
           {serie && (
