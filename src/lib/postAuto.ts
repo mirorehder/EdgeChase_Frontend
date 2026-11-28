@@ -19,6 +19,7 @@ import { trackBeschreibung, erlaubteTrackKeys } from "./trackClient";
 import { istVerwendbar } from "./sound";
 import { igZugang, posteReel } from "./instagram";
 import { logActivity } from "./activity";
+import { meldeInteraktionsReel } from "./couponAutomationBridge";
 import { waehleAusBibliothek, videoBeschreibung } from "./soundBibliothek";
 import {
   bucketFromServeUrl,
@@ -434,6 +435,9 @@ async function posteKandidat(
       `(${trackBeschreibung(track).label}), Media-ID ${ergebnis.mediaId}, Sound: ${soundText}.`,
     { track, videoId: kandidat.id },
   );
+
+  // Interaktions-Reels beim Gutschein-Automaten anmelden (siehe couponAutomationBridge).
+  await meldeInteraktionsReel(track, ergebnis.mediaId!, kandidat.id);
 
   // Die öffentliche Kopie wird nach dem Post nicht mehr gebraucht.
   if (isRenderStorageConfigured()) {

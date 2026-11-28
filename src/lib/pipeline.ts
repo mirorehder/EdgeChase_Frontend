@@ -26,7 +26,9 @@ import { renderPromoVideo } from "./render";
 
 /** Die EdgeChase-Sparten setzen den Text klein und dezent; Doc Meiro bleibt wie bisher. */
 export function textGroesseFuer(track: string | null | undefined): "normal" | "klein" {
-  return track === "promo" || track === "sports" || track === "clothing" ? "klein" : "normal";
+  return track === "promo" || track === "sports" || track === "clothing" || track === "interaktion"
+    ? "klein"
+    : "normal";
 }
 import {
   bucketFromServeUrl,

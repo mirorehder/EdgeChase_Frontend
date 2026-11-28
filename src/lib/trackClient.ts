@@ -12,7 +12,7 @@
  * Das Verhältnis aus Nutzen und Risiko stimmt nicht. Was der Nutzer liest,
  * steht in TRACKS[].label.
  */
-export type Track = "promo" | "viral" | "sports" | "clothing" | "coaching" | "serie";
+export type Track = "promo" | "viral" | "sports" | "clothing" | "coaching" | "serie" | "interaktion";
 
 /**
  * Wonach die Clips einer Sparte bewertet und ausgewählt werden.
@@ -137,6 +137,22 @@ export const TRACK_LISTE: readonly TrackBeschreibung[] = [
     eigeneCaption: true,
     zaehler: true,
     sofortPosten: true,
+  },
+  {
+    // Aufruf zum Mitmachen: folgen, zwei Leute markieren, das Video schicken -
+    // dafuer gibt es einen Rabattcode (den Ablauf dahinter betreibt der
+    // Gutschein-Automat). Ein Mix aus Clothing (Kleidung zeigen) und Promo
+    // (Rabatt-Aufruf); der Aufruf steht als Hook-Text und in der Caption.
+    key: "interaktion",
+    kurz: "Interaktion",
+    label: "EdgeChase Interaktions-Reels",
+    untertitel: "Folgen, markieren, Video schicken - Rabattcode",
+    bewertung: "kleidung",
+    nachKonzept: true,
+    referenzUpload: true,
+    eigeneCaption: true,
+    zaehler: false,
+    sofortPosten: false,
   },
 ] as const;
 
