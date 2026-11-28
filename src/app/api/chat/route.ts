@@ -165,6 +165,7 @@ async function reelsDialog(
     ordner,
     recentVideos.map((v) => v.hookText),
     trackBeschreibung(track).label,
+    track,
   );
 
   if (result.status === "question" || !result.spec) {

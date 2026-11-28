@@ -1,6 +1,6 @@
 import { FileState, GoogleGenAI, Type, type File as GenAIFile } from "@google/genai";
 import { env } from "./env";
-import { bewertungsart, type Track } from "./trackClient";
+import { bewertungsart, postetAufDeutsch, type Track } from "./trackClient";
 
 export const MODEL = "gemini-3.1-flash-lite";
 
@@ -524,7 +524,7 @@ export async function selectScenesAndHook(
     ? recentHookTexts.map((t) => `- ${t}`).join("\n")
     : "(noch keine)";
 
-  const aufDeutsch = options.track === "promo";
+  const aufDeutsch = options.track ? postetAufDeutsch(options.track) : false;
   const spracheAdjektiv = aufDeutsch ? "deutschen" : "englischen";
   const beispielListe = (aufDeutsch ? HOOK_EXAMPLES_DE : HOOK_EXAMPLES_EN)
     .map((e) => `- ${e}`)
@@ -977,7 +977,7 @@ export async function erfindeVideoTitel(input: TitleInput): Promise<string> {
   // fehlender eigener Caption auch als Instagram-Bildunterschrift und muss
   // deshalb dieselbe Sprache haben wie der Hook. Alle anderen Sparten bleiben
   // Englisch (bisheriges Verhalten).
-  const titelSprache = input.track === "promo" ? "Deutsch" : "Englisch";
+  const titelSprache = input.track && postetAufDeutsch(input.track) ? "Deutsch" : "Englisch";
 
   try {
     const ai = client();
@@ -1102,7 +1102,7 @@ export async function interpretChatRequest(
   // Deutsch formuliert; die anderen Kleidungs-Sparten (Sports, Clothing)
   // bleiben Englisch, weil sie eher international angesetzt sind.
   const hookSprachRegel =
-    track === "promo"
+    postetAufDeutsch(track)
       ? "IMMER auf Deutsch, unabhängig von der Sprache des Nutzers."
       : "IMMER auf Englisch, auch wenn der Nutzer deutsch schreibt.";
 
@@ -1232,7 +1232,9 @@ export async function interpretReelsRequest(
   ordner: ChatOrdnerSummary[],
   recentHookTexts: string[],
   spartenName: string,
+  track?: Track,
 ): Promise<ReelsChatResult> {
+  const aufDeutsch = track ? postetAufDeutsch(track) : false;
   const ai = client();
 
   const ordnerListe = ordner.length
@@ -1253,7 +1255,7 @@ export async function interpretReelsRequest(
 WAS SO EIN REEL IST: eine Folge kurzer Höhepunkte, hart geschnitten, jede Einstellung ungefähr eine Sekunde. Darüber steht ein Text, der die ganze Zeit stehen bleibt.
 
 EINSTELLBAR SIND:
-- hookText: der Text, der im Video steht. IMMER auf Englisch, auch wenn der Nutzer deutsch schreibt. Zeilenumbrüche mit \\n werden als gesetzte Umbrüche übernommen. Kurz und gesprochen, wie in einem Reel - kein Werbesatz.
+- hookText: der Text, der im Video steht. ${aufDeutsch ? "IMMER auf Deutsch (Schweizer Publikum, kein ß), auch wenn der Nutzer englisch schreibt." : "IMMER auf Englisch, auch wenn der Nutzer deutsch schreibt."} Zeilenumbrüche mit \\n werden als gesetzte Umbrüche übernommen. Kurz und gesprochen, wie in einem Reel - kein Werbesatz.
 - clipCount: 3 bis 10 Einstellungen. Voreinstellung 7.
 - totalSeconds: 6 bis 25 Sekunden Gesamtlänge. Voreinstellung 13.
 - themeHint: worum es gehen soll, in Stichworten - z.B. "Stürze", "grosse Höhe", "Rooftop". Das steuert die Auswahl der Clips, steht aber NICHT im Bild. Leer lassen, wenn der Nutzer nichts dazu sagt.
@@ -1644,7 +1646,7 @@ export async function analyzeConcept(
   // Sparten bleibt der Text wortwoertlich im Original - dort ist die Vorlage
   // an sich das Interessante, nicht die Sprache.
   const textRegel =
-    track === "promo"
+    postetAufDeutsch(track)
       ? `Antworte auf Deutsch. Beim hookText und den textPhases: nimm sinngemaess ins Deutsche - Kernaussage, Ton und Rhythmus des Originals sollen erhalten bleiben, aber der Wortlaut soll Deutsch sein. Zeilenumbrueche des Originals mit \\n uebernehmen.`
       : `Antworte auf Deutsch, ausser bei hookText - der bleibt wortwoertlich im Original.`;
 
@@ -1684,7 +1686,7 @@ export async function analyzeConcept(
 title: eine kurze Bezeichnung, an der man das Konzept wiedererkennt (3-6 Woerter).
 
 textPhases: die eingeblendeten Texte in ihrer Reihenfolge. WICHTIG: viele dieser Videos zeigen nacheinander MEHRERE verschiedene Texte, und erst die Abfolge ergibt den Sinn - etwa erst ein unterstellter Vorwurf in Anfuehrungszeichen, dann die Antwort darauf. Schau das ganze Video an und lege fuer JEDEN Textwechsel eine eigene Phase an. Wechselt der Text nie, ist es genau eine Phase. Fuer jede Phase:
-  - text: ${track === "promo" ? "der Wortlaut sinngemaess ins Deutsche uebersetzt (Ton, Rhythmus und Punchline erhalten), mit Zeilenumbruechen des Originals als \\n." : "der Wortlaut wortwoertlich, mit den Zeilenumbruechen des Originals als \\n. Aendere nichts daran, auch keine Tippfehler und keine Anfuehrungszeichen."}
+  - text: ${postetAufDeutsch(track) ? "der Wortlaut sinngemaess ins Deutsche uebersetzt (Ton, Rhythmus und Punchline erhalten), mit Zeilenumbruechen des Originals als \\n." : "der Wortlaut wortwoertlich, mit den Zeilenumbruechen des Originals als \\n. Aendere nichts daran, auch keine Tippfehler und keine Anfuehrungszeichen."}
   - seconds: wie lange dieser Text zu sehen ist.
   - role: "setup" fuer den Aufbau (die Behauptung, die Frage, der Vorwurf), "payoff" fuer die Antwort oder Pointe, "plain" wenn es nur einen durchgehenden Text gibt.
   - sceneHint: was waehrend dieses Textes im Bild zu sehen ist, in wenigen Worten und auf Deutsch - zum Beispiel "ruhig am Wasser stehend, kein Trick" oder "Gesicht spricht in die Kamera" oder "schnelle Montage von Backflips". Das ist wichtig: danach wird spaeter das eigene Bildmaterial ausgesucht.

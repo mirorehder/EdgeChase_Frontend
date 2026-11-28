@@ -159,6 +159,14 @@ export const TRACK_LISTE: readonly TrackBeschreibung[] = [
 export const TRACKS: Track[] = TRACK_LISTE.map((t) => t.key);
 
 /**
+ * Auf welcher Sprache die Sparte postet. Promo und Interaktion sprechen das
+ * DACH-Publikum an (Deutsch), alle anderen Sparten posten Englisch.
+ */
+export function postetAufDeutsch(track: Track): boolean {
+  return track === "promo" || track === "interaktion";
+}
+
+/**
  * Aus welcher Clip-Bibliothek eine Sparte ihr Material nimmt.
  *
  * Die Interaktions-Reels teilen sich die Clips der Promo-Sparte: dasselbe
