@@ -1658,7 +1658,7 @@ export async function analyzeConcept(
 
   // Reels-Sparten (alle ausser Promo und Clothing): theme und sceneHint
   // beschreiben das EIGENE Material - und das ist immer Parkour.
-  const eigenesMaterial = track !== "promo" && track !== "clothing";
+  const eigenesMaterial = track !== "promo" && track !== "clothing" && track !== "interaktion";
   const materialRegel = eigenesMaterial
     ? `\n\n${EIGENES_MATERIAL_REGEL} Fuer dich heisst das: Zeigt die Vorlage etwas anderes (z. B. Kajak-Clips), dann beschreibe in theme und in jedem sceneHint, was NACH der Vorlage aus UNSEREM Material kommen soll - zum Beispiel "krasse Parkour-Spruenge" oder "fette Saltos und Stunts" - und schreibe dort nie die fremde Sportart. Bei einer Phase mit useReference=true schreibe als sceneHint nur "Ausschnitt der Vorlage".`
     : "";

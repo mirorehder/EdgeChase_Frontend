@@ -301,7 +301,9 @@ export function videoBeschreibung(
     Math.round(szenen.reduce((a, s) => a + (Number(s.seconds) || 0), 0) * 10) / 10,
   );
   const art =
-    track === "promo" || track === "clothing"
+    track === "interaktion"
+      ? "Streetwear-Reel mit Aufruf zum Mitmachen (folgen, markieren, Video schicken)"
+      : track === "promo" || track === "clothing"
       ? "Streetwear-Werbevideo"
       : track === "coaching"
         ? "Parkour-Coaching-Reel"

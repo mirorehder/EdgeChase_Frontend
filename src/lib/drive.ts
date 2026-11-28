@@ -222,7 +222,7 @@ export async function listSourceClips(
   for (const w of wurzeln) andereWurzeln.add(w.driveFolderId);
   // Der Ordner aus der Umgebung zählt weiterhin mit: die Promo-Sparte hat
   // keine Einträge in der Ordnertabelle und stünde sonst ungeschützt da.
-  for (const t of ["promo", "viral", "sports", "clothing", "coaching", "serie"] as Track[]) {
+  for (const t of ["promo", "viral", "sports", "clothing", "coaching", "serie", "interaktion"] as Track[]) {
     if (t !== track) andereWurzeln.add(sourceFolderId(t));
   }
 
@@ -469,6 +469,11 @@ function outputFolderSettings(track: Track): { name: string; pinned: string | nu
         name: process.env.DRIVE_SERIE_OUTPUT_FOLDER_NAME || "Daily Serien",
         pinned: process.env.DRIVE_SERIE_OUTPUT_FOLDER_ID || null,
       };
+    case "interaktion":
+      return {
+        name: process.env.DRIVE_INTERAKTION_OUTPUT_FOLDER_NAME || "EdgeChase Interaktions-Reels",
+        pinned: process.env.DRIVE_INTERAKTION_OUTPUT_FOLDER_ID || null,
+      };
     default:
       return { name: env.driveOutputFolderName, pinned: env.driveOutputFolderId };
   }
@@ -477,7 +482,7 @@ function outputFolderSettings(track: Track): { name: string; pinned: string | nu
 /** Alle Zielordnernamen - sie dürfen beim Einlesen nicht als Quelle auftauchen. */
 function alleOutputFolderNames(): Set<string> {
   return new Set(
-    (["promo", "viral", "sports", "clothing", "coaching", "serie"] as Track[])
+    (["promo", "viral", "sports", "clothing", "coaching", "serie", "interaktion"] as Track[])
       .map((t) => outputFolderSettings(t).name.toLowerCase()),
   );
 }

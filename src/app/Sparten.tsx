@@ -158,6 +158,14 @@ function SpartenZeichen({ track }: { track: Track }) {
           <path d="M3.5 10h17M8 3v4M16 3v4M10.5 13.5 12.5 12v5" />
         </svg>
       );
+    // Interaktion: Sprechblase mit Herz.
+    case "interaktion":
+      return (
+        <svg {...gemeinsam} className="tab-zeichen">
+          <path d="M4 5.5h16v10.5H10.5L6 20v-4H4z" />
+          <path d="M12 12.6s-3-1.7-3-3.6a1.7 1.7 0 0 1 3-1.1 1.7 1.7 0 0 1 3 1.1c0 1.9-3 3.6-3 3.6z" />
+        </svg>
+      );
     // Kleidung: T-Shirt.
     case "clothing":
       return (

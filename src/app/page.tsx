@@ -180,6 +180,10 @@ const HINWEIS: Record<Track, string> = {
     "Tägliche Serien mit Zähler, z. B. „Day {n} of posting until Red Bull contacts me“. Jedes " +
     "Konzept ist eine Serie: der Text trägt {n}, und die Zahl steigt mit jedem Video um 1. Erzeugen " +
     "und Posten ist hier ein einziger Ablauf - sobald das Video fertig gerendert ist, geht es raus.",
+  interaktion:
+    "Reels mit einem Aufruf zum Mitmachen: folgen, zwei Leute markieren, das Video schicken - dafür " +
+    "gibt es einen Rabattcode (25 %, einen Tag gültig). Clips wie bei Clothing, der Text ist der Aufruf. " +
+    "Den Ablauf nach dem Posten (Video registrieren, Folgen prüfen, Code per DM) betreibt der Gutschein-Automat.",
   clothing:
     "Hier zählt, wie gut die Kleidung zu sehen ist - nicht der Trick. Geschnitten wird auf den " +
     "besten Ausschnitt jedes Clips, der Text stammt aus einem Konzept oder aus dem Dialog.",
