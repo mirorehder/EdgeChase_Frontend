@@ -158,6 +158,18 @@ export const TRACK_LISTE: readonly TrackBeschreibung[] = [
 
 export const TRACKS: Track[] = TRACK_LISTE.map((t) => t.key);
 
+/**
+ * Aus welcher Clip-Bibliothek eine Sparte ihr Material nimmt.
+ *
+ * Die Interaktions-Reels teilen sich die Clips der Promo-Sparte: dasselbe
+ * Shooting-Material, schon analysiert und aus denselben Quellordnern - so muss
+ * nichts doppelt abgeglichen oder von Gemini ausgewertet werden. Alle anderen
+ * Sparten haben ihre eigene Bibliothek.
+ */
+export function clipSparte(track: Track): Track {
+  return track === "interaktion" ? "promo" : track;
+}
+
 export function trackBeschreibung(track: Track): TrackBeschreibung {
   const gefunden = TRACK_LISTE.find((t) => t.key === track);
   if (!gefunden) throw new Error(`Unbekannte Sparte: ${track}`);

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { trackFromRequest } from "@/lib/trackParam";
-import { bewertungsart, trackBeschreibung, type Track } from "@/lib/trackClient";
+import { bewertungsart, clipSparte, trackBeschreibung, type Track } from "@/lib/trackClient";
 import { prisma } from "@/lib/db";
 import {
   interpretChatRequest,
@@ -42,7 +42,8 @@ export async function POST(request: NextRequest) {
     const [clips, recentVideos] = await Promise.all([
       prisma.clip.findMany({
         where: {
-          track,
+          // Interaktions-Reels teilen sich die Clips der Promo-Sparte.
+          track: clipSparte(track),
           analysisVersion: CURRENT_ANALYSIS_VERSION,
           apparelScore: { gte: 0.5 },
         },

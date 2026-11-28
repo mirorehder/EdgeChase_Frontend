@@ -19,7 +19,7 @@ import { trackBeschreibung, erlaubteTrackKeys } from "./trackClient";
 import { istVerwendbar } from "./sound";
 import { igZugang, posteReel } from "./instagram";
 import { logActivity } from "./activity";
-import { meldeInteraktionsReel } from "./couponAutomationBridge";
+import { meldeAlsPromoReel, meldeInteraktionsReel } from "./couponAutomationBridge";
 import { waehleAusBibliothek, videoBeschreibung } from "./soundBibliothek";
 import {
   bucketFromServeUrl,
@@ -436,8 +436,11 @@ async function posteKandidat(
     { track, videoId: kandidat.id },
   );
 
-  // Interaktions-Reels beim Gutschein-Automaten anmelden (siehe couponAutomationBridge).
-  await meldeInteraktionsReel(track, ergebnis.mediaId!, kandidat.id);
+  // Den Gutschein-Automaten benachrichtigen (siehe couponAutomationBridge): Promo-Reels
+  // ("kommentiere deinen Namen") und Interaktions-Reels haben je ihren eigenen Weg.
+  // Beides fängt Fehler selbst ab - ein Post scheitert daran nie.
+  await meldeAlsPromoReel(track, ergebnis.mediaId!, kandidat.id).catch(() => {});
+  await meldeInteraktionsReel(track, ergebnis.mediaId!, kandidat.id).catch(() => {});
 
   // Die öffentliche Kopie wird nach dem Post nicht mehr gebraucht.
   if (isRenderStorageConfigured()) {

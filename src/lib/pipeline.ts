@@ -47,7 +47,7 @@ import {
   viralOutputFolderId,
   viralTextStyle,
 } from "./viralSchedule";
-import { bewertungsart, trackBeschreibung, erlaubteTrackKeys } from "./trackClient";
+import { bewertungsart, trackBeschreibung, erlaubteTrackKeys, clipSparte } from "./trackClient";
 import { postenAktiv } from "./postAuto";
 import { trackFromValue } from "./trackParam";
 import { artAusHerkunft, ausgabeOrdnerId } from "./ausgabeOrdner";
@@ -514,7 +514,7 @@ async function analysiereEinenClip(
     }
 
     // Die Ordner-Beschreibung aus dem Dashboard als Einordnung mitgeben.
-    const beschreibungen = await folderDescriptions(track);
+    const beschreibungen = await folderDescriptions(clipSparte(track));
     const kontext = clip.rootFolderId ? (beschreibungen.get(clip.rootFolderId) ?? "") : "";
 
     return await analyzeClip(pfad, guessMimeType(clip.name), clip.durationMs, track, kontext);
@@ -893,13 +893,15 @@ export async function viraleKandidaten(
   wantedCount: number,
   ausgeschlossen: string[],
 ) {
-  const verwendbar = await usableFolderIds(track);
-  const gunst = await rangGunst(track);
-  const frische = await rotationsGunst(track);
+  // Die Clip-Bibliothek der Sparte - bei den Interaktions-Reels die der Promo-Sparte.
+  const quelle = clipSparte(track);
+  const verwendbar = await usableFolderIds(quelle);
+  const gunst = await rangGunst(quelle);
+  const frische = await rotationsGunst(quelle);
   const nachKrassheit = bewertungsart(track) === "krassheit";
 
   const grundfilter = {
-    track,
+    track: quelle,
     // Nicht CURRENT: siehe MIN_USABLE_ANALYSIS_VERSION. Ein Hochzaehlen der
     // aktuellen Version darf die Videoerzeugung nicht anhalten.
     analysisVersion: { gte: MIN_USABLE_ANALYSIS_VERSION },
@@ -1208,10 +1210,10 @@ async function waehleAufbauSzene(
 ): Promise<ComposedScene | null> {
   // Bewusst ohne Mindestbewertung: der Aufbau darf ausdrücklich ein ruhiger
   // Clip sein, und genau die sind sonst aussortiert.
-  const verwendbar = await usableFolderIds(track);
+  const verwendbar = await usableFolderIds(clipSparte(track));
   const kandidaten = await prisma.clip.findMany({
     where: {
-      track,
+      track: clipSparte(track),
       // Verwendbar, nicht aktuell - siehe MIN_USABLE_ANALYSIS_VERSION.
       analysisVersion: { gte: MIN_USABLE_ANALYSIS_VERSION },
       disabled: false,
@@ -1223,7 +1225,7 @@ async function waehleAufbauSzene(
   });
   if (!kandidaten.length) return null;
 
-  const beschreibungen = await folderDescriptions(track);
+  const beschreibungen = await folderDescriptions(clipSparte(track));
   const gewaehlt = await selectSetupClip(
     kandidaten.map((c) => ({
       id: c.id,
@@ -1333,7 +1335,7 @@ async function composeViralVideoMitFremdmaterial(
       );
     }
 
-    const beschreibungen = await folderDescriptions(track);
+    const beschreibungen = await folderDescriptions(clipSparte(track));
     const payload: ViralCandidate[] = candidates.map((c) => ({
       id: c.id,
       description: c.description ?? "",
@@ -1512,7 +1514,7 @@ export async function composeViralVideo(
     );
   }
 
-  const beschreibungen = await folderDescriptions(track);
+  const beschreibungen = await folderDescriptions(clipSparte(track));
   const payload: ViralCandidate[] = candidates.map((c) => ({
     id: c.id,
     description: c.description ?? "",
