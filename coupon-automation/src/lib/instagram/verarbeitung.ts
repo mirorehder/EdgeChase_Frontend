@@ -164,11 +164,18 @@ async function medienInfo(mediaId: string) {
   return media;
 }
 
-/** Gilt das Reel als Aktions-Reel - Übersteuerung geht vor Texterkennung. */
+/**
+ * Gilt das Reel als Aktions-Reel - Übersteuerung geht vor Texterkennung.
+ *
+ * Interaktions-Reels sind dauerhaft vom Namens-Automaten ausgeschlossen:
+ * sie bekommen weder öffentliche Antwort noch Code per DM über diesen Pfad.
+ */
 export function istEffektivAktion(media: {
   istAktion: boolean;
   ueberschreibung: boolean | null;
+  kampagne?: string | null;
 }): boolean {
+  if (media.kampagne === "interaktion") return false;
   return media.ueberschreibung ?? media.istAktion;
 }
 

@@ -190,7 +190,94 @@ model InstagramMedia {
   /// "de" oder "en" - bestimmt die Sprache der öffentlichen Antwort.
   sprache String
 
+  /// Kampagnenart des Reels.
+  /// null oder "namen" = Namens-Aktion (Standardverhalten).
+  /// "interaktion"     = Interaktions-Kampagne: Kommentare werden vom
+  ///                     Namens-Automaten ignoriert; Rabatt und Gültigkeit
+  ///                     werden per DM-Sharing vergeben.
+  kampagne String?
+
+  /// Rabattsatz für Interaktions-Reels (aus /api/interaktion-media übernommen).
+  interaktionRabatt Int?
+
+  /// Gültigkeitsdauer in Stunden für Interaktions-Codes.
+  interaktionGueltigStunden Int?
+
   aktualisiertAm DateTime @updatedAt
+}
+
+/// Konfigurations-Zeile für die Interaktions-Kampagne.
+/// Analog zu InstagramConfig, aber für die zweite Kampagnenart.
+model InteraktionConfig {
+  id String @id @default("default")
+
+  /// Automat ein- oder ausgeschaltet.
+  enabled Boolean @default(true)
+
+  /// Standard-Rabattsatz für Interaktions-Codes (überschreibbar per Reel).
+  rabattProzent Int @default(25)
+
+  /// Standard-Gültigkeit der Codes in Stunden.
+  gueltigStunden Int @default(24)
+
+  updatedAt DateTime @updatedAt
+}
+
+/// Jede Teilnahme an der Interaktions-Kampagne: wer hat welches Reel per DM
+/// geteilt und was ist daraus geworden.
+///
+/// Doppelsperre auf zwei Ebenen:
+/// - messageId (unique): Meta stellt denselben Webhook ggf. mehrfach zu - ein
+///   zweiter Versuch mit derselben Nachrichten-ID scheitert sofort beim Insert.
+/// - (igScopedId, mediaId) (unique): ein Mensch bekommt pro Reel genau einen
+///   Code, egal wie oft er das Reel schickt.
+model InteraktionTeilnahme {
+  id String @id @default(cuid())
+
+  /// Instagram-scoped ID (IGSID) der teilnehmenden Person.
+  igScopedId String
+
+  /// Das Reel, das die Person als DM geteilt hat.
+  mediaId String
+
+  /// Nachrichten-ID des ersten DMs (Sperre gegen Meta-Doppelzustellung).
+  messageId String @unique
+
+  /// "neu" | "wartet_auf_folge" | "wartet_auf_folge_fallback" |
+  /// "code_gesendet" | "uebersprungen" | "fehler"
+  status String @default("neu")
+
+  /// Erkannter Vorname der Person.
+  name String?
+
+  /// Vergebener Rabattcode.
+  code String?
+
+  /// Wix-Coupon-ID für Nutzungsprüfung.
+  codeId String?
+
+  /// Warum übersprungen oder was schiefging.
+  hinweis String?
+
+  /// Ergebnis der Folge-Prüfung: "following" | "not_following" | "unknown"
+  folgeStatus String?
+
+  /// Wann der Code an die Person verschickt wurde.
+  codeGesendetAm DateTime?
+
+  /// Wann der Code bei Wix eingelöst wurde (aus Nutzungszähler ermittelt).
+  codeEingeloestAm DateTime?
+
+  /// Exakter Ablaufzeitpunkt des Codes.
+  codeGueltigBis DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// Pro Person und Reel nur eine Teilnahme.
+  @@unique([igScopedId, mediaId])
+  @@index([status])
+  @@index([igScopedId])
 }
 
 /// Ein Web-Push-Abonnement: die Adresse und die Schlüssel, die der Browser

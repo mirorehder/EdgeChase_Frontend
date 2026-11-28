@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { env } from "@/lib/env";
-import { kommentareAusPayload, nachrichtenAusPayload, signaturStimmt } from "@/lib/instagram/graph";
+import {
+  geteilteReelsAusPayload,
+  kommentareAusPayload,
+  nachrichtenAusPayload,
+  signaturStimmt,
+} from "@/lib/instagram/graph";
+import { verarbeiteInteraktionAntwort, verarbeiteInteraktionDm } from "@/lib/instagram/interaktion";
 import { nimmKommentareAuf } from "@/lib/instagram/verarbeitung";
 import { verarbeiteEingehendeNachricht } from "@/lib/instagram/wiedersendung";
 
@@ -90,6 +96,9 @@ export async function POST(request: NextRequest) {
   const kommentare = kommentareAusPayload(payload);
   const nachrichten = nachrichtenAusPayload(payload);
 
+  // Geteilte Reels (Interaktions-Kampagne): Nachrichten mit Anhang aber ohne Text.
+  const geteilteReels = geteilteReelsAusPayload(payload);
+
   let neu = 0;
   if (kommentare.length > 0) {
     try {
@@ -103,6 +112,15 @@ export async function POST(request: NextRequest) {
     if (neu > 0) await stosseVerarbeitungAn(request);
   }
 
+  // Geteilte Reels werden der Interaktions-Kampagne übergeben. Fehler werden
+  // geschluckt, damit Meta nicht erneut zustellt und einen Duplikat-Eintrag
+  // erzeugt - die Doppelsperre in verarbeiteInteraktionDm fängt Wiederholungen ab.
+  for (const reel of geteilteReels) {
+    verarbeiteInteraktionDm(reel).catch((err) => {
+      console.error("Fehler beim Verarbeiten eines geteilten Reels", err);
+    });
+  }
+
   // Eingehende DMs werden inline behandelt: die Bearbeitung ist kurz (eine
   // Datenbankabfrage, ein Modell-Aufruf, im Erfolgsfall eine DM), und die
   // Antwort an die Person soll ohne Umweg über eine zweite Ausführung
@@ -114,6 +132,15 @@ export async function POST(request: NextRequest) {
   const wiederversand: Awaited<ReturnType<typeof verarbeiteEingehendeNachricht>>[] = [];
   for (const nachricht of nachrichten) {
     try {
+      // Interaktions-Antworten (z.B. "done", "ja") haben Vorrang vor dem
+      // Namens-Wiederversand. Wenn verarbeiteInteraktionAntwort true zurückgibt,
+      // war es eine Interaktions-Antwort und wird nicht als Namens-DM behandelt.
+      const warInteraktion = await verarbeiteInteraktionAntwort(nachricht).catch((err) => {
+        console.error("Fehler bei Interaktions-Antwort-Prüfung", err);
+        return false;
+      });
+      if (warInteraktion) continue;
+
       wiederversand.push(await verarbeiteEingehendeNachricht(nachricht));
     } catch (fehler) {
       console.error("Fehler beim Wiederversand", fehler);

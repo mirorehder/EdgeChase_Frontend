@@ -249,6 +249,23 @@ export type EingehendeNachricht = {
   timestamp?: number;
 };
 
+/** Ein geteiltes Reel als DM - kommt ohne text, dafür mit attachments. */
+export type EingehendeInteraktionNachricht = {
+  senderId: string;
+  messageId: string;
+  timestamp?: number;
+  reelMediaId: string;
+};
+
+type MessagingAttachment = {
+  type?: string;
+  payload?: {
+    url?: string;
+    id?: string;
+    reel_video_id?: string;
+  };
+};
+
 type MessagingPayload = {
   entry?: Array<{
     messaging?: Array<{
@@ -258,11 +275,8 @@ type MessagingPayload = {
       message?: {
         mid?: string;
         text?: string;
-        // "is_echo": Meta spiegelt eine von uns gesendete Nachricht als
-        // Ereignis zurück. Ohne diese Prüfung würde jede von uns verschickte
-        // DM (auch der Wieder-Versand) uns wieder anstoßen und im Zweifel
-        // eine Endlos-Antwort auslösen.
         is_echo?: boolean;
+        attachments?: MessagingAttachment[];
       };
     }>;
   }>;
@@ -300,6 +314,80 @@ export function nachrichtenAusPayload(payload: unknown): EingehendeNachricht[] {
   }
 
   return nachrichten;
+}
+
+/**
+ * Liest eingehende geteilte Reels aus einem Webhook-Paket.
+ *
+ * Ein geteiltes Reel hat `attachments` statt `text`. Die Attachment-Typen
+ * heißen je nach API-Version "ig_reel", "share" oder "video" - geprüft wird
+ * deshalb primär auf das Vorhandensein einer Reel-Medien-ID.
+ */
+export function geteilteReelsAusPayload(
+  payload: unknown,
+): EingehendeInteraktionNachricht[] {
+  const roh = payload as MessagingPayload;
+  const nachrichten: EingehendeInteraktionNachricht[] = [];
+
+  for (const eintrag of roh?.entry ?? []) {
+    for (const ereignis of eintrag.messaging ?? []) {
+      const sender = ereignis.sender?.id;
+      const message = ereignis.message;
+      if (!sender || !message?.mid) continue;
+      if (message.is_echo) continue;
+      if (sender === env.igUserId) continue;
+      // Reels haben Attachments, aber keinen reinen Text-Rumpf.
+      if (message.text) continue;
+      if (!message.attachments?.length) continue;
+
+      for (const attachment of message.attachments) {
+        // Die Reel-Medien-ID steckt je nach Version in payload.reel_video_id
+        // oder payload.id. Beide prüfen.
+        const reelMediaId =
+          attachment.payload?.reel_video_id ?? attachment.payload?.id ?? null;
+
+        if (!reelMediaId) continue;
+
+        nachrichten.push({
+          senderId: sender,
+          messageId: message.mid,
+          timestamp: ereignis.timestamp,
+          reelMediaId,
+        });
+        break; // Nur das erste Reel pro Nachricht zählt.
+      }
+    }
+  }
+
+  return nachrichten;
+}
+
+/**
+ * Profil einer Instagram-nutzenden Person: Anzeigename, Handle und ob sie
+ * dem Konto folgen.
+ *
+ * "is_user_follow_business" ist nur mit "instagram_manage_messages" verfügbar.
+ * Ist die Permission weg oder das Profil privat, kommt null statt false.
+ */
+export async function ladeNutzerProfil(userId: string): Promise<{
+  name?: string;
+  username?: string;
+  isFollowing?: boolean | null;
+}> {
+  const antwort = await graph<{
+    name?: string;
+    username?: string;
+    is_user_follow_business?: boolean;
+  }>(userId, {
+    method: "GET",
+    query: { fields: "name,username,is_user_follow_business" },
+  });
+
+  return {
+    name: antwort.name,
+    username: antwort.username,
+    isFollowing: antwort.is_user_follow_business ?? null,
+  };
 }
 
 /**

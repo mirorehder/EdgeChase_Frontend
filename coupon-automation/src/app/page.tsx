@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { env } from "@/lib/env";
 import { EIGENES_KONTO_HINWEIS, istEffektivAktion } from "@/lib/instagram/verarbeitung";
+import { InteraktionSchalter } from "./InteraktionSchalter";
 import { PushEinrichten } from "./PushEinrichten";
 import { Schalter } from "./Schalter";
 import { Uebersteuerung } from "./Uebersteuerung";
@@ -131,6 +132,7 @@ export default async function StartSeite() {
 
   const [
     config,
+    interaktionCfg,
     zeilen,
     medien,
     wartend,
@@ -140,8 +142,10 @@ export default async function StartSeite() {
     gesamtWiederversandt,
     gesamtWartetAufOptin,
     gesamtOptinBeantwortet,
+    interaktionTeilnahmen,
   ] = await Promise.all([
     prisma.instagramConfig.findUnique({ where: { id: "default" } }),
+    prisma.interaktionConfig.findUnique({ where: { id: "default" } }),
     // Die Menge ist überschaubar - ein paar Kommentare je Reel -, deshalb
     // wird im Speicher ausgewertet statt mit mehreren Aggregat-Abfragen.
     prisma.instagramComment.findMany({
@@ -160,6 +164,11 @@ export default async function StartSeite() {
       where: { dmGesendet: true, codeGesendetAm: null, couponCode: { not: null } },
     }),
     prisma.instagramComment.count({ where: { codeGesendetAm: { not: null } } }),
+    prisma.interaktionTeilnahme.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 50,
+      where: { status: { not: "uebersprungen" } },
+    }),
   ]);
 
   const verarbeitet = zeilen.filter((z) => z.status === "verarbeitet");
@@ -464,6 +473,60 @@ export default async function StartSeite() {
               ))}
           </ul>
         </>
+      )}
+
+      <h2 className="abschnitt-titel">Interaktions-Kampagne</h2>
+      <p className="subtitle">
+        Wer ein Interaktions-Reel per DM teilt und dem Konto folgt, bekommt einen{" "}
+        {interaktionCfg?.rabattProzent ?? 25}%-Code, der{" "}
+        {interaktionCfg?.gueltigStunden ?? 24} Stunden gilt.
+      </p>
+
+      <InteraktionSchalter
+        start={interaktionCfg?.enabled ?? true}
+        rabattStart={interaktionCfg?.rabattProzent ?? 25}
+        stundenStart={interaktionCfg?.gueltigStunden ?? 24}
+      />
+
+      {interaktionTeilnahmen.length === 0 ? (
+        <p className="empty-state">Noch keine Interaktions-Teilnahmen.</p>
+      ) : (
+        <table className="ig-tabelle">
+          <thead>
+            <tr>
+              <th>Zeit</th>
+              <th>Name</th>
+              <th>Status</th>
+              <th>Code</th>
+              <th>Eingelöst</th>
+              <th>Hinweis</th>
+            </tr>
+          </thead>
+          <tbody>
+            {interaktionTeilnahmen.map((t) => (
+              <tr key={t.id} className={t.status === "fehler" ? "ig-zeile-fehler" : ""}>
+                <td className="ig-schwach">{zeitLesbar(t.createdAt)}</td>
+                <td>{t.name ?? <span className="ig-schwach">{t.igScopedId.slice(0, 10)}…</span>}</td>
+                <td>
+                  <span
+                    className={
+                      t.status === "code_gesendet"
+                        ? "ig-status-ok"
+                        : t.status === "fehler"
+                          ? "ig-status-fehler"
+                          : "ig-status-offen"
+                    }
+                  >
+                    {t.status}
+                  </span>
+                </td>
+                <td>{t.code ? <code>{t.code}</code> : "—"}</td>
+                <td>{t.codeEingeloestAm ? "✅ " + zeitLesbar(t.codeEingeloestAm) : "—"}</td>
+                <td className="ig-schwach">{t.hinweis?.slice(0, 80) ?? "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       )}
     </main>
   );

@@ -146,6 +146,50 @@ export type NeuerGutschein = {
 };
 
 /**
+ * Legt einen Gutschein mit exaktem Ablaufzeitpunkt an.
+ *
+ * Für Interaktions-Codes, die auf die Stunde genau ablaufen sollen.
+ * Verwendet denselben Millisekundenformat wie erstelleGutschein(), da Wix
+ * bereits millisekunden-genau akzeptiert.
+ */
+export async function erstelleGutscheinMitAblauf(vorgabe: {
+  code: string;
+  prozent: number;
+  ablaufZeitpunkt: Date;
+  tag: string;
+}): Promise<{ id: string; code: string }> {
+  const jetzt = Date.now();
+  const ablauf = vorgabe.ablaufZeitpunkt.getTime();
+
+  const anlegen = async (code: string) => {
+    const antwort = await wixAnfrage<{ id: string }>(COUPONS_URL, {
+      specification: {
+        name: `${code} - Instagram ${vorgabe.prozent}%`,
+        code,
+        active: true,
+        startTime: String(jetzt),
+        expirationTime: String(ablauf),
+        usageLimit: 1,
+        scope: { namespace: "stores" },
+        percentOffRate: vorgabe.prozent,
+        tags: [vorgabe.tag],
+      },
+    });
+    return { id: antwort.id, code };
+  };
+
+  const code = await freierCode(vorgabe.code);
+
+  try {
+    return await anlegen(code);
+  } catch (fehler) {
+    const text = fehler instanceof Error ? fehler.message : String(fehler);
+    if (!/exist|duplicate|taken|unique/i.test(text)) throw fehler;
+    return anlegen(`${code}${Math.floor(Math.random() * 900 + 100)}`);
+  }
+}
+
+/**
  * Legt den Gutschein an und gibt zurück, welcher Code es am Ende wurde.
  *
  * Die Kollisionsprüfung davor ist nicht wasserdicht - zwischen Abfrage und
