@@ -4,7 +4,7 @@ import {
   MIN_USABLE_ANALYSIS_VERSION,
   type ComposedScene,
 } from "@/lib/pipeline";
-import { bewertungsart, erlaubteTrackListe, type Track } from "@/lib/trackClient";
+import { bewertungsart, clipSparte, erlaubteTrackListe, type Track } from "@/lib/trackClient";
 import { TriggerButtons } from "./TriggerButtons";
 import { LiveActivity } from "./LiveActivity";
 import { VideoChat } from "./VideoChat";
@@ -48,21 +48,23 @@ interface TrackData {
 
 /** Alles, was eine Sparte für ihre Ansicht braucht - streng auf sie begrenzt. */
 async function ladeSparte(track: Track): Promise<TrackData> {
+  // Die Clip-Bibliothek der Sparte - bei den Interaktions-Reels die der Promo-Sparte.
+  const clipTrack = clipSparte(track);
   const usableWhere =
     bewertungsart(track) === "krassheit"
       // Verwendbar heisst nicht "auf aktuellem Stand": nach einem Hochzaehlen
       // der Analyse-Version sind alle Clips veraltet, aber weiterhin
       // brauchbar. Die Zahl darunter zeigt den Stand der Neuanalyse.
-      ? { track, analysisVersion: { gte: MIN_USABLE_ANALYSIS_VERSION }, stuntScore: { gte: 0.25 } }
-      : { track, analysisVersion: { gte: MIN_USABLE_ANALYSIS_VERSION }, apparelScore: { gte: 0.5 } };
+      ? { track: clipTrack, analysisVersion: { gte: MIN_USABLE_ANALYSIS_VERSION }, stuntScore: { gte: 0.25 } }
+      : { track: clipTrack, analysisVersion: { gte: MIN_USABLE_ANALYSIS_VERSION }, apparelScore: { gte: 0.5 } };
 
   const [jobs, total, analyzed, usable, clips, ausgabeOrdner, postZeitplan, historie, laeufe] =
     await Promise.all([
       prisma.promoVideo.findMany({ where: { track }, orderBy: { createdAt: "desc" }, take: 50 }),
-      prisma.clip.count({ where: { track } }),
-      prisma.clip.count({ where: { track, analysisVersion: CURRENT_ANALYSIS_VERSION } }),
+      prisma.clip.count({ where: { track: clipTrack } }),
+      prisma.clip.count({ where: { track: clipTrack, analysisVersion: CURRENT_ANALYSIS_VERSION } }),
       prisma.clip.count({ where: usableWhere }),
-      prisma.clip.findMany({ where: { track }, select: { id: true, name: true } }),
+      prisma.clip.findMany({ where: { track: clipTrack }, select: { id: true, name: true } }),
       ausgabeOrdnerDerSparte(track),
       getPostZeitplan(track),
       postHistorie(track),
@@ -182,7 +184,7 @@ const HINWEIS: Record<Track, string> = {
     "und Posten ist hier ein einziger Ablauf - sobald das Video fertig gerendert ist, geht es raus.",
   interaktion:
     "Reels mit einem Aufruf zum Mitmachen: folgen, zwei Leute markieren, das Video schicken - dafür " +
-    "gibt es einen Rabattcode (25 %, einen Tag gültig). Clips wie bei Clothing, der Text ist der Aufruf. " +
+    "gibt es einen Rabattcode (25 %, einen Tag gültig). Die Clips kommen aus der Promo-Sparte (gleiches Material), der Text ist der Aufruf. " +
     "Den Ablauf nach dem Posten (Video registrieren, Folgen prüfen, Code per DM) betreibt der Gutschein-Automat.",
   clothing:
     "Hier zählt, wie gut die Kleidung zu sehen ist - nicht der Trick. Geschnitten wird auf den " +
@@ -277,7 +279,14 @@ export default async function DashboardPage() {
           <VideoChat track={track} />
           <LiveActivity track={track} />
           <ConceptLibrary track={track} />
-          <ClipLibrary track={track} />
+          {clipSparte(track) === track ? (
+            <ClipLibrary track={track} />
+          ) : (
+            <p className="sparte-hinweis">
+              Die Clips dieser Sparte kommen aus der Promo-Sparte (dasselbe Material, schon
+              abgeglichen und analysiert). Neue Ordner und Clips verwaltest du dort.
+            </p>
+          )}
 
           <VideoGruppen zeilen={data.zeilen} track={track} ausgabeOrdner={data.ausgabeOrdner} />
         </>,

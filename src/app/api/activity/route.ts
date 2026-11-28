@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { CURRENT_ANALYSIS_VERSION } from "@/lib/pipeline";
 import { trackFromRequest } from "@/lib/trackParam";
-import { bewertungsart } from "@/lib/trackClient";
+import { bewertungsart, clipSparte } from "@/lib/trackClient";
 import { baseUrlFromRequest, weckeWartende } from "@/lib/dispatch";
 
 // Wird im Sekundentakt abgefragt, während ein Lauf arbeitet.
@@ -33,15 +33,17 @@ export async function GET(request: NextRequest) {
 
   // "Tauglich" bedeutet je Sparte etwas anderes - beim Promo-Video sichtbare
   // Kleidung, beim viralen Edit ein tatsächlich vorhandener Trick.
+  // Interaktions-Reels teilen sich die Clips der Promo-Sparte.
+  const clipTrack = clipSparte(track);
   const usableWhere =
     bewertungsart(track) === "krassheit"
-      ? { track, analysisVersion: CURRENT_ANALYSIS_VERSION, stuntScore: { gte: 0.25 } }
-      : { track, analysisVersion: CURRENT_ANALYSIS_VERSION, apparelScore: { gte: 0.5 } };
+      ? { track: clipTrack, analysisVersion: CURRENT_ANALYSIS_VERSION, stuntScore: { gte: 0.25 } }
+      : { track: clipTrack, analysisVersion: CURRENT_ANALYSIS_VERSION, apparelScore: { gte: 0.5 } };
 
   const [entries, total, analyzed, usable, activeJobs] = await Promise.all([
     prisma.activityLog.findMany({ where: { track }, orderBy: { at: "desc" }, take: 40 }),
-    prisma.clip.count({ where: { track } }),
-    prisma.clip.count({ where: { track, analysisVersion: CURRENT_ANALYSIS_VERSION } }),
+    prisma.clip.count({ where: { track: clipTrack } }),
+    prisma.clip.count({ where: { track: clipTrack, analysisVersion: CURRENT_ANALYSIS_VERSION } }),
     prisma.clip.count({ where: usableWhere }),
     prisma.promoVideo.count({ where: { track, status: { in: ["queued", "rendering"] } } }),
   ]);
