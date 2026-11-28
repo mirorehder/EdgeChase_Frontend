@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { env } from "@/lib/env";
 
+// Liest Einstellungen aus der Datenbank: darf nie beim Build vorgerendert werden.
+export const dynamic = "force-dynamic";
+
 function istBerechtigt(request: NextRequest): boolean {
   const key = request.headers.get("x-api-key") ?? "";
-  return (
-    (env.cronSecret && key === env.cronSecret) ||
-    (env.promoMediaSecret && key === env.promoMediaSecret)
-  );
+  const promo = env.promoMediaSecret;
+  return key === env.cronSecret || (promo !== null && key === promo);
 }
 
 export async function GET() {

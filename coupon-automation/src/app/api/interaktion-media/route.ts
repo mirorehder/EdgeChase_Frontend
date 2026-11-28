@@ -15,10 +15,8 @@ import { env } from "@/lib/env";
 
 function istBerechtigt(request: NextRequest): boolean {
   const key = request.headers.get("x-api-key") ?? "";
-  return (
-    (env.cronSecret && key === env.cronSecret) ||
-    (env.promoMediaSecret && key === env.promoMediaSecret)
-  );
+  const promo = env.promoMediaSecret;
+  return key === env.cronSecret || (promo !== null && key === promo);
 }
 
 export async function POST(request: NextRequest) {

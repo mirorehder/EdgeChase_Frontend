@@ -54,6 +54,14 @@ export const env = {
   get igWebhookVerifyToken() {
     return required("IG_WEBHOOK_VERIFY_TOKEN");
   },
+  /**
+   * Optionales Zweit-Geheimnis für die Endpunkte, die der Content-Generator
+   * anspricht (/api/promo-media, /api/interaktion-*). Bewusst optional: fehlt
+   * es, gilt nur CRON_SECRET.
+   */
+  get promoMediaSecret(): string | null {
+    return process.env.PROMO_MEDIA_SECRET?.trim() || null;
+  },
   /** Wix-API-Key mit Berechtigung für Gutscheine. */
   get wixApiKey() {
     return required("WIX_API_KEY");

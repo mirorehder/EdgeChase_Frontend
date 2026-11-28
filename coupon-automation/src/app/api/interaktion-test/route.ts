@@ -30,10 +30,8 @@ function istBerechtigt(request: NextRequest): boolean {
     request.headers.get("x-api-key") ??
     new URL(request.url).searchParams.get("secret") ??
     "";
-  return (
-    (env.cronSecret && key === env.cronSecret) ||
-    (env.promoMediaSecret && key === env.promoMediaSecret)
-  );
+  const promo = env.promoMediaSecret;
+  return key === env.cronSecret || (promo !== null && key === promo);
 }
 
 export async function GET(request: NextRequest) {
